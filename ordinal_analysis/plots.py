@@ -76,6 +76,7 @@ def plot_electrode_violins(
     colors: dict[str, str],
     output_dir: Path,
     dpi: int,
+    analysis_label: str | None = None,
 ) -> None:
     """Create one PD/Control violin figure for each metric across electrodes."""
     x = np.arange(len(electrode_order), dtype=float)
@@ -91,7 +92,10 @@ def plot_electrode_violins(
                 _draw_violin(axis, values, x[index] + offset, colors[group], 0.34)
             axis.scatter([], [], color=colors[group], alpha=0.65, label=group)
         axis.set_xticks(x, electrode_order, rotation=90, fontsize=7)
-        axis.set(xlabel="Electrode", ylabel=label, title=f"{label} by electrode and group")
+        title = f"{label} by electrode and group"
+        if analysis_label:
+            title = f"{analysis_label} — {title}"
+        axis.set(xlabel="Electrode", ylabel=label, title=title)
         axis.set_ylim(_limits(table[metric].to_numpy(), lower_zero=True))
         axis.grid(axis="y", alpha=0.2)
         axis.legend(frameon=False)
@@ -105,6 +109,7 @@ def plot_subject_average_violins(
     colors: dict[str, str],
     path: Path,
     dpi: int,
+    analysis_label: str | None = None,
 ) -> None:
     """Plot subject-level means across electrode metrics."""
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.8))
@@ -127,7 +132,10 @@ def plot_subject_average_violins(
         axis.set(ylabel=label, title=label)
         axis.set_ylim(_limits(table[metric].to_numpy(), lower_zero=True))
         axis.grid(axis="y", alpha=0.2)
-    fig.suptitle("Subject means across available electrode-level ordinal metrics")
+    title = "Subject means across available electrode-level ordinal metrics"
+    if analysis_label:
+        title = f"{analysis_label} — {title}"
+    fig.suptitle(title)
     fig.tight_layout()
     _save(fig, path, dpi)
 
@@ -158,6 +166,7 @@ def plot_subject_average_planes(
     colors: dict[str, str],
     path: Path,
     dpi: int,
+    analysis_label: str | None = None,
 ) -> None:
     fig, axes = plt.subplots(1, 2, figsize=(11, 5))
     for axis, metric, title in zip(
@@ -175,7 +184,10 @@ def plot_subject_average_planes(
         axis.set_ylim(_limits(table[metric].to_numpy(), lower_zero=True))
         axis.grid(alpha=0.2)
     axes[0].legend(frameon=False)
-    fig.suptitle("Subject means across available electrode-level metrics")
+    title = "Subject means across available electrode-level metrics"
+    if analysis_label:
+        title = f"{analysis_label} — {title}"
+    fig.suptitle(title)
     fig.tight_layout()
     _save(fig, path, dpi)
 
@@ -188,6 +200,7 @@ def plot_electrode_plane_pages(
     output_dir: Path,
     dpi: int,
     channels_per_page: int,
+    analysis_label: str | None = None,
 ) -> None:
     """Plot all subject points on per-electrode HxC and HxF planes."""
     columns = 4
@@ -220,7 +233,10 @@ def plot_electrode_plane_pages(
                 for group in group_order
             ]
             fig.legend(handles=handles, loc="upper right", frameon=False)
-            fig.suptitle(f"Electrode-level {plane_title} planes — page {page}")
+            title = f"Electrode-level {plane_title} planes — page {page}"
+            if analysis_label:
+                title = f"{analysis_label} — {title}"
+            fig.suptitle(title)
             fig.tight_layout(rect=(0, 0, 1, 0.97))
             _save(fig, output_dir / f"{stem}_p{page:02d}.png", dpi)
 
@@ -322,3 +338,112 @@ def plot_group_topomaps(
     fig.suptitle("Group-mean ordinal topographies — 60 electrodes shared by all subjects")
     fig.tight_layout()
     _save(fig, path, dpi)
+
+
+def band_metric_color_limits(
+    table: pd.DataFrame,
+    band_order: list[str],
+) -> dict[str, dict[str, tuple[float, float]]]:
+    """Return full-cohort subject-map limits separately for every band/metric."""
+    return {
+        band: metric_color_limits(table.loc[table["band"].eq(band)])
+        for band in band_order
+    }
+
+
+def plot_subject_band_topomaps(
+    table: pd.DataFrame,
+    subject_infos: dict[str, Any],
+    band_order: list[str],
+    band_labels: dict[str, str],
+    limits: dict[str, dict[str, tuple[float, float]]],
+    output_dir: Path,
+    dpi: int,
+) -> None:
+    """Create one six-band by three-metric scalp-map figure per participant."""
+    for subject_id, info in subject_infos.items():
+        subject_table = table.loc[table["subject_id"].eq(subject_id)]
+        fig, axes = plt.subplots(
+            len(band_order),
+            len(METRICS),
+            figsize=(12, 3.6 * len(band_order)),
+            squeeze=False,
+        )
+        for row, band in enumerate(band_order):
+            selected = subject_table.loc[subject_table["band"].eq(band)].set_index(
+                "electrode"
+            )
+            missing = [channel for channel in info.ch_names if channel not in selected.index]
+            if missing:
+                raise ValueError(
+                    f"{subject_id}/{band}: metrics missing for channels {missing}"
+                )
+            values = {
+                metric: selected.loc[info.ch_names, metric].to_numpy(dtype=float)
+                for metric in METRICS
+            }
+            _plot_topomap_row(axes[row], values, info, limits[band])
+            axes[row, 0].text(
+                -0.23,
+                0.5,
+                band_labels[band],
+                transform=axes[row, 0].transAxes,
+                rotation=90,
+                va="center",
+                ha="center",
+                fontsize=10,
+                fontweight="bold",
+            )
+        group = str(subject_table["group"].iloc[0])
+        fig.suptitle(f"{subject_id} ({group}) — band-resolved ordinal topographies")
+        fig.tight_layout()
+        _save(fig, output_dir / f"{subject_id}_band_ordinal_topomaps.png", dpi)
+
+
+def plot_group_band_topomaps(
+    table: pd.DataFrame,
+    common_info,
+    group_order: list[str],
+    band_order: list[str],
+    band_labels: dict[str, str],
+    limits: dict[str, dict[str, tuple[float, float]]],
+    output_dir: Path,
+    dpi: int,
+) -> None:
+    """Create one PD/Control three-metric group topomap figure per band."""
+    for band in band_order:
+        band_table = table.loc[table["band"].eq(band)]
+        fig, axes = plt.subplots(
+            len(group_order), 3, figsize=(12, 4 * len(group_order)), squeeze=False
+        )
+        for row, group in enumerate(group_order):
+            selected = (
+                band_table.loc[
+                    band_table["group"].eq(group)
+                    & band_table["electrode"].isin(common_info.ch_names)
+                ]
+                .groupby("electrode")[list(METRICS)]
+                .mean()
+            )
+            values = {
+                metric: selected.loc[common_info.ch_names, metric].to_numpy(dtype=float)
+                for metric in METRICS
+            }
+            _plot_topomap_row(axes[row], values, common_info, limits[band])
+            axes[row, 0].text(
+                -0.22,
+                0.5,
+                group,
+                transform=axes[row, 0].transAxes,
+                rotation=90,
+                va="center",
+                ha="center",
+                fontsize=12,
+                fontweight="bold",
+            )
+        fig.suptitle(
+            f"{band_labels[band]} — group-mean ordinal topographies "
+            f"({len(common_info.ch_names)} shared electrodes)"
+        )
+        fig.tight_layout()
+        _save(fig, output_dir / f"{band}_group_mean_topomaps.png", dpi)

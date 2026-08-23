@@ -10,9 +10,43 @@ from typing import Any
 import numpy as np
 import ordpy
 import pandas as pd
+from scipy.signal import butter, sosfiltfilt
 
 
 METRICS = ("entropy", "complexity", "fisher_information")
+
+
+def filter_epoch_data(
+    data: np.ndarray,
+    *,
+    sfreq: float,
+    low_hz: float,
+    high_hz: float,
+    order: int = 4,
+) -> np.ndarray:
+    """Zero-phase band-pass each accepted epoch without joining epoch gaps."""
+    array = np.asarray(data, dtype=np.float64)
+    if array.ndim != 3:
+        raise ValueError("data must have shape (epochs, channels, samples)")
+    if not np.all(np.isfinite(array)):
+        raise ValueError("Band filtering requires finite epoch samples")
+    nyquist = float(sfreq) / 2.0
+    if not 0.0 < float(low_hz) < float(high_hz) < nyquist:
+        raise ValueError(
+            f"Band must satisfy 0 < low_hz < high_hz < Nyquist ({nyquist:g} Hz)"
+        )
+    if int(order) != order or int(order) < 1:
+        raise ValueError("Filter order must be a positive integer")
+    sos = butter(
+        int(order),
+        [float(low_hz), float(high_hz)],
+        btype="bandpass",
+        fs=float(sfreq),
+        output="sos",
+    )
+    # Filtering along the final axis treats every epoch/channel independently.
+    # Thus rejected-data gaps and boundaries cannot produce filter transitions.
+    return sosfiltfilt(sos, array, axis=-1)
 
 
 def _validate_parameters(dx: int, tau: int) -> None:
@@ -187,3 +221,30 @@ def subject_electrode_means(electrode_metrics: pd.DataFrame) -> pd.DataFrame:
         .reset_index()
     )
     return means.merge(counts, on=["subject_id", "group"], validate="one_to_one")
+
+
+def band_subject_electrode_means(electrode_metrics: pd.DataFrame) -> pd.DataFrame:
+    """Average electrode-level metrics within every participant and band."""
+    required = {
+        "subject_id",
+        "group",
+        "band",
+        "band_low_hz",
+        "band_high_hz",
+        "electrode",
+        *METRICS,
+    }
+    missing = sorted(required - set(electrode_metrics.columns))
+    if missing:
+        raise ValueError(f"Missing band metric columns: {missing}")
+    keys = ["subject_id", "group", "band", "band_low_hz", "band_high_hz"]
+    means = (
+        electrode_metrics.groupby(keys, sort=False)[list(METRICS)].mean().reset_index()
+    )
+    counts = (
+        electrode_metrics.groupby(keys, sort=False)["electrode"]
+        .nunique()
+        .rename("n_electrodes")
+        .reset_index()
+    )
+    return means.merge(counts, on=keys, validate="one_to_one")

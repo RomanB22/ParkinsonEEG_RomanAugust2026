@@ -13,6 +13,12 @@ Bandt-Pompe ordinal-pattern distribution and uses `ordpy` 1.2.2 to calculate:
 - Jensen-Shannon statistical complexity, **C**;
 - discrete Fisher information, **F**.
 
+The same complete analysis is performed on the broadband cleaned epochs and on
+six band-pass versions: delta (1–4 Hz), theta (4–8 Hz), alpha (8–13 Hz), beta
+(13–30 Hz), low gamma (30–50 Hz), and broad 5–15 Hz. The 5–15 Hz range overlaps
+theta, alpha, and the lower edge of beta; it is an additional targeted summary,
+not a statistically independent canonical band.
+
 It also calculates one subject-level value for each quantity by taking the
 arithmetic mean of that subject's electrode-level values. It deliberately does
 not average EEG voltages across electrodes first: the cleaned data use an
@@ -58,6 +64,21 @@ pattern. Vectorized NumPy ordering implements the same ordinal symbolization as
 `ordpy.fisher_shannon(..., probs=True)` receive the resulting pooled
 probability distribution in lexicographic permutation order.
 
+## Band filtering
+
+Every accepted epoch and electrode is filtered independently with a
+fourth-order Butterworth band-pass represented as second-order sections and
+applied forward and backward by `scipy.signal.sosfiltfilt`. The result is
+zero-phase. Filtering an epoch independently means that neither rejected-data
+gaps nor the join between two accepted epochs can generate a filter transition.
+Ordinal patterns are then pooled with the same boundary-safe procedure used by
+the broadband analysis.
+
+The filter method, order, phase, band limits, and boundary policy are explicit
+in [`config.json`](config.json), repeated in every band-electrode table row, and
+copied into `manifest.json`. Band limits are also checked against each input
+file's Nyquist frequency when filtering begins.
+
 ## Run
 
 From the repository root, install the pinned dependency if needed:
@@ -95,6 +116,10 @@ ordinal_analysis/processed/
 │   ├── subject_electrode_mean_metrics.csv
 │   ├── group_electrode_summary.csv
 │   ├── group_subject_mean_summary.csv
+│   ├── band_electrode_metrics.csv
+│   ├── band_subject_electrode_mean_metrics.csv
+│   ├── group_band_electrode_summary.csv
+│   ├── group_band_subject_mean_summary.csv
 │   └── electrode_sets.json
 └── figures/
     ├── violins/
@@ -106,9 +131,16 @@ ordinal_analysis/processed/
     │   ├── electrode_hxc_p*.png
     │   ├── electrode_hxf_p*.png
     │   └── subject_electrode_mean_hxc_hxf.png
-    └── topomaps/
-        ├── group_mean_topomaps.png
-        └── subjects/sub-*_ordinal_topomaps.png
+    ├── topomaps/
+    │   ├── group_mean_topomaps.png
+    │   └── subjects/sub-*_ordinal_topomaps.png
+    └── bands/
+        ├── delta|theta|alpha|beta|low_gamma|broad_5_15/
+        │   ├── violins/*.png
+        │   └── planes/*.png
+        └── topomaps/
+            ├── group_means/<band>_group_mean_topomaps.png
+            └── subjects/sub-*_band_ordinal_topomaps.png
 ```
 
 ### Tables
@@ -122,6 +154,13 @@ written with 17 significant digits.
 mean of each metric across their available electrodes. Each participant has one
 of two 63-electrode layouts. `electrode_sets.json` records the 66-electrode union
 and the 60 electrodes shared by everyone.
+
+`band_electrode_metrics.csv` adds one row per subject, electrode, and band. It
+includes H/C/F, pattern and exact-tie diagnostics, numerical band limits, and
+filter provenance. `band_subject_electrode_mean_metrics.csv` contains one row
+per subject and band, formed by averaging that subject's electrode-level metric
+values. The two `group_band_*` tables provide the corresponding descriptive
+PD/Control summaries.
 
 The two group-summary tables report sample counts, means, standard deviations,
 and medians for PD and Control without inferential testing.
@@ -138,13 +177,17 @@ and medians for PD and Control without inferential testing.
   available electrode locations.
 - The group figure averages values at the 60 common electrodes. All subject and
   group topomaps use the same full-dataset color limits for a given metric.
+- Each band receives the same violin and H×C/H×F products as broadband.
+- Each participant also receives one 6-band × 3-metric topomap figure. Scales
+  are fixed across participants and groups within each band/metric pair.
+- Six group band figures compare PD and Control on the shared electrode set.
 
 ## Provenance and validation
 
 `manifest.json` records the complete configuration, software versions, group
 counts, electrode sets, tie policy, epoch pooling policy, subject-mean
-definition, and topomap color limits. `ordinal_analysis.log` records progress
-through every subject.
+definition, filter policy, band limits, and broadband/band topomap color limits.
+`ordinal_analysis.log` records progress through every subject and every band.
 
 Run all repository tests with:
 

@@ -10,6 +10,38 @@
     "delay_samples": 1,
     "tie_precision": null
   },
+  "bands": {
+    "delta": [
+      1.0,
+      4.0
+    ],
+    "theta": [
+      4.0,
+      8.0
+    ],
+    "alpha": [
+      8.0,
+      13.0
+    ],
+    "beta": [
+      13.0,
+      30.0
+    ],
+    "low_gamma": [
+      30.0,
+      50.0
+    ],
+    "broad_5_15": [
+      5.0,
+      15.0
+    ]
+  },
+  "band_filter": {
+    "method": "butterworth_sos_sosfiltfilt",
+    "order": 4,
+    "phase": "zero_phase",
+    "epoch_boundary_policy": "filter_each_accepted_epoch_independently"
+  },
   "plots": {
     "dpi": 150,
     "channels_per_plane_page": 12,
@@ -20,6 +52,14 @@
     "group_colors": {
       "PD": "#D55E00",
       "Control": "#0072B2"
+    },
+    "band_display_names": {
+      "delta": "Delta",
+      "theta": "Theta",
+      "alpha": "Alpha",
+      "beta": "Beta",
+      "low_gamma": "Low gamma",
+      "broad_5_15": "Broad 5–15 Hz"
     }
   }
 }

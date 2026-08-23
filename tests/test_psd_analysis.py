@@ -71,7 +71,11 @@ class PsdAnalysisTests(unittest.TestCase):
 
     def test_default_config_has_expected_bands_and_bootstrap(self):
         config = load_psd_config("psd_analysis/config.json")
-        self.assertEqual(list(config["bands"]), ["delta", "theta", "alpha", "beta", "low_gamma"])
+        self.assertEqual(
+            list(config["bands"]),
+            ["delta", "theta", "alpha", "beta", "low_gamma", "broad_5_15"],
+        )
+        self.assertEqual(config["bands"]["broad_5_15"], [5.0, 15.0])
         self.assertEqual(config["bootstrap"]["confidence_level"], 0.95)
         self.assertEqual(config["bootstrap"]["n_resamples"], 2000)
 

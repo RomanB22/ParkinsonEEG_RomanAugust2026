@@ -177,9 +177,11 @@ documented in [`simpler/README.md`](simpler/README.md). It writes only under
 The independent downstream workflow in [`ordinal_analysis/`](ordinal_analysis/README.md)
 uses the accepted cleaned epochs to calculate `ordpy` permutation entropy,
 statistical complexity, and Fisher information for every participant/electrode
-and each participant's mean across electrodes. It generates PD/Control violins,
-H×C and H×F planes, individual scalp maps, group-mean scalp maps, complete CSV
-tables, logs, and a machine-readable provenance manifest.
+and each participant's mean across electrodes. The full workflow is applied to
+the broadband signal and to delta, theta, alpha, beta, low gamma, and the
+overlapping 5–15 Hz range. It generates PD/Control violins, H×C and H×F planes,
+individual scalp maps, group-mean scalp maps, complete CSV tables, logs, and a
+machine-readable provenance manifest.
 
 ```bash
 bash ordinal_analysis/run_ordinal_analysis.sh --overwrite
@@ -190,7 +192,7 @@ bash ordinal_analysis/run_ordinal_analysis.sh --overwrite
 The separate workflow in [`psd_analysis/`](psd_analysis/README.md) estimates
 subject-balanced median Welch spectra, pointwise 95% bootstrap confidence bands
 for PD and Control, and group median absolute-power topographies for delta,
-theta, alpha, beta, and 30–50 Hz low gamma.
+theta, alpha, beta, 30–50 Hz low gamma, and an additional broad 5–15 Hz band.
 
 ```bash
 bash psd_analysis/run_psd_analysis.sh --overwrite

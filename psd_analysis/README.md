@@ -43,6 +43,11 @@ subject/electrode linear PSD:
 | Alpha | 8–13 Hz |
 | Beta | 13–30 Hz |
 | Low gamma | 30–50 Hz |
+| Broad band | 5–15 Hz |
+
+The 5–15 Hz band intentionally overlaps theta, alpha, and part of beta so the
+broad feature visible in the group PSD can be mapped directly. It is an
+additional summary and does not replace the canonical bands.
 
 Endpoints are included. A shared boundary such as 4 Hz is a single point with
 zero width; the adjacent trapezoids cover the intervals on either side without

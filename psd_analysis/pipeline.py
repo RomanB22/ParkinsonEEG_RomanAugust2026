@@ -322,8 +322,10 @@ def run_analysis(
     common_picks = [first_info.ch_names.index(channel) for channel in common_channels]
     common_info = mne.pick_info(first_info, common_picks, copy=True)
     common_info["bads"] = []
+    display_names = config["plots"].get("band_display_names", {})
     band_labels = {
-        band: f"{band.replace('_', ' ').title()}\n{limits[0]:g}–{limits[1]:g} Hz"
+        band: f"{display_names.get(band, band.replace('_', ' ').title())}\n"
+        f"{limits[0]:g}–{limits[1]:g} Hz"
         for band, limits in bands.items()
     }
     logger.info("Creating group band-power topomaps")
