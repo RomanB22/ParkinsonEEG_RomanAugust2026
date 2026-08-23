@@ -1,0 +1,25 @@
+{
+  "input": {
+    "epochs_dir": "processed/epochs",
+    "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif",
+    "participants_file": "processed/metadata/subjects.csv"
+  },
+  "output_dir": "ordinal_analysis/processed",
+  "ordinal": {
+    "embedding_dimension": 3,
+    "delay_samples": 1,
+    "tie_precision": null
+  },
+  "plots": {
+    "dpi": 150,
+    "channels_per_plane_page": 12,
+    "group_order": [
+      "PD",
+      "Control"
+    ],
+    "group_colors": {
+      "PD": "#D55E00",
+      "Control": "#0072B2"
+    }
+  }
+}
