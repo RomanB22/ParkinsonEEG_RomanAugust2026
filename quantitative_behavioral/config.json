@@ -1,0 +1,56 @@
+{
+  "input": {
+    "participants_file": "processed/metadata/subjects.csv",
+    "ordinal_subject_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/subject_electrode_mean_metrics.csv",
+    "ordinal_band_subject_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/band_subject_electrode_mean_metrics.csv",
+    "ordinal_electrode_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/electrode_metrics.csv",
+    "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/band_electrode_metrics.csv",
+    "ordinal_electrode_sets_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/electrode_sets.json",
+    "bout_subject_file": "scale_free_analysis/processed/metrics/subject_band_metrics.csv",
+    "bout_electrode_file": "scale_free_analysis/processed/metrics/electrode_band_metrics.csv",
+    "bout_ordinal_subject_file": "bout_analyses/processed/metrics/subject_band_metrics.csv",
+    "bout_ordinal_electrode_file": "bout_analyses/processed/metrics/subject_electrode_band_metrics.csv",
+    "epoch_example_glob": "processed/epochs/sub-*_task-Rest_desc-cleaned_epo.fif"
+  },
+  "output_dir": "quantitative_behavioral/processed",
+  "analysis": {
+    "primary_group": "PD",
+    "outcome_column": "MOCA",
+    "outcome_label": "Montreal Cognitive Assessment (MOCA)",
+    "covariates": ["AGE", "GENDER"],
+    "primary_method": "partial_spearman_adjusted_for_age_and_sex",
+    "sensitivity_method": "unadjusted_spearman",
+    "minimum_subjects": 30,
+    "bootstrap_resamples": 2000,
+    "bootstrap_confidence_level": 0.95,
+    "random_seed": 20260824,
+    "fdr_alpha": 0.05,
+    "fdr_scope": "within_feature_family_and_correlation_method"
+  },
+  "features": {
+    "ordinal_metrics": ["entropy", "complexity", "fisher_information"],
+    "ordinal_bands": ["delta", "theta", "alpha", "beta", "low_gamma", "broad_5_15"],
+    "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],
+    "bout_properties": [
+      "oscillatory_occupancy",
+      "bouts_per_minute",
+      "bout_duration_mean_s",
+      "bout_cycles_mean",
+      "bout_snr_mean"
+    ],
+    "bout_ordinal_metrics": ["entropy", "complexity", "fisher_information"]
+  },
+  "expected": {
+    "embedding_dimension": 6,
+    "delay_samples": 1,
+    "shared_electrodes": 60,
+    "scale_free_psd_range_hz": [1.0, 50.0]
+  },
+  "plots": {
+    "dpi": 150,
+    "primary_color": "#D55E00",
+    "sensitivity_color": "#0072B2",
+    "significant_color": "#009E73"
+  }
+}
+

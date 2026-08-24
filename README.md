@@ -248,6 +248,20 @@ group figures, electrode figures, and individual topomaps.
 bash bout_analyses/run_bout_analyses.sh --overwrite
 ```
 
+## Quantitative behavioral MOCA analysis
+
+The cross-sectional workflow in
+[`quantitative_behavioral/`](quantitative_behavioral/README.md) relates MOCA to
+regular broadband/band ordinal H/C/F, eBOSC bout properties, and within-bout
+ordinal H/C/F among PD participants. It uses subject-level partial Spearman
+correlations adjusted for age and sex, deterministic bootstrap intervals,
+prespecified family-specific FDR correction, raw-data scatter grids, forest
+plots, sensitivity heatmaps, and secondary spatial maps.
+
+```bash
+bash quantitative_behavioral/run_quantitative_behavioral.sh --overwrite
+```
+
 ## 60 Hz notch decision
 
 The final required passband is 1–50 Hz. Therefore the configured 60 Hz line

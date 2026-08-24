@@ -9,3 +9,4 @@ matplotlib==3.11.1
 -r ordinal_analysis/requirements.txt
 -r scale_free_analysis/requirements.txt
 -r exploration/requirements.txt
+-r quantitative_behavioral/requirements.txt
