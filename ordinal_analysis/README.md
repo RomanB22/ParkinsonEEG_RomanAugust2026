@@ -113,6 +113,10 @@ name). Detailed subject/band progress is also retained in
 `ordinal_analysis.log`. Use `--no-progress` to suppress the terminal bar in
 non-interactive jobs. The Bash launcher uses Conda's live-output mode so the
 bar updates immediately in interactive terminals such as VS Code's terminal.
+Use `--skip-figures` for metric-only parameter-sensitivity inputs: every CSV,
+the shared-electrode audit, and the manifest are still saved, while the large
+set of ordinal diagnostic figures is omitted and recorded as such in the
+manifest.
 
 For a quick selected-subject run:
 

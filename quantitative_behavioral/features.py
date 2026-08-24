@@ -430,3 +430,164 @@ def subject_feature_matrix(
     return cohort.merge(
         wide.reset_index(), on="subject_id", how="left", validate="one_to_one"
     )
+
+
+def _dimension_source_paths(
+    config: dict[str, Any], dimension: int
+) -> dict[str, Path]:
+    settings = config["dimension_sensitivity"]
+    root = Path(settings["ordinal_output_root"])
+    delay = int(settings["delay_samples"])
+    metrics_dir = root / f"D{dimension}_tau{delay}" / "metrics"
+    return {
+        "subject": metrics_dir / "subject_electrode_mean_metrics.csv",
+        "band_subject": metrics_dir / "band_subject_electrode_mean_metrics.csv",
+        "electrode": metrics_dir / "electrode_metrics.csv",
+        "band_electrode": metrics_dir / "band_electrode_metrics.csv",
+        "electrode_sets": metrics_dir / "electrode_sets.json",
+    }
+
+
+def build_dimension_sensitivity_features(
+    config: dict[str, Any], cohort: pd.DataFrame
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]]:
+    """Load regular ordinal H/C/F across prespecified embedding dimensions."""
+    settings = config["dimension_sensitivity"]
+    dimensions = [int(value) for value in settings["embedding_dimensions"]]
+    delay = int(settings["delay_samples"])
+    metrics = [str(value) for value in settings["metrics"]]
+    bands = [str(value) for value in settings["bands"]]
+    expected_subjects = set(cohort["subject_id"])
+    expected_count = int(config["expected"]["shared_electrodes"])
+    subject_rows: list[pd.DataFrame] = []
+    electrode_rows: list[pd.DataFrame] = []
+    dictionary_rows: list[dict[str, Any]] = []
+    electrode_order: list[str] | None = None
+
+    for dimension in dimensions:
+        paths = _dimension_source_paths(config, dimension)
+        subject = _read_csv(
+            paths["subject"], {"subject_id", "group", "n_electrodes", *metrics}
+        )
+        band_subject = _read_csv(
+            paths["band_subject"],
+            {"subject_id", "group", "band", "n_electrodes", *metrics},
+        )
+        electrode = _read_csv(
+            paths["electrode"], {"subject_id", "group", "electrode", *metrics}
+        )
+        band_electrode = _read_csv(
+            paths["band_electrode"],
+            {"subject_id", "group", "electrode", "band", *metrics},
+        )
+        for name, table in (
+            (f"D={dimension} broadband subject", subject),
+            (f"D={dimension} band subject", band_subject),
+            (f"D={dimension} broadband electrode", electrode),
+            (f"D={dimension} band electrode", band_electrode),
+        ):
+            _validate_subject_coverage(table, expected_subjects, name)
+            if "n_electrodes" in table and not table["n_electrodes"].eq(expected_count).all():
+                raise ValueError(f"{name} must use exactly {expected_count} electrodes")
+            source_groups = table[["subject_id", "group"]].drop_duplicates()
+            if source_groups["subject_id"].duplicated().any():
+                raise ValueError(f"{name}: inconsistent group labels within subjects")
+            compared = cohort[["subject_id", "group"]].merge(
+                source_groups,
+                on="subject_id",
+                suffixes=("_metadata", "_source"),
+                validate="one_to_one",
+            )
+            if not compared["group_metadata"].eq(compared["group_source"]).all():
+                raise ValueError(f"{name}: group labels disagree with participant metadata")
+
+        payload_path = paths["electrode_sets"]
+        if not payload_path.exists():
+            raise FileNotFoundError(f"Missing electrode set: {payload_path}")
+        payload = json.loads(payload_path.read_text(encoding="utf-8"))
+        current_order = [str(value) for value in payload["common_electrodes"]]
+        if len(current_order) != expected_count:
+            raise ValueError(f"D={dimension} does not use {expected_count} electrodes")
+        if electrode_order is None:
+            electrode_order = current_order
+        elif current_order != electrode_order:
+            raise ValueError("Embedding dimensions do not use the same electrode order")
+
+        for band in ["broadband", *bands]:
+            selected_subject = subject if band == "broadband" else band_subject.loc[
+                band_subject["band"].eq(band)
+            ]
+            selected_electrode = electrode if band == "broadband" else band_electrode.loc[
+                band_electrode["band"].eq(band)
+            ]
+            if selected_subject.empty or selected_electrode.empty:
+                raise ValueError(f"D={dimension}: requested band is unavailable: {band}")
+            if selected_subject["subject_id"].duplicated().any():
+                raise ValueError(f"D={dimension}/{band}: duplicate subject rows")
+            if selected_electrode.duplicated(["subject_id", "electrode"]).any():
+                raise ValueError(f"D={dimension}/{band}: duplicate electrode rows")
+            if set(selected_electrode["electrode"].astype(str)) != set(current_order):
+                raise ValueError(f"D={dimension}/{band}: inconsistent electrode set")
+
+            for metric in metrics:
+                feature_id = f"ordinal_D{dimension}_tau{delay}_{band}_{metric}"
+                band_label = BAND_LABELS.get(band, band.replace("_", " ").title())
+                metric_label = METRIC_LABELS[metric]
+                feature_label = (
+                    f"D={dimension} broadband {metric_label}"
+                    if band == "broadband"
+                    else f"D={dimension} {band_label} {metric_label}"
+                )
+                subject_rows.append(
+                    selected_subject[["subject_id", metric]]
+                    .rename(columns={metric: "value"})
+                    .assign(feature_id=feature_id)
+                )
+                electrode_rows.append(
+                    selected_electrode[["subject_id", "group", "electrode", metric]]
+                    .rename(columns={metric: "value"})
+                    .assign(feature_id=feature_id)
+                )
+                dictionary_rows.append(
+                    {
+                        "feature_id": feature_id,
+                        "family": "ordinal_dimension_sensitivity",
+                        "domain": "ordinal_dimension_sensitivity",
+                        "band": band,
+                        "metric": metric,
+                        "feature_label": feature_label,
+                        "unit": METRIC_UNITS[metric],
+                        "source_file": str(
+                            (paths["subject"] if band == "broadband" else paths["band_subject"]).resolve()
+                        ),
+                        "analysis_level": "subject_mean_across_shared_electrodes",
+                        "embedding_dimension": dimension,
+                        "delay_samples": delay,
+                    }
+                )
+
+    dictionary = pd.DataFrame.from_records(dictionary_rows)
+    subject_features = pd.concat(subject_rows, ignore_index=True).merge(
+        cohort[["subject_id", "group", "moca", "age_years", "gender", "sex_male"]],
+        on="subject_id",
+        how="left",
+        validate="many_to_one",
+    ).merge(dictionary, on="feature_id", how="left", validate="many_to_one")
+    electrode_features = pd.concat(electrode_rows, ignore_index=True).merge(
+        cohort[["subject_id", "group", "moca", "age_years", "sex_male"]],
+        on=["subject_id", "group"],
+        how="left",
+        validate="many_to_one",
+    ).merge(dictionary, on="feature_id", how="left", validate="many_to_one")
+    if dictionary["feature_id"].duplicated().any():
+        raise RuntimeError("Dimension-sensitivity feature identifiers are not unique")
+    if subject_features.duplicated(["subject_id", "feature_id"]).any():
+        raise ValueError("Dimension-sensitivity subject features contain duplicates")
+    if electrode_features.duplicated(["subject_id", "electrode", "feature_id"]).any():
+        raise ValueError("Dimension-sensitivity electrode features contain duplicates")
+    expected_features = len(dimensions) * (1 + len(bands)) * len(metrics)
+    if len(dictionary) != expected_features:
+        raise RuntimeError(
+            f"Expected {expected_features} dimension-sensitivity features, found {len(dictionary)}"
+        )
+    return subject_features, dictionary, electrode_features, electrode_order or []

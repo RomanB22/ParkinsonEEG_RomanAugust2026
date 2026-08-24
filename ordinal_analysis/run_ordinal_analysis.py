@@ -40,12 +40,21 @@ def main() -> None:
         action="store_true",
         help="Disable the subject/analysis-stage progress bar",
     )
+    parser.add_argument(
+        "--skip-figures",
+        action="store_true",
+        help=(
+            "Calculate and save every metric table but skip ordinal diagnostic figures "
+            "(useful for parameter-sensitivity inputs)"
+        ),
+    )
     args = parser.parse_args()
     manifest = run_analysis(
         args.config,
         subjects=args.subjects,
         overwrite=args.overwrite,
         show_progress=not args.no_progress,
+        generate_figures=not args.skip_figures,
     )
     print(
         f"Completed ordinal analysis for {manifest['n_subjects']} subjects; "

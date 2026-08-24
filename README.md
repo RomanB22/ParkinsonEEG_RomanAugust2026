@@ -256,9 +256,12 @@ regular broadband/band ordinal H/C/F, eBOSC bout properties, and within-bout
 ordinal H/C/F among PD participants. It uses subject-level partial Spearman
 correlations adjusted for age and sex, deterministic bootstrap intervals,
 prespecified family-specific FDR correction, raw-data scatter grids, forest
-plots, sensitivity heatmaps, and secondary spatial maps.
+plots, sensitivity heatmaps, and secondary spatial maps. The regular ordinal
+associations also include a planned D=3,4,5,6 (tau=1) robustness analysis with
+FDR controlled across all 84 dimension/signal/metric combinations.
 
 ```bash
+bash quantitative_behavioral/prepare_dimension_sensitivity.sh
 bash quantitative_behavioral/run_quantitative_behavioral.sh --overwrite
 ```
 

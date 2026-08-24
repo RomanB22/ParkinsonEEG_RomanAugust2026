@@ -269,3 +269,117 @@ def plot_electrode_topomap_pages(
         fig.suptitle("PD partial Spearman ρ with MOCA, adjusted for age and sex")
         fig.tight_layout()
         _save(fig, output_dir / f"{domain}_{band}_moca_topomaps.png", dpi)
+
+
+def plot_dimension_sensitivity_heatmaps(
+    correlations: pd.DataFrame,
+    path: Path,
+    dpi: int,
+) -> None:
+    """Compare adjusted MOCA estimates across D for every ordinal scope."""
+    selected = correlations.loc[
+        correlations["method"].eq("partial_spearman_age_sex")
+    ].copy()
+    metrics = ["entropy", "complexity", "fisher_information"]
+    metric_titles = {
+        "entropy": "Permutation entropy H",
+        "complexity": "Statistical complexity C",
+        "fisher_information": "Fisher information F",
+    }
+    bands = selected["band"].drop_duplicates().tolist()
+    dimensions = sorted(selected["embedding_dimension"].astype(int).unique())
+    fig, axes = plt.subplots(1, 3, figsize=(14.5, 6.2), sharey=True)
+    image = None
+    for axis, metric in zip(axes, metrics):
+        values = (
+            selected.loc[selected["metric"].eq(metric)]
+            .pivot(index="band", columns="embedding_dimension", values="estimate")
+            .reindex(index=bands, columns=dimensions)
+        )
+        rejects = (
+            selected.loc[selected["metric"].eq(metric)]
+            .pivot(index="band", columns="embedding_dimension", values="fdr_reject")
+            .reindex(index=bands, columns=dimensions)
+        )
+        image = axis.imshow(
+            values.to_numpy(dtype=float),
+            vmin=-0.5,
+            vmax=0.5,
+            cmap="coolwarm",
+            aspect="auto",
+        )
+        axis.set_xticks(np.arange(len(dimensions)), [f"D={value}" for value in dimensions])
+        axis.set_yticks(
+            np.arange(len(bands)),
+            [band.replace("_", " ").title() for band in bands],
+        )
+        axis.set_title(metric_titles[metric])
+        for row in range(len(bands)):
+            for column in range(len(dimensions)):
+                value = values.iloc[row, column]
+                if np.isfinite(value):
+                    star = "*" if bool(rejects.iloc[row, column]) else ""
+                    axis.text(
+                        column,
+                        row,
+                        f"{value:.2f}{star}",
+                        ha="center",
+                        va="center",
+                        fontsize=8,
+                    )
+    if image is not None:
+        fig.colorbar(image, ax=axes, label="Partial Spearman ρ", shrink=0.72)
+    fig.suptitle(
+        "MOCA ordinal sensitivity across embedding dimensions (age/sex adjusted)\n"
+        "* BH-FDR significant across all 84 dimension-sensitivity features"
+    )
+    fig.subplots_adjust(left=0.10, right=0.91, bottom=0.10, top=0.84, wspace=0.18)
+    _save(fig, path, dpi)
+
+
+def plot_dimension_stability_lines(
+    correlations: pd.DataFrame,
+    path: Path,
+    dpi: int,
+) -> None:
+    """Show effect direction and magnitude stability as embedding D changes."""
+    selected = correlations.loc[
+        correlations["method"].eq("partial_spearman_age_sex")
+    ].copy()
+    metrics = ["entropy", "complexity", "fisher_information"]
+    metric_titles = {
+        "entropy": "Permutation entropy H",
+        "complexity": "Statistical complexity C",
+        "fisher_information": "Fisher information F",
+    }
+    dimensions = sorted(selected["embedding_dimension"].astype(int).unique())
+    bands = selected["band"].drop_duplicates().tolist()
+    colors = plt.get_cmap("tab10")(np.linspace(0.0, 0.9, len(bands)))
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharex=True, sharey=True)
+    for axis, metric in zip(axes, metrics):
+        metric_rows = selected.loc[selected["metric"].eq(metric)]
+        for band, color in zip(bands, colors):
+            values = (
+                metric_rows.loc[metric_rows["band"].eq(band)]
+                .set_index("embedding_dimension")["estimate"]
+                .reindex(dimensions)
+            )
+            axis.plot(
+                dimensions,
+                values.to_numpy(dtype=float),
+                marker="o",
+                linewidth=1.4,
+                color=color,
+                label=band.replace("_", " ").title(),
+            )
+        axis.axhline(0.0, color="black", linewidth=0.8)
+        axis.set_title(metric_titles[metric])
+        axis.set_xticks(dimensions)
+        axis.set_xlabel("Embedding dimension D (τ=1)")
+        axis.grid(alpha=0.2)
+    axes[0].set_ylabel("Partial Spearman ρ with MOCA")
+    handles, labels = axes[-1].get_legend_handles_labels()
+    fig.legend(handles, labels, loc="lower center", ncol=7, frameon=False)
+    fig.suptitle("Stability of age/sex-adjusted ordinal–MOCA associations")
+    fig.subplots_adjust(bottom=0.20, top=0.86, wspace=0.12)
+    _save(fig, path, dpi)

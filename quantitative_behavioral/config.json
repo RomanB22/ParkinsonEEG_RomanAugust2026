@@ -40,6 +40,16 @@
     ],
     "bout_ordinal_metrics": ["entropy", "complexity", "fisher_information"]
   },
+  "dimension_sensitivity": {
+    "enabled": true,
+    "ordinal_output_root": "ordinal_analysis/parameter_sweep",
+    "embedding_dimensions": [3, 4, 5, 6],
+    "delay_samples": 1,
+    "metrics": ["entropy", "complexity", "fisher_information"],
+    "bands": ["delta", "theta", "alpha", "beta", "low_gamma", "broad_5_15"],
+    "role": "sensitivity_analysis_only",
+    "fdr_scope": "across_all_84_dimension_sensitivity_features_per_method"
+  },
   "expected": {
     "embedding_dimension": 6,
     "delay_samples": 1,
@@ -53,4 +63,3 @@
     "significant_color": "#009E73"
   }
 }
-

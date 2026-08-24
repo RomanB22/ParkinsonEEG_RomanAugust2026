@@ -3,7 +3,10 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from quantitative_behavioral.features import build_subject_features
+from quantitative_behavioral.features import (
+    build_dimension_sensitivity_features,
+    build_subject_features,
+)
 from quantitative_behavioral.pipeline import load_analysis_config
 from quantitative_behavioral.statistics import (
     correlate_subject_features,
@@ -24,6 +27,10 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             ["entropy", "complexity", "fisher_information"],
         )
         self.assertEqual(config["expected"]["shared_electrodes"], 60)
+        self.assertEqual(
+            config["dimension_sensitivity"]["embedding_dimensions"], [3, 4, 5, 6]
+        )
+        self.assertEqual(config["dimension_sensitivity"]["delay_samples"], 1)
 
     def test_partial_spearman_removes_age_confounding(self):
         rng = np.random.default_rng(42)
@@ -105,6 +112,31 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         pd_features = features.loc[features["group"].eq("PD")]
         self.assertEqual(len(pd_features), 100 * 53)
         self.assertTrue(pd_features["value"].notna().all())
+
+    def test_dimension_sensitivity_has_84_balanced_regular_ordinal_features(self):
+        config = load_analysis_config("quantitative_behavioral/config.json")
+        cohort, _, _ = build_subject_features(config)
+        features, dictionary, electrode_features, electrode_order = (
+            build_dimension_sensitivity_features(config, cohort)
+        )
+        self.assertEqual(len(dictionary), 84)
+        self.assertEqual(set(dictionary["embedding_dimension"]), {3, 4, 5, 6})
+        self.assertEqual(set(dictionary["delay_samples"]), {1})
+        self.assertEqual(
+            set(dictionary["metric"]),
+            {"entropy", "complexity", "fisher_information"},
+        )
+        self.assertFalse(dictionary["feature_id"].str.contains("renyi").any())
+        self.assertEqual(len(electrode_order), 60)
+        self.assertFalse(features.duplicated(["subject_id", "feature_id"]).any())
+        self.assertFalse(
+            electrode_features.duplicated(
+                ["subject_id", "electrode", "feature_id"]
+            ).any()
+        )
+        self.assertEqual(
+            len(features.loc[features["group"].eq("PD")]), 100 * 84
+        )
 
 
 if __name__ == "__main__":

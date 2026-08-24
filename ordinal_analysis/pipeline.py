@@ -176,6 +176,7 @@ def run_analysis(
     subjects: list[str] | None = None,
     overwrite: bool = False,
     show_progress: bool = True,
+    generate_figures: bool = True,
 ) -> dict[str, Any]:
     config_path = Path(config_path)
     config = load_analysis_config(config_path)
@@ -353,6 +354,69 @@ def run_analysis(
         metrics_dir / "group_band_subject_mean_summary.csv",
     )
     _write_csv(input_table, metrics_dir / "analyzed_inputs.csv")
+
+    common_payload = {
+        "common_electrodes": common_channels,
+        "n_common_electrodes": len(common_channels),
+        "electrode_union": electrode_union,
+        "n_electrode_union": len(electrode_union),
+        "analysis_electrode_policy": (
+            "Every metric, aggregation, table, and figure uses only electrodes "
+            "present in every analyzed subject."
+        ),
+    }
+    (metrics_dir / "electrode_sets.json").write_text(
+        json.dumps(common_payload, indent=2) + "\n", encoding="utf-8"
+    )
+
+    if not generate_figures:
+        manifest = {
+            "created_utc": datetime.now(timezone.utc).isoformat(),
+            "config_file": str(config_path.resolve()),
+            "analysis_config": config,
+            "software": {
+                "python": platform.python_version(),
+                "ordpy": version("ordpy"),
+                "mne": mne.__version__,
+                "numpy": np.__version__,
+                "pandas": pd.__version__,
+                "matplotlib": matplotlib.__version__,
+                "scipy": scipy.__version__,
+            },
+            "n_subjects": len(expected_subjects),
+            "group_counts": input_table["group"].value_counts().to_dict(),
+            "n_electrode_rows": len(electrode_metrics),
+            "n_band_electrode_rows": len(band_electrode_metrics),
+            "n_band_subject_rows": len(band_subject_means),
+            "n_common_electrodes": len(common_channels),
+            "n_electrode_union": len(electrode_union),
+            "analysis_electrode_policy": (
+                "Only electrodes present in every analyzed subject are loaded for ordinal "
+                "metrics and included in every metric table."
+            ),
+            "figures_generated": False,
+            "figure_policy": (
+                "Figures were intentionally skipped for this parameter-sensitivity input; "
+                "the quantitative-behavioral pipeline generates the inferential figures."
+            ),
+            "tie_handling": (
+                "tie_precision=None: ordinal ranking uses original float64 samples with no "
+                "decimal rounding and no artificial jitter."
+            ),
+            "epoch_pooling": (
+                "Ordinal pattern counts are pooled across accepted epochs; patterns crossing "
+                "epoch boundaries are excluded."
+            ),
+            "band_filtering": (
+                "Each accepted epoch and electrode is independently band-pass filtered with "
+                f"a {filter_order}th-order Butterworth SOS and scipy.signal.sosfiltfilt."
+            ),
+        }
+        (output_dir / "manifest.json").write_text(
+            json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+        )
+        logger.info("Ordinal metrics completed without figures | output=%s", output_dir)
+        return manifest
 
     electrode_order = list(common_channels)
     common_info = next(iter(subject_infos.values())).copy()
@@ -542,19 +606,6 @@ def run_analysis(
             standardized_label,
         )
 
-    common_payload = {
-        "common_electrodes": common_channels,
-        "n_common_electrodes": len(common_channels),
-        "electrode_union": electrode_union,
-        "n_electrode_union": len(electrode_union),
-        "analysis_electrode_policy": (
-            "Every metric, aggregation, table, and figure uses only electrodes "
-            "present in every analyzed subject."
-        ),
-    }
-    (metrics_dir / "electrode_sets.json").write_text(
-        json.dumps(common_payload, indent=2) + "\n", encoding="utf-8"
-    )
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "config_file": str(config_path.resolve()),
@@ -575,6 +626,7 @@ def run_analysis(
         "n_band_subject_rows": len(band_subject_means),
         "n_common_electrodes": len(common_channels),
         "n_electrode_union": len(electrode_union),
+        "figures_generated": True,
         "analysis_electrode_policy": (
             "Only electrodes present in every analyzed subject are loaded for ordinal "
             "metrics and included in any table, aggregation, or figure."

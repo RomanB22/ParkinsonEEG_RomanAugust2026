@@ -21,12 +21,15 @@ import pandas as pd
 import scipy
 
 from .features import (
+    build_dimension_sensitivity_features,
     build_electrode_features,
     build_subject_features,
     subject_feature_matrix,
 )
 from .plots import (
     plot_cohort_audit,
+    plot_dimension_sensitivity_heatmaps,
+    plot_dimension_stability_lines,
     plot_electrode_topomap_pages,
     plot_family_forest,
     plot_family_heatmap,
@@ -75,6 +78,20 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("Only regular ordinal H, C, and F are supported")
     if requested.get("bout_ordinal_metrics") != regular_metrics:
         raise ValueError("Within-bout ordinal features must be regular H, C, and F")
+    sensitivity = config.get("dimension_sensitivity")
+    if not isinstance(sensitivity, dict) or not sensitivity.get("enabled"):
+        raise ValueError("The ordinal embedding-dimension sensitivity must be enabled")
+    if sensitivity.get("embedding_dimensions") != [3, 4, 5, 6]:
+        raise ValueError("Dimension sensitivity must prespecify D=3,4,5,6")
+    if int(sensitivity.get("delay_samples", -1)) != 1:
+        raise ValueError("Dimension sensitivity must use tau=1")
+    if sensitivity.get("metrics") != regular_metrics:
+        raise ValueError("Dimension sensitivity supports only regular ordinal H, C, and F")
+    if (
+        sensitivity.get("fdr_scope")
+        != "across_all_84_dimension_sensitivity_features_per_method"
+    ):
+        raise ValueError("Dimension-sensitivity FDR scope must cover all 84 tests")
     if int(config["expected"]["shared_electrodes"]) < 1:
         raise ValueError("expected.shared_electrodes must be positive")
     if int(config["plots"]["dpi"]) < 50:
@@ -140,7 +157,7 @@ def _validate_upstream_manifests(config: dict[str, Any]) -> dict[str, Any]:
     actual_range = [float(psd["fmin_hz"]), float(psd["fmax_hz"])]
     if actual_range != [float(value) for value in expected["scale_free_psd_range_hz"]]:
         raise ValueError("Scale-free source does not use the expected PSD range")
-    return {
+    provenance = {
         name: {
             "manifest_file": str(path.resolve()),
             "created_utc": manifests[name].get("created_utc"),
@@ -153,6 +170,35 @@ def _validate_upstream_manifests(config: dict[str, Any]) -> dict[str, Any]:
             ("bout_ordinal", bout_ordinal_manifest_path),
         )
     }
+    sensitivity = config["dimension_sensitivity"]
+    sensitivity_root = Path(sensitivity["ordinal_output_root"])
+    sensitivity_delay = int(sensitivity["delay_samples"])
+    for dimension in sensitivity["embedding_dimensions"]:
+        name = f"ordinal_D{int(dimension)}_tau{sensitivity_delay}"
+        path = sensitivity_root / f"D{int(dimension)}_tau{sensitivity_delay}" / "manifest.json"
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Missing dimension-sensitivity manifest: {path}. Run "
+                "bash quantitative_behavioral/prepare_dimension_sensitivity.sh"
+            )
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        settings = manifest["analysis_config"]["ordinal"]
+        if int(settings["embedding_dimension"]) != int(dimension):
+            raise ValueError(f"{name} manifest has the wrong embedding dimension")
+        if int(settings["delay_samples"]) != sensitivity_delay:
+            raise ValueError(f"{name} manifest has the wrong delay")
+        if int(manifest.get("n_common_electrodes", -1)) != int(
+            config["expected"]["shared_electrodes"]
+        ):
+            raise ValueError(f"{name} manifest does not use the shared-electrode set")
+        provenance[name] = {
+            "manifest_file": str(path.resolve()),
+            "created_utc": manifest.get("created_utc"),
+            "n_subjects": manifest.get("n_subjects"),
+            "n_common_electrodes": manifest.get("n_common_electrodes"),
+            "figures_generated": manifest.get("figures_generated", True),
+        }
+    return provenance
 
 
 def _topographic_info(config: dict[str, Any], electrode_order: list[str]) -> Any:
@@ -174,6 +220,7 @@ def _write_report(
     cohort: pd.DataFrame,
     dictionary: pd.DataFrame,
     correlations: pd.DataFrame,
+    dimension_correlations: pd.DataFrame,
     config: dict[str, Any],
 ) -> None:
     settings = config["analysis"]
@@ -215,6 +262,35 @@ def _write_report(
             f"{row['p_value']:.4g} | {row['p_fdr_bh']:.4g} | {bool(row['fdr_reject'])} |"
         )
     lines.extend(["", "Complete machine-readable results are in `metrics/subject_level_correlations.csv`.", ""])
+    dimension_primary = dimension_correlations.loc[
+        dimension_correlations["method"].eq("partial_spearman_age_sex")
+    ]
+    dimension_rejections = int(dimension_primary["fdr_reject"].sum())
+    lines.extend(
+        [
+            "## Embedding-dimension robustness analysis",
+            "",
+            (
+                "Regular ordinal H, C, and F were also tested at D=3, 4, 5, and 6 "
+                "with tau=1 for broadband and all six ordinal bands. D=6 remains the "
+                "prespecified primary analysis; the four-dimension comparison is a "
+                "sensitivity analysis."
+            ),
+            (
+                "To prevent significance-by-parameter-search, BH-FDR is controlled across "
+                "all 84 dimension-sensitivity features within each correlation method."
+            ),
+            f"Adjusted FDR rejections in this sensitivity family: {dimension_rejections} of 84.",
+            "",
+            (
+                "Use `fdr_reject == True` and `p_fdr_bh < 0.05` in "
+                "`metrics/dimension_sensitivity_correlations.csv` for corrected statistical "
+                "significance. Similar effect direction and magnitude across dimensions adds "
+                "robustness, but is not a separate significance test."
+            ),
+            "",
+        ]
+    )
     path.write_text("\n".join(lines), encoding="utf-8")
 
 
@@ -262,6 +338,20 @@ def run_analysis(
         electrode_features, dictionary, config
     )
     wide = subject_feature_matrix(cohort, subject_features)
+    logger.info("Building D=3,4,5,6 ordinal sensitivity features at tau=1")
+    (
+        dimension_features,
+        dimension_dictionary,
+        dimension_electrode_features,
+        dimension_electrode_order,
+    ) = build_dimension_sensitivity_features(config, cohort)
+    dimension_correlations = correlate_subject_features(
+        dimension_features, dimension_dictionary, config
+    )
+    dimension_electrode_correlations = correlate_electrodes(
+        dimension_electrode_features, dimension_dictionary, config
+    )
+    dimension_wide = subject_feature_matrix(cohort, dimension_features)
 
     metrics_dir = output_dir / "metrics"
     _write_csv(cohort, metrics_dir / "moca_cohort.csv")
@@ -269,7 +359,41 @@ def run_analysis(
     _write_csv(subject_features, metrics_dir / "subject_features_long.csv")
     _write_csv(wide, metrics_dir / "analysis_dataset.csv")
     _write_csv(subject_correlations, metrics_dir / "subject_level_correlations.csv")
+    _write_csv(
+        subject_correlations.loc[
+            subject_correlations["method"].eq("partial_spearman_age_sex")
+            & subject_correlations["fdr_reject"]
+        ],
+        metrics_dir / "significant_primary_correlations.csv",
+    )
     _write_csv(electrode_correlations, metrics_dir / "electrode_correlations.csv")
+    _write_csv(
+        dimension_dictionary,
+        metrics_dir / "dimension_sensitivity_feature_dictionary.csv",
+    )
+    _write_csv(
+        dimension_features,
+        metrics_dir / "dimension_sensitivity_subject_features_long.csv",
+    )
+    _write_csv(
+        dimension_wide,
+        metrics_dir / "dimension_sensitivity_analysis_dataset.csv",
+    )
+    _write_csv(
+        dimension_correlations,
+        metrics_dir / "dimension_sensitivity_correlations.csv",
+    )
+    _write_csv(
+        dimension_correlations.loc[
+            dimension_correlations["method"].eq("partial_spearman_age_sex")
+            & dimension_correlations["fdr_reject"]
+        ],
+        metrics_dir / "dimension_sensitivity_significant_correlations.csv",
+    )
+    _write_csv(
+        dimension_electrode_correlations,
+        metrics_dir / "dimension_sensitivity_electrode_correlations.csv",
+    )
     feature_columns = dictionary["feature_id"].tolist()
     spearman_matrix = wide.loc[wide["group"].eq(primary_group), feature_columns].corr(
         method="spearman"
@@ -318,8 +442,59 @@ def run_analysis(
         figures_dir / "topomaps",
         dpi,
     )
+    sensitivity_figures = figures_dir / "dimension_sensitivity"
+    plot_dimension_sensitivity_heatmaps(
+        dimension_correlations,
+        sensitivity_figures / "adjusted_correlation_heatmaps.png",
+        dpi,
+    )
+    plot_dimension_stability_lines(
+        dimension_correlations,
+        sensitivity_figures / "adjusted_effect_stability.png",
+        dpi,
+    )
+    for dimension in config["dimension_sensitivity"]["embedding_dimensions"]:
+        selected_dictionary = dimension_dictionary.loc[
+            dimension_dictionary["embedding_dimension"].eq(int(dimension))
+        ]
+        feature_ids = set(selected_dictionary["feature_id"])
+        selected_correlations = dimension_correlations.loc[
+            dimension_correlations["feature_id"].isin(feature_ids)
+        ]
+        selected_features = dimension_features.loc[
+            dimension_features["feature_id"].isin(feature_ids)
+        ]
+        plot_family_forest(
+            selected_correlations,
+            "ordinal_dimension_sensitivity",
+            sensitivity_figures / f"D{dimension}_forest.png",
+            dpi,
+        )
+        plot_family_scatter_grid(
+            selected_features,
+            selected_correlations,
+            selected_dictionary,
+            "ordinal_dimension_sensitivity",
+            primary_group,
+            sensitivity_figures / f"D{dimension}_moca_scatter_grid.png",
+            dpi,
+        )
+    dimension_info = _topographic_info(config, dimension_electrode_order)
+    plot_electrode_topomap_pages(
+        dimension_electrode_correlations,
+        dimension_dictionary,
+        dimension_electrode_order,
+        dimension_info,
+        sensitivity_figures / "topomaps",
+        dpi,
+    )
     _write_report(
-        output_dir / "REPORT.md", cohort, dictionary, subject_correlations, config
+        output_dir / "REPORT.md",
+        cohort,
+        dictionary,
+        subject_correlations,
+        dimension_correlations,
+        config,
     )
 
     primary_results = subject_correlations.loc[
@@ -349,6 +524,20 @@ def run_analysis(
         "n_subject_level_tests_per_method": len(dictionary),
         "n_primary_fdr_rejections": int(primary_results["fdr_reject"].sum()),
         "n_electrode_tests": len(electrode_correlations),
+        "dimension_sensitivity": {
+            "embedding_dimensions": config["dimension_sensitivity"]["embedding_dimensions"],
+            "delay_samples": config["dimension_sensitivity"]["delay_samples"],
+            "n_features": len(dimension_dictionary),
+            "n_subject_level_tests_per_method": len(dimension_dictionary),
+            "fdr_scope": config["dimension_sensitivity"]["fdr_scope"],
+            "n_primary_fdr_rejections": int(
+                dimension_correlations.loc[
+                    dimension_correlations["method"].eq("partial_spearman_age_sex"),
+                    "fdr_reject",
+                ].sum()
+            ),
+            "n_electrode_tests": len(dimension_electrode_correlations),
+        },
         "interpretation": (
             "Cross-sectional PD cognition associations only; not longitudinal progression, "
             "causal inference, or validated prediction."
@@ -368,4 +557,3 @@ def run_analysis(
         manifest["n_primary_fdr_rejections"],
     )
     return manifest
-
