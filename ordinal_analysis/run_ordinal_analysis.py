@@ -32,11 +32,17 @@ def main() -> None:
         action="store_true",
         help="Replace existing ordinal-analysis result files",
     )
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable the subject/analysis-stage progress bar",
+    )
     args = parser.parse_args()
     manifest = run_analysis(
         args.config,
         subjects=args.subjects,
         overwrite=args.overwrite,
+        show_progress=not args.no_progress,
     )
     print(
         f"Completed ordinal analysis for {manifest['n_subjects']} subjects; "

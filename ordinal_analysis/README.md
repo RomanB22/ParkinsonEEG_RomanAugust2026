@@ -81,10 +81,10 @@ file's Nyquist frequency when filtering begins.
 
 ## Run
 
-From the repository root, install the pinned dependency if needed:
+From the repository root, create or update the complete project environment:
 
 ```bash
-conda run -n MNE_Roman python -m pip install -r ordinal_analysis/requirements.txt
+bash scripts/create_conda_environment.sh
 ```
 
 Run all participants:
@@ -92,6 +92,12 @@ Run all participants:
 ```bash
 bash ordinal_analysis/run_ordinal_analysis.sh --overwrite
 ```
+
+The terminal displays a `tqdm` progress bar covering every subject/analysis
+stage and identifies the current subject and stage (loading, broadband, or band
+name). Detailed subject/band progress is also retained in
+`ordinal_analysis.log`. Use `--no-progress` to suppress the terminal bar in
+non-interactive jobs.
 
 For a quick selected-subject run:
 

@@ -27,7 +27,15 @@ The complete inspection is in
 From the project root:
 
 ```bash
-conda run -n MNE_Roman python -m pip install -r requirements-icalabel.txt
+bash scripts/create_conda_environment.sh --run-tests
+```
+
+The setup script creates `MNE_Roman` with Python 3.14 and installs the complete
+pinned stack from [`requirements.txt`](requirements.txt). If the environment
+already exists, it is retained and updated. The equivalent manual validation
+commands are:
+
+```bash
 conda run -n MNE_Roman python scripts/inspect_dataset.py
 conda run -n MNE_Roman python -m unittest discover -s tests -v
 ```

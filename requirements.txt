@@ -1,0 +1,9 @@
+# Core scientific stack validated by the preprocessing, PSD, and ordinal runs.
+mne==1.12.1
+numpy==2.5.2
+pandas==3.0.5
+matplotlib==3.11.1
+
+# Workflow-specific dependencies.
+-r requirements-icalabel.txt
+-r ordinal_analysis/requirements.txt

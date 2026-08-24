@@ -20,6 +20,7 @@ import mne
 import numpy as np
 import pandas as pd
 import scipy
+from tqdm.auto import tqdm
 
 from .metrics import (
     METRICS,
@@ -130,11 +131,16 @@ def _configure_logger(output_dir: Path, overwrite: bool) -> logging.Logger:
     mode = "w" if overwrite else "a"
     logger = logging.getLogger("ordinal_analysis")
     logger.handlers.clear()
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-    for handler in (logging.StreamHandler(), logging.FileHandler(log_path, mode=mode)):
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+    file_handler = logging.FileHandler(log_path, mode=mode)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
     return logger
 
 
@@ -182,6 +188,7 @@ def run_analysis(
     *,
     subjects: list[str] | None = None,
     overwrite: bool = False,
+    show_progress: bool = True,
 ) -> dict[str, Any]:
     config_path = Path(config_path)
     config = load_analysis_config(config_path)
@@ -233,9 +240,17 @@ def run_analysis(
     band_metric_tables = []
     subject_infos: dict[str, mne.Info] = {}
     input_rows = []
+    analysis_progress = tqdm(
+        total=len(expected_subjects) * (1 + len(bands)),
+        desc=f"Ordinal metrics (d={dx})",
+        unit="stage",
+        dynamic_ncols=True,
+        disable=not show_progress,
+    )
     for index, subject_id in enumerate(expected_subjects, start=1):
         path = files[subject_id]
-        logger.info("[%d/%d] %s | %s", index, len(expected_subjects), subject_id, path)
+        analysis_progress.set_postfix_str(f"{subject_id} | loading", refresh=True)
+        logger.debug("[%d/%d] %s | %s", index, len(expected_subjects), subject_id, path)
         epochs = mne.read_epochs(path, preload=True, verbose="ERROR")
         picks = mne.pick_types(epochs.info, eeg=True, exclude=[])
         if not len(picks):
@@ -245,6 +260,7 @@ def run_analysis(
         info = mne.pick_info(epochs.info, picks, copy=True)
         info["bads"] = []
         subject_infos[subject_id] = info
+        analysis_progress.set_postfix_str(f"{subject_id} | broadband", refresh=True)
         subject_metrics = analyze_epoch_data(
             data,
             channel_names,
@@ -256,9 +272,11 @@ def run_analysis(
             tie_precision=tie_precision,
         )
         metric_tables.append(subject_metrics)
+        analysis_progress.update()
         sfreq = float(epochs.info["sfreq"])
         for band, (low_hz, high_hz) in bands.items():
-            logger.info(
+            analysis_progress.set_postfix_str(f"{subject_id} | {band}", refresh=True)
+            logger.debug(
                 "[%d/%d] %s | band=%s | %.3g-%.3g Hz",
                 index,
                 len(expected_subjects),
@@ -291,6 +309,7 @@ def run_analysis(
             band_metrics["band_filter_order"] = filter_order
             band_metrics["band_filter_phase"] = "zero_phase"
             band_metric_tables.append(band_metrics)
+            analysis_progress.update()
         input_rows.append(
             {
                 "subject_id": subject_id,
@@ -301,6 +320,7 @@ def run_analysis(
                 "sampling_frequency_hz": float(epochs.info["sfreq"]),
             }
         )
+    analysis_progress.close()
 
     electrode_metrics = pd.concat(metric_tables, ignore_index=True)
     band_electrode_metrics = pd.concat(band_metric_tables, ignore_index=True)
