@@ -5,6 +5,13 @@ from .metrics import (
     compute_subject_electrode_psd,
     integrate_bands,
     relative_band_powers,
+    summarize_subject_band_power,
 )
 
-__all__ = ["bootstrap_median_ci", "compute_subject_electrode_psd", "integrate_bands"]
+__all__ = [
+    "bootstrap_median_ci",
+    "compute_subject_electrode_psd",
+    "integrate_bands",
+    "relative_band_powers",
+    "summarize_subject_band_power",
+]

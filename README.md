@@ -202,6 +202,8 @@ subject-balanced median Welch spectra, pointwise 95% bootstrap confidence bands
 for PD and Control, and group median relative-power topographies normalized to
 each subject/electrode's total 1–50 Hz power for delta,
 theta, alpha, beta, 30–50 Hz low gamma, and an additional broad 5–15 Hz band.
+It also plots subject-level PD-versus-Control relative-power violins for every
+band after taking each subject's median across shared electrodes.
 
 ```bash
 bash psd_analysis/run_psd_analysis.sh --overwrite

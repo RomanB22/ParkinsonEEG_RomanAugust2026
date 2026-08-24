@@ -26,9 +26,14 @@ from .metrics import (
     compute_subject_electrode_psd,
     integrate_bands,
     relative_band_powers,
+    summarize_subject_band_power,
     to_db,
 )
-from .plots import plot_group_band_topomaps, plot_group_median_psd
+from .plots import (
+    plot_group_band_topomaps,
+    plot_group_median_psd,
+    plot_group_relative_band_power_violins,
+)
 
 
 SUBJECT_PATTERN = re.compile(r"(sub-\d+)")
@@ -282,6 +287,7 @@ def run_analysis(
                     }
                 )
     subject_band_table = pd.DataFrame.from_records(subject_band_rows)
+    subject_band_summary = summarize_subject_band_power(subject_band_table)
     group_band_rows = []
     for (group, electrode, band), selected in subject_band_table.groupby(
         ["group", "electrode", "band"], sort=True
@@ -326,6 +332,7 @@ def run_analysis(
     _write_csv(subject_global_table, metrics_dir / "subject_global_psd.csv")
     _write_csv(group_psd_table, metrics_dir / "group_median_psd.csv")
     _write_csv(subject_band_table, metrics_dir / "subject_electrode_band_power.csv")
+    _write_csv(subject_band_summary, metrics_dir / "subject_band_power.csv")
     _write_csv(group_band_table, metrics_dir / "group_electrode_band_power.csv")
     np.savez_compressed(
         metrics_dir / "subject_electrode_psd.npz",
@@ -358,6 +365,16 @@ def run_analysis(
         f"{limits[0]:g}–{limits[1]:g} Hz"
         for band, limits in bands.items()
     }
+    logger.info("Creating subject-level relative-band-power violin figure")
+    plot_group_relative_band_power_violins(
+        subject_band_summary,
+        list(bands),
+        band_labels,
+        group_order,
+        colors,
+        output_dir / "figures" / "group_relative_band_power_violins.png",
+        dpi,
+    )
     logger.info("Creating group relative-band-power topomaps")
     topomap_limits = plot_group_band_topomaps(
         group_band_table,
@@ -422,6 +439,11 @@ def run_analysis(
             f"relative power as a percentage on the same {len(common_channels)} shared "
             "electrodes. Absolute band and "
             "total powers remain in the subject-level table."
+        ),
+        "violin_plot": (
+            "Each violin contains one value per subject and band: the median relative "
+            f"power across the {len(common_channels)} electrodes shared by every analyzed "
+            "subject. Electrode rows are never treated as independent group observations."
         ),
         "topomap_relative_power_percent_limits": {
             band: [float(value) for value in limits] for band, limits in topomap_limits.items()

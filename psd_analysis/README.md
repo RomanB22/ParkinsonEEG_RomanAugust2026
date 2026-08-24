@@ -66,6 +66,11 @@ maps are directly comparable. For each band, both groups use the same color
 limits. The CSV tables retain absolute band power alongside total and relative
 power.
 
+The violin figure first takes the median across the common electrodes for each
+subject and band. Each violin therefore contains one independent observation
+per subject, with the individual subject values shown as points. PD and Control
+are displayed side by side for every configured frequency band.
+
 ## Run
 
 From the repository root:
@@ -99,11 +104,13 @@ psd_analysis/processed/
 │   ├── subject_global_psd.csv
 │   ├── group_median_psd.csv
 │   ├── subject_electrode_band_power.csv
+│   ├── subject_band_power.csv
 │   ├── group_electrode_band_power.csv
 │   └── electrode_sets.json
 └── figures/
     ├── group_median_psd_with_ci.png
-    └── group_median_band_power_topomaps.png
+    ├── group_median_band_power_topomaps.png
+    └── group_relative_band_power_violins.png
 ```
 
 `subject_electrode_psd.npz` is the compact lossless spectral array. It contains

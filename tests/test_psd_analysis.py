@@ -1,6 +1,7 @@
 import unittest
 
 import numpy as np
+import pandas as pd
 from scipy.signal import welch
 
 from psd_analysis.metrics import (
@@ -8,6 +9,7 @@ from psd_analysis.metrics import (
     compute_subject_electrode_psd,
     integrate_bands,
     relative_band_powers,
+    summarize_subject_band_power,
 )
 from psd_analysis.pipeline import load_psd_config
 
@@ -86,6 +88,27 @@ class PsdAnalysisTests(unittest.TestCase):
         np.testing.assert_array_equal(first[0], np.median(values, axis=0))
         self.assertTrue(np.all(first[1] <= first[0]))
         self.assertTrue(np.all(first[0] <= first[2]))
+
+    def test_subject_band_summary_uses_one_electrode_median_per_subject(self):
+        table = pd.DataFrame(
+            {
+                "subject_id": ["sub-001"] * 3 + ["sub-101"] * 3,
+                "group": ["PD"] * 3 + ["Control"] * 3,
+                "electrode": ["Fz", "Cz", "Pz"] * 2,
+                "band": ["alpha"] * 6,
+                "band_low_hz": [8.0] * 6,
+                "band_high_hz": [13.0] * 6,
+                "relative_band_power": [0.10, 0.20, 0.90, 0.30, 0.40, 0.50],
+            }
+        )
+        summary = summarize_subject_band_power(table)
+        self.assertEqual(len(summary), 2)
+        self.assertTrue((summary["n_electrodes"] == 3).all())
+        pd_value = summary.loc[
+            summary["subject_id"].eq("sub-001"),
+            "median_relative_band_power_percent",
+        ].item()
+        self.assertAlmostEqual(pd_value, 20.0)
 
     def test_default_config_has_expected_bands_and_bootstrap(self):
         config = load_psd_config("psd_analysis/config.json")

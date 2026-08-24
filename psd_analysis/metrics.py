@@ -123,6 +123,43 @@ def relative_band_powers(
     return relative, total_power
 
 
+def summarize_subject_band_power(table: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate electrode-relative power to one median value per subject/band.
+
+    This subject-level table is suitable for group distribution plots because
+    every participant contributes exactly one observation to each band.
+    """
+    required = {
+        "subject_id",
+        "group",
+        "electrode",
+        "band",
+        "band_low_hz",
+        "band_high_hz",
+        "relative_band_power",
+    }
+    missing = sorted(required - set(table.columns))
+    if missing:
+        raise ValueError(f"Band-power table is missing columns: {missing}")
+    if table.duplicated(["subject_id", "electrode", "band"]).any():
+        raise ValueError("Band-power table has duplicate subject/electrode/band rows")
+    if (table.groupby("subject_id")["group"].nunique() > 1).any():
+        raise ValueError("Each subject must have exactly one group label")
+
+    keys = ["subject_id", "group", "band", "band_low_hz", "band_high_hz"]
+    summary = (
+        table.groupby(keys, sort=False, as_index=False)
+        .agg(
+            n_electrodes=("electrode", "nunique"),
+            median_relative_band_power=("relative_band_power", "median"),
+        )
+    )
+    summary["median_relative_band_power_percent"] = (
+        100.0 * summary["median_relative_band_power"]
+    )
+    return summary
+
+
 def bootstrap_median_ci(
     values: np.ndarray,
     *,

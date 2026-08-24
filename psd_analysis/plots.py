@@ -51,6 +51,96 @@ def plot_group_median_psd(
     _save(fig, path, dpi)
 
 
+def plot_group_relative_band_power_violins(
+    subject_band_table: pd.DataFrame,
+    band_order: list[str],
+    band_labels: dict[str, str],
+    group_order: list[str],
+    colors: dict[str, str],
+    path: Path,
+    dpi: int,
+) -> None:
+    """Plot one subject-level relative-power distribution per group and band."""
+    n_columns = min(3, len(band_order))
+    n_rows = int(np.ceil(len(band_order) / n_columns))
+    fig, axes = plt.subplots(
+        n_rows,
+        n_columns,
+        figsize=(4.3 * n_columns, 4.0 * n_rows),
+        squeeze=False,
+    )
+    jitter_rng = np.random.default_rng(0)
+    for axis, band in zip(axes.flat, band_order):
+        for group_index, group in enumerate(group_order):
+            values = subject_band_table.loc[
+                subject_band_table["group"].eq(group)
+                & subject_band_table["band"].eq(band),
+                "median_relative_band_power_percent",
+            ].dropna().to_numpy(dtype=float)
+            if not len(values):
+                continue
+            position = float(group_index + 1)
+            if len(values) >= 2 and not np.allclose(values, values[0]):
+                violin = axis.violinplot(
+                    [values],
+                    positions=[position],
+                    widths=0.72,
+                    showmeans=False,
+                    showmedians=True,
+                    showextrema=False,
+                )
+                body = violin["bodies"][0]
+                body.set_facecolor(colors[group])
+                body.set_edgecolor(colors[group])
+                body.set_alpha(0.35)
+                violin["cmedians"].set_color("black")
+                violin["cmedians"].set_linewidth(1.5)
+            else:
+                axis.hlines(
+                    float(np.median(values)),
+                    position - 0.18,
+                    position + 0.18,
+                    color="black",
+                    linewidth=1.5,
+                )
+            jitter = jitter_rng.uniform(-0.06, 0.06, len(values))
+            axis.scatter(
+                position + jitter,
+                values,
+                s=18,
+                color=colors[group],
+                edgecolor="white",
+                linewidth=0.35,
+                alpha=0.8,
+                zorder=3,
+            )
+        counts = [
+            subject_band_table.loc[
+                subject_band_table["group"].eq(group)
+                & subject_band_table["band"].eq(band),
+                "subject_id",
+            ].nunique()
+            for group in group_order
+        ]
+        axis.set_xticks(
+            np.arange(1, len(group_order) + 1),
+            [f"{group}\nn={count}" for group, count in zip(group_order, counts)],
+        )
+        axis.set(
+            ylabel="Relative power (% of total 1–50 Hz power)",
+            title=band_labels[band].replace("\n", " — "),
+        )
+        axis.grid(axis="y", alpha=0.2)
+    for axis in axes.flat[len(band_order) :]:
+        axis.set_visible(False)
+    fig.suptitle(
+        "Subject-level relative band power — PD vs Control",
+        fontsize=14,
+    )
+    fig.tight_layout()
+    _save(fig, path, dpi)
+
+
 def plot_group_band_topomaps(
     group_band_table: pd.DataFrame,
     info: Any,
