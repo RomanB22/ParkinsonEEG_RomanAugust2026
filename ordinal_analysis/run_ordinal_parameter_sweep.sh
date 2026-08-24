@@ -11,8 +11,8 @@ BASE_CONFIG="${ORDINAL_BASE_CONFIG:-ordinal_analysis/config.json}"
 OUTPUT_ROOT="${ORDINAL_SWEEP_OUTPUT_ROOT:-ordinal_analysis/parameter_sweep}"
 CONDA_ENV="${ORDINAL_CONDA_ENV:-MNE_Roman}"
 
-embedding_dimensions=(4 5 6 7)
-delays=(1 2 5 10 15 20)
+embedding_dimensions=(4 6 7)
+delays=(1 5 10)
 total_runs=$(( ${#embedding_dimensions[@]} * ${#delays[@]} ))
 run_number=0
 overwrite=false
@@ -23,7 +23,7 @@ for argument in "$@"; do
             cat <<'EOF'
 Usage: bash ordinal_analysis/run_ordinal_parameter_sweep.sh [ANALYSIS_OPTIONS]
 
-Run all 24 combinations of D={4,5,6,7} and tau={1,2,5,10,15,20}.
+Run all 9 combinations of D={4,6,7} and tau={1,5,10}.
 ANALYSIS_OPTIONS are forwarded to run_ordinal_analysis.sh; for example:
   --subjects sub-001 sub-101
   --overwrite

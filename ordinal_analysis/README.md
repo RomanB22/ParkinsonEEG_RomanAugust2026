@@ -125,8 +125,8 @@ The runner refuses to replace an existing electrode-metrics table unless
 `--overwrite` is supplied. A custom configuration can be selected with
 `--config PATH`.
 
-To run the complete 24-combination parameter sweep for embedding dimensions
-`D = 4, 5, 6, 7` and delays `tau = 1, 2, 5, 10, 15, 20`:
+To run the complete 9-combination parameter sweep for embedding dimensions
+`D = 4, 6, 7` and delays `tau = 1, 5, 10`:
 
 ```bash
 bash ordinal_analysis/run_ordinal_parameter_sweep.sh --overwrite
