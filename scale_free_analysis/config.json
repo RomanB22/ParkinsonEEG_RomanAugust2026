@@ -1,0 +1,55 @@
+{
+  "input": {
+    "epochs_dir": "processed/epochs",
+    "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif",
+    "participants_file": "processed/metadata/subjects.csv"
+  },
+  "output_dir": "scale_free_analysis/processed",
+  "bands": {
+    "theta": [4.0, 7.0],
+    "alpha": [8.0, 13.0],
+    "low_beta": [13.0, 20.0],
+    "high_beta": [20.0, 30.0]
+  },
+  "psd": {
+    "fmin_hz": 1.0,
+    "fmax_hz": 40.0,
+    "window": "hann",
+    "epoch_combination": "concatenate_in_temporal_order",
+    "welch_aggregation": "mean"
+  },
+  "specparam": {
+    "aperiodic_mode": "fixed",
+    "frequency_range_hz": [1.0, 40.0],
+    "peak_width_limits_hz": [0.5, 12.0],
+    "max_n_peaks": 8,
+    "min_peak_height": 0.0,
+    "peak_threshold": 2.0
+  },
+  "ebosc": {
+    "frequency_min_hz": 4.0,
+    "frequency_max_hz": 30.0,
+    "frequency_step_hz": 1.0,
+    "wavenumber": 6.0,
+    "power_percentile": 0.95,
+    "minimum_cycles": 3.0,
+    "edge_padding_seconds": 0.75
+  },
+  "bycycle": {
+    "minimum_bout_overlap_fraction": 0.5
+  },
+  "statistics": {
+    "fdr_alpha": 0.05
+  },
+  "plots": {
+    "dpi": 150,
+    "group_order": ["PD", "Control"],
+    "group_colors": {"PD": "#D55E00", "Control": "#0072B2"},
+    "band_display_names": {
+      "theta": "Theta",
+      "alpha": "Alpha",
+      "low_beta": "Low beta",
+      "high_beta": "High beta"
+    }
+  }
+}

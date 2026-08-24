@@ -7,3 +7,4 @@ matplotlib==3.11.1
 # Workflow-specific dependencies.
 -r requirements-icalabel.txt
 -r ordinal_analysis/requirements.txt
+-r scale_free_analysis/requirements.txt

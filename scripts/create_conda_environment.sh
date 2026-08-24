@@ -99,7 +99,11 @@ import numpy
 import ordpy
 import pandas
 import scipy
+import specparam
 import tqdm
+import bycycle
+import ebosc
+import neurodsp
 
 packages = (
     "mne",
@@ -111,6 +115,10 @@ packages = (
     "onnxruntime",
     "ordpy",
     "tqdm",
+    "specparam",
+    "bycycle",
+    "ebosc",
+    "neurodsp",
 )
 for package in packages:
     print(f"{package}=={version(package)}")

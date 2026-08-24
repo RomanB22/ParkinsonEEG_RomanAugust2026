@@ -2,8 +2,8 @@
 
 This repository contains a readable, conservative MNE pipeline for the 149
 eyes-open resting EEG recordings described in [Prompt.md](Prompt.md). It cleans
-continuous EEG and creates 4-second epochs; it intentionally does **not** run
-periodic/aperiodic (`specparam`) analysis yet.
+continuous EEG, creates 4-second epochs, and provides independent downstream
+PSD, ordinal, and oscillatory-bout analyses.
 
 The original files under `dataset/` are read-only inputs. Complex-pipeline
 outputs are placed under `processed/`; minimal-pipeline outputs are isolated
@@ -205,6 +205,19 @@ theta, alpha, beta, 30–50 Hz low gamma, and an additional broad 5–15 Hz band
 
 ```bash
 bash psd_analysis/run_psd_analysis.sh --overwrite
+```
+
+## Spectral parameterization and oscillatory bouts
+
+The standalone workflow in
+[`scale_free_analysis/`](scale_free_analysis/README.md) implements
+[`ScaleFree.md`](ScaleFree.md). It combines `specparam` periodic/aperiodic
+decomposition, aperiodic-relative eBOSC bout detection, bycycle waveform
+features, subject-balanced PD/Control comparisons, saved intermediate results,
+and example/group/topographic figures.
+
+```bash
+bash scale_free_analysis/run_scale_free_analysis.sh --overwrite
 ```
 
 ## 60 Hz notch decision
