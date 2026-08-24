@@ -14,8 +14,8 @@ and uses `ordpy` 1.2.2 to calculate:
 - normalized permutation entropy, **H**;
 - Jensen-Shannon statistical complexity, **C**;
 - discrete Fisher information, **F**;
-- normalized Rényi permutation entropy, **Hα**, for `α = 0.9, 1.1, 2`;
-- Rényi statistical complexity, **Cα**, for `α = 0.9, 1.1, 2`.
+- normalized Rényi permutation entropy, **Hα**, for `α = 0.5, 0.9, 1.1, 2, 5`;
+- Rényi statistical complexity, **Cα**, for `α = 0.5, 0.9, 1.1, 2, 5`.
 
 Both Rényi quantities come from one vectorized call to
 `ordpy.renyi_complexity_entropy` for each pooled ordinal distribution. The
@@ -76,7 +76,7 @@ pattern. Vectorized NumPy ordering implements the same ordinal symbolization as
 `ordpy.complexity_entropy(..., probs=True)` and
 `ordpy.fisher_shannon(..., probs=True)` receive the resulting pooled
 probability distribution in lexicographic permutation order, as does
-`ordpy.renyi_complexity_entropy(..., alpha=[0.9, 1.1, 2], probs=True)`.
+`ordpy.renyi_complexity_entropy(..., alpha=[0.5, 0.9, 1.1, 2, 5], probs=True)`.
 
 ## Band filtering
 
@@ -198,6 +198,8 @@ policy. The Rényi columns are:
 renyi_entropy_alpha_0_9       renyi_complexity_alpha_0_9
 renyi_entropy_alpha_1_1       renyi_complexity_alpha_1_1
 renyi_entropy_alpha_2         renyi_complexity_alpha_2
+renyi_entropy_alpha_0_5       renyi_complexity_alpha_0_5
+renyi_entropy_alpha_5         renyi_complexity_alpha_5
 ```
 
 Floating-point results are written with 17 significant digits.

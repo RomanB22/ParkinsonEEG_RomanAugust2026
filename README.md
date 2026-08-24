@@ -258,13 +258,33 @@ correlations adjusted for age and sex, deterministic bootstrap intervals,
 prespecified family-specific FDR correction, raw-data scatter grids, forest
 plots, sensitivity heatmaps, and secondary spatial maps. Separate D=3,4,5,6
 (tau=1) ordinal blocks include regular H/C/F and Rényi entropy/complexity at
-alpha=0.9, 1.1, and 2. Each D has its own feature matrix and within-D FDR
+alpha=0.5, 0.9, 1.1, 2, and 5. Each D has its own feature matrix and within-D FDR
 correction; D=6 is primary and D=3–5 are sensitivity blocks.
+The exact age/sex-adjusted partial Spearman method is documented in
+[`quantitative_behavioral/METHODS.md`](quantitative_behavioral/METHODS.md).
 
 ```bash
 bash quantitative_behavioral/prepare_dimension_sensitivity.sh
 bash quantitative_behavioral/run_quantitative_behavioral.sh --overwrite
 ```
+
+## Combined post-cleaning analysis runner
+
+[`run_all_analyses.sh`](run_all_analyses.sh) combines all post-cleaning
+analyses in dependency order: PSD, primary ordinal quantities, the D/tau
+sweep, scale-free bout properties, within-bout ordinal quantities,
+PD-versus-Control exploration models, D-specific MOCA inputs, and the final
+quantitative-behavioral analysis. It resumes from valid completed outputs by
+default and detects ordinal tables missing the configured Rényi alpha columns.
+
+```bash
+bash run_all_analyses.sh
+```
+
+Useful controls include `--overwrite`, `--dry-run`, `--no-progress`,
+`--skip-sweep`, and `--skip-exploration`. Cleaning is deliberately not invoked:
+manual ICA confirmation remains an explicit prerequisite through
+`scripts/run_full_cleaning.sh`.
 
 ## 60 Hz notch decision
 

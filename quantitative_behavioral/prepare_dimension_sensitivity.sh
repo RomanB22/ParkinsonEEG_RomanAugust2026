@@ -11,6 +11,28 @@ OUTPUT_ROOT="${ORDINAL_SWEEP_OUTPUT_ROOT:-ordinal_analysis/parameter_sweep}"
 CONDA_ENV="${ORDINAL_CONDA_ENV:-MNE_Roman}"
 dimensions=(3 4 5 6)
 delay=1
+overwrite=false
+
+for argument in "$@"; do
+    case "$argument" in
+        --overwrite)
+            overwrite=true
+            ;;
+        -h|--help)
+            cat <<'EOF'
+Usage: bash quantitative_behavioral/prepare_dimension_sensitivity.sh [--overwrite]
+
+Prepare metric-only D=3,4,5,6, tau=1 ordinal inputs. Existing tables are
+reused only when they include every configured Rényi alpha column.
+EOF
+            exit 0
+            ;;
+        *)
+            printf 'Unknown option: %s\n' "$argument" >&2
+            exit 2
+            ;;
+    esac
+done
 
 if [[ ! -f "$BASE_CONFIG" ]]; then
     printf 'Base ordinal configuration not found: %s\n' "$BASE_CONFIG" >&2
@@ -29,12 +51,42 @@ for dimension in "${dimensions[@]}"; do
         "${output_dir}/metrics/electrode_sets.json"
     )
     complete=true
+    if [[ "$overwrite" == true ]]; then
+        complete=false
+    fi
     for required_path in "${required_tables[@]}" "$manifest_path"; do
+        if [[ "$overwrite" == true ]]; then
+            break
+        fi
         if [[ ! -f "$required_path" ]]; then
             complete=false
             break
         fi
     done
+
+    if [[ "$complete" == true ]]; then
+        if ! python3 -c '
+import csv
+import sys
+
+required = {
+    "renyi_entropy_alpha_0_5",
+    "renyi_complexity_alpha_0_5",
+    "renyi_entropy_alpha_5",
+    "renyi_complexity_alpha_5",
+}
+for filename in sys.argv[1:]:
+    with open(filename, newline="", encoding="utf-8") as stream:
+        columns = set(next(csv.reader(stream)))
+    missing = sorted(required - columns)
+    if missing:
+        print(f"{filename} is missing new Rényi columns: {missing}", file=sys.stderr)
+        raise SystemExit(1)
+' "${required_tables[0]}" "${required_tables[1]}" \
+            "${required_tables[2]}" "${required_tables[3]}"; then
+            complete=false
+        fi
+    fi
 
     if [[ "$complete" == true ]]; then
         printf 'Reusing complete D=%d, tau=%d metrics: %s\n' \

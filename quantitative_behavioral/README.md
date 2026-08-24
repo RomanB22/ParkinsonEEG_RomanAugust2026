@@ -4,6 +4,10 @@ This pipeline relates Montreal Cognitive Assessment (**MOCA**) scores to
 subject-level EEG quantities from the ordinal, scale-free bout, and within-bout
 ordinal workflows.
 
+The complete statistical specification, including the age/sex-adjusted partial
+Spearman calculation, p-values, bootstrap intervals, and FDR scopes, is in
+[`METHODS.md`](METHODS.md).
+
 Although the folder addresses Parkinson disease progression scientifically,
 the available dataset has one recording and one MOCA score per participant.
 The implemented analysis is therefore **cross-sectional**: it can identify
@@ -51,15 +55,15 @@ correlation is calculated.
 
 The broadband and band-resolved ordinal quantities are analyzed at **D=3, 4,
 5, and 6**, always with **tau=1**. Each D contains regular H/C/F plus Rényi
-entropy and complexity at **alpha=0.9, 1.1, and 2**. The Rényi values come from
+entropy and complexity at **alpha=0.5, 0.9, 1.1, 2, and 5**. The Rényi values come from
 `ordpy.renyi_complexity_entropy`; no separate `renyi_entropy` calculation is
 used.
 
-Each D is a separate 63-feature analysis block: seven signal scopes
-(broadband plus six bands) × nine quantities. The pipeline writes a distinct
+Each D is a separate 91-feature analysis block: seven signal scopes
+(broadband plus six bands) × thirteen quantities. The pipeline writes a distinct
 one-row-per-subject matrix for each D and never concatenates the four D blocks
 into one model feature vector. BH-FDR is controlled separately within each D
-across its 63 features and within each correlation method.
+across its 91 features and within each correlation method.
 
 The D blocks are separate analyses, but they are **not statistically
 independent**: all four reuse the same participants and EEG recordings and
@@ -86,6 +90,17 @@ Then run:
 ```bash
 bash quantitative_behavioral/run_quantitative_behavioral.sh --overwrite
 ```
+
+To execute every post-cleaning analysis in dependency order—including PSD,
+ordinal analyses, scale-free/bout analyses, exploration models, and this MOCA
+workflow—use the resumable repository-level runner:
+
+```bash
+bash run_all_analyses.sh
+```
+
+Use `bash run_all_analyses.sh --help` for overwrite, dry-run, progress, and
+stage-skip options.
 
 For a faster code/figure pilot while retaining the same participants and
 features:
@@ -161,7 +176,7 @@ For the D=3,4,5,6 robustness analysis, use
 statistically significant only when the primary adjusted row has both
 `fdr_reject == True` and `p_fdr_bh < 0.05`. The raw `p_value` is provided for
 transparency, but `p_value < 0.05` by itself is not the decision rule after
-testing 63 features within that D. The `family` column identifies the relevant
+testing 91 features within that D. The `family` column identifies the relevant
 FDR block (`ordinal_D3` through `ordinal_D6`). Bootstrap intervals quantify
 effect uncertainty; a stable direction and magnitude across D strengthens the
 robustness interpretation without making the D blocks statistically
