@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import platform
+import shutil
 from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
@@ -43,6 +44,18 @@ FAMILIES = (
     "ordinal_band",
     "bout_properties",
     "bout_ordinal",
+)
+
+DIMENSION_METRICS = (
+    "entropy",
+    "complexity",
+    "fisher_information",
+    "renyi_entropy_alpha_0_9",
+    "renyi_complexity_alpha_0_9",
+    "renyi_entropy_alpha_1_1",
+    "renyi_complexity_alpha_1_1",
+    "renyi_entropy_alpha_2",
+    "renyi_complexity_alpha_2",
 )
 
 
@@ -85,13 +98,21 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("Dimension sensitivity must prespecify D=3,4,5,6")
     if int(sensitivity.get("delay_samples", -1)) != 1:
         raise ValueError("Dimension sensitivity must use tau=1")
-    if sensitivity.get("metrics") != regular_metrics:
-        raise ValueError("Dimension sensitivity supports only regular ordinal H, C, and F")
+    if sensitivity.get("metrics") != list(DIMENSION_METRICS):
+        raise ValueError(
+            "Dimension analysis must include regular H/C/F plus Rényi Hα/Cα at "
+            "alpha=0.9, 1.1, and 2"
+        )
+    if (
+        sensitivity.get("analysis_block_policy")
+        != "one_separate_feature_matrix_per_embedding_dimension"
+    ):
+        raise ValueError("Each embedding dimension must use a separate feature matrix")
     if (
         sensitivity.get("fdr_scope")
-        != "across_all_84_dimension_sensitivity_features_per_method"
+        != "within_each_dimension_across_all_63_features_per_method"
     ):
-        raise ValueError("Dimension-sensitivity FDR scope must cover all 84 tests")
+        raise ValueError("Dimension-analysis FDR must be controlled separately within D")
     if int(config["expected"]["shared_electrodes"]) < 1:
         raise ValueError("expected.shared_electrodes must be positive")
     if int(config["plots"]["dpi"]) < 50:
@@ -265,28 +286,49 @@ def _write_report(
     dimension_primary = dimension_correlations.loc[
         dimension_correlations["method"].eq("partial_spearman_age_sex")
     ]
-    dimension_rejections = int(dimension_primary["fdr_reject"].sum())
+    dimensions = [int(value) for value in config["dimension_sensitivity"]["embedding_dimensions"]]
+    rejection_counts = {
+        dimension: int(
+            dimension_primary.loc[
+                dimension_primary["embedding_dimension"].eq(dimension), "fdr_reject"
+            ].sum()
+        )
+        for dimension in dimensions
+    }
     lines.extend(
         [
             "## Embedding-dimension robustness analysis",
             "",
             (
-                "Regular ordinal H, C, and F were also tested at D=3, 4, 5, and 6 "
-                "with tau=1 for broadband and all six ordinal bands. D=6 remains the "
-                "prespecified primary analysis; the four-dimension comparison is a "
-                "sensitivity analysis."
+                "Regular ordinal H, C, and F and Rényi entropy/complexity at alpha=0.9, "
+                "1.1, and 2 were tested at D=3, 4, 5, and 6 with tau=1 for broadband "
+                "and all six ordinal bands."
             ),
             (
-                "To prevent significance-by-parameter-search, BH-FDR is controlled across "
-                "all 84 dimension-sensitivity features within each correlation method."
+                "Each embedding dimension is a separate 63-feature analysis block and has "
+                "its own one-row-per-subject feature matrix. BH-FDR is controlled within "
+                "each D across its 63 features and separately by correlation method."
             ),
-            f"Adjusted FDR rejections in this sensitivity family: {dimension_rejections} of 84.",
+            (
+                "D=6 is the primary ordinal block; D=3, D=4, and D=5 are sensitivity "
+                "blocks. These blocks are not statistically independent because they reuse "
+                "the same participants and EEG signals, so selecting the best D after seeing "
+                "the results remains exploratory."
+            ),
+            "",
+            "Adjusted FDR rejections by separate D block:",
+            "",
+            *[
+                f"- D={dimension}: {rejection_counts[dimension]} of 63"
+                for dimension in dimensions
+            ],
             "",
             (
                 "Use `fdr_reject == True` and `p_fdr_bh < 0.05` in "
                 "`metrics/dimension_sensitivity_correlations.csv` for corrected statistical "
-                "significance. Similar effect direction and magnitude across dimensions adds "
-                "robustness, but is not a separate significance test."
+                "significance within the indicated D block. Similar effect direction and "
+                "magnitude across dimensions adds robustness, but is not a separate "
+                "significance test."
             ),
             "",
         ]
@@ -351,9 +393,16 @@ def run_analysis(
     dimension_electrode_correlations = correlate_electrodes(
         dimension_electrode_features, dimension_dictionary, config
     )
-    dimension_wide = subject_feature_matrix(cohort, dimension_features)
 
     metrics_dir = output_dir / "metrics"
+    # This legacy combined-D matrix could be mistaken for a single model input.
+    # D-specific matrices below replace it and are the only dimension-analysis inputs.
+    (metrics_dir / "dimension_sensitivity_analysis_dataset.csv").unlink(
+        missing_ok=True
+    )
+    dimension_metrics_dir = metrics_dir / "dimensions"
+    if dimension_metrics_dir.exists():
+        shutil.rmtree(dimension_metrics_dir)
     _write_csv(cohort, metrics_dir / "moca_cohort.csv")
     _write_csv(dictionary, metrics_dir / "feature_dictionary.csv")
     _write_csv(subject_features, metrics_dir / "subject_features_long.csv")
@@ -376,10 +425,6 @@ def run_analysis(
         metrics_dir / "dimension_sensitivity_subject_features_long.csv",
     )
     _write_csv(
-        dimension_wide,
-        metrics_dir / "dimension_sensitivity_analysis_dataset.csv",
-    )
-    _write_csv(
         dimension_correlations,
         metrics_dir / "dimension_sensitivity_correlations.csv",
     )
@@ -394,6 +439,45 @@ def run_analysis(
         dimension_electrode_correlations,
         metrics_dir / "dimension_sensitivity_electrode_correlations.csv",
     )
+    for dimension in config["dimension_sensitivity"]["embedding_dimensions"]:
+        dimension = int(dimension)
+        dimension_dir = metrics_dir / "dimensions" / f"D{dimension}"
+        selected_dictionary = dimension_dictionary.loc[
+            dimension_dictionary["embedding_dimension"].eq(dimension)
+        ]
+        feature_ids = set(selected_dictionary["feature_id"])
+        selected_features = dimension_features.loc[
+            dimension_features["feature_id"].isin(feature_ids)
+        ]
+        selected_correlations = dimension_correlations.loc[
+            dimension_correlations["feature_id"].isin(feature_ids)
+        ]
+        selected_electrode_correlations = dimension_electrode_correlations.loc[
+            dimension_electrode_correlations["feature_id"].isin(feature_ids)
+        ]
+        _write_csv(
+            selected_dictionary,
+            dimension_dir / "feature_dictionary.csv",
+        )
+        _write_csv(
+            subject_feature_matrix(cohort, selected_features),
+            dimension_dir / "analysis_dataset.csv",
+        )
+        _write_csv(
+            selected_correlations,
+            dimension_dir / "correlations.csv",
+        )
+        _write_csv(
+            selected_correlations.loc[
+                selected_correlations["method"].eq("partial_spearman_age_sex")
+                & selected_correlations["fdr_reject"]
+            ],
+            dimension_dir / "significant_correlations.csv",
+        )
+        _write_csv(
+            selected_electrode_correlations,
+            dimension_dir / "electrode_correlations.csv",
+        )
     feature_columns = dictionary["feature_id"].tolist()
     spearman_matrix = wide.loc[wide["group"].eq(primary_group), feature_columns].corr(
         method="spearman"
@@ -443,6 +527,8 @@ def run_analysis(
         dpi,
     )
     sensitivity_figures = figures_dir / "dimension_sensitivity"
+    if sensitivity_figures.exists():
+        shutil.rmtree(sensitivity_figures)
     plot_dimension_sensitivity_heatmaps(
         dimension_correlations,
         sensitivity_figures / "adjusted_correlation_heatmaps.png",
@@ -454,8 +540,9 @@ def run_analysis(
         dpi,
     )
     for dimension in config["dimension_sensitivity"]["embedding_dimensions"]:
+        dimension = int(dimension)
         selected_dictionary = dimension_dictionary.loc[
-            dimension_dictionary["embedding_dimension"].eq(int(dimension))
+            dimension_dictionary["embedding_dimension"].eq(dimension)
         ]
         feature_ids = set(selected_dictionary["feature_id"])
         selected_correlations = dimension_correlations.loc[
@@ -464,21 +551,38 @@ def run_analysis(
         selected_features = dimension_features.loc[
             dimension_features["feature_id"].isin(feature_ids)
         ]
+        dimension_family = f"ordinal_D{dimension}"
         plot_family_forest(
             selected_correlations,
-            "ordinal_dimension_sensitivity",
+            dimension_family,
             sensitivity_figures / f"D{dimension}_forest.png",
             dpi,
         )
-        plot_family_scatter_grid(
-            selected_features,
+        plot_family_heatmap(
             selected_correlations,
-            selected_dictionary,
-            "ordinal_dimension_sensitivity",
-            primary_group,
-            sensitivity_figures / f"D{dimension}_moca_scatter_grid.png",
+            dimension_family,
+            sensitivity_figures / f"D{dimension}_adjusted_sensitivity_heatmap.png",
             dpi,
         )
+        for quantity_set, quantity_dictionary in selected_dictionary.groupby(
+            "quantity_set", sort=False
+        ):
+            quantity_ids = set(quantity_dictionary["feature_id"])
+            plot_family_scatter_grid(
+                selected_features.loc[
+                    selected_features["feature_id"].isin(quantity_ids)
+                ],
+                selected_correlations.loc[
+                    selected_correlations["feature_id"].isin(quantity_ids)
+                ],
+                quantity_dictionary,
+                dimension_family,
+                primary_group,
+                sensitivity_figures
+                / "scatter"
+                / f"D{dimension}_{quantity_set}_moca_scatter_grid.png",
+                dpi,
+            )
     dimension_info = _topographic_info(config, dimension_electrode_order)
     plot_electrode_topomap_pages(
         dimension_electrode_correlations,
@@ -529,6 +633,12 @@ def run_analysis(
             "delay_samples": config["dimension_sensitivity"]["delay_samples"],
             "n_features": len(dimension_dictionary),
             "n_subject_level_tests_per_method": len(dimension_dictionary),
+            "n_features_per_dimension": {
+                str(int(dimension)): int(
+                    dimension_dictionary["embedding_dimension"].eq(int(dimension)).sum()
+                )
+                for dimension in config["dimension_sensitivity"]["embedding_dimensions"]
+            },
             "fdr_scope": config["dimension_sensitivity"]["fdr_scope"],
             "n_primary_fdr_rejections": int(
                 dimension_correlations.loc[
@@ -536,7 +646,25 @@ def run_analysis(
                     "fdr_reject",
                 ].sum()
             ),
+            "fdr_rejections_by_dimension": {
+                str(int(dimension)): int(
+                    dimension_correlations.loc[
+                        dimension_correlations["method"].eq(
+                            "partial_spearman_age_sex"
+                        )
+                        & dimension_correlations["embedding_dimension"].eq(
+                            int(dimension)
+                        ),
+                        "fdr_reject",
+                    ].sum()
+                )
+                for dimension in config["dimension_sensitivity"]["embedding_dimensions"]
+            },
             "n_electrode_tests": len(dimension_electrode_correlations),
+            "feature_matrix_policy": (
+                "One separate 63-feature, one-row-per-subject matrix for each D; "
+                "embedding dimensions are never concatenated into one model matrix."
+            ),
         },
         "interpretation": (
             "Cross-sectional PD cognition associations only; not longitudinal progression, "

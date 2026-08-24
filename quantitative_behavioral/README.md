@@ -36,8 +36,10 @@ The defaults produce 53 transparent features:
 | Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in four eBOSC bands | 20 |
 | Within-bout ordinal | H, C, F pooled within detected theta, alpha, low-beta, and high-beta bouts | 12 |
 
-Only regular permutation entropy, statistical complexity, and Fisher
-information are selected. Rényi quantities are deliberately excluded.
+The original 53-feature primary table retains regular permutation entropy,
+statistical complexity, and Fisher information. Rényi quantities are added in
+the separate embedding-dimension analysis blocks described below. Within-bout
+ordinal quantities remain regular H/C/F only.
 
 The primary ordinal source is the completed 60-electrode `D6_tau1` parameter
 sweep. Bout properties come from the 1–50 Hz scale-free analysis. Within-bout
@@ -45,20 +47,28 @@ ordinal features come from `bout_analyses/`. All upstream manifests are checked
 for the expected 60 shared electrodes and analysis parameters before any
 correlation is calculated.
 
-## Embedding-dimension sensitivity
+## Separate embedding-dimension analyses
 
-The broadband and band-resolved regular ordinal quantities are additionally
-analyzed at **D=3, 4, 5, and 6**, always with **tau=1**. This is a robustness
-analysis; `D=6, tau=1` remains the prespecified primary ordinal result. Bout
-properties do not depend on D, and within-bout ordinal quantities remain at
-the primary D=6 setting because changing D there would define a separate bout
-pipeline sensitivity analysis.
+The broadband and band-resolved ordinal quantities are analyzed at **D=3, 4,
+5, and 6**, always with **tau=1**. Each D contains regular H/C/F plus Rényi
+entropy and complexity at **alpha=0.9, 1.1, and 2**. The Rényi values come from
+`ordpy.renyi_complexity_entropy`; no separate `renyi_entropy` calculation is
+used.
 
-There are 84 dimension-sensitivity features: four dimensions × seven signal
-scopes (broadband plus six bands) × H/C/F. To avoid selecting a favorable D,
-BH-FDR is controlled across all 84 features within each correlation method.
-Effect stability across D is visualized, but consistency of direction is not
-treated as a substitute for corrected statistical significance.
+Each D is a separate 63-feature analysis block: seven signal scopes
+(broadband plus six bands) × nine quantities. The pipeline writes a distinct
+one-row-per-subject matrix for each D and never concatenates the four D blocks
+into one model feature vector. BH-FDR is controlled separately within each D
+across its 63 features and within each correlation method.
+
+The D blocks are separate analyses, but they are **not statistically
+independent**: all four reuse the same participants and EEG recordings and
+their ordinal quantities are correlated. `D=6, tau=1` remains the primary
+ordinal block; D=3, D=4, and D=5 are robustness/sensitivity blocks. Choosing
+the most favorable D after inspecting results must therefore be described as
+exploratory. Bout properties do not depend on D, and within-bout ordinal
+quantities remain at D=6 because changing them defines a separate bout-pipeline
+sensitivity analysis.
 
 ## Run
 
@@ -108,10 +118,15 @@ quantitative_behavioral/processed/
 │   ├── pd_feature_spearman_matrix.csv
 │   ├── dimension_sensitivity_feature_dictionary.csv
 │   ├── dimension_sensitivity_subject_features_long.csv
-│   ├── dimension_sensitivity_analysis_dataset.csv
 │   ├── dimension_sensitivity_correlations.csv
 │   ├── dimension_sensitivity_significant_correlations.csv
-│   └── dimension_sensitivity_electrode_correlations.csv
+│   ├── dimension_sensitivity_electrode_correlations.csv
+│   └── dimensions/D<dimension>/
+│       ├── feature_dictionary.csv
+│       ├── analysis_dataset.csv
+│       ├── correlations.csv
+│       ├── significant_correlations.csv
+│       └── electrode_correlations.csv
 └── figures/
     ├── audit/cohort_and_coverage.png
     ├── correlations/
@@ -123,8 +138,9 @@ quantitative_behavioral/processed/
         ├── adjusted_correlation_heatmaps.png
         ├── adjusted_effect_stability.png
         ├── D<dimension>_forest.png
-        ├── D<dimension>_moca_scatter_grid.png
-        └── topomaps/ordinal_dimension_sensitivity_<scope>_moca_topomaps.png
+        ├── D<dimension>_adjusted_sensitivity_heatmap.png
+        ├── scatter/D<dimension>_<quantity_set>_moca_scatter_grid.png
+        └── topomaps/ordinal_D<dimension>_<scope>_moca_topomaps.png
 ```
 
 ## Reading the results
@@ -145,9 +161,11 @@ For the D=3,4,5,6 robustness analysis, use
 statistically significant only when the primary adjusted row has both
 `fdr_reject == True` and `p_fdr_bh < 0.05`. The raw `p_value` is provided for
 transparency, but `p_value < 0.05` by itself is not the decision rule after
-testing 84 parameter/signal/metric combinations. Bootstrap intervals quantify
+testing 63 features within that D. The `family` column identifies the relevant
+FDR block (`ordinal_D3` through `ordinal_D6`). Bootstrap intervals quantify
 effect uncertainty; a stable direction and magnitude across D strengthens the
-robustness interpretation.
+robustness interpretation without making the D blocks statistically
+independent.
 
 For convenience, the two `significant_*.csv` files contain only adjusted,
 FDR-rejected primary rows. They retain all effect estimates, intervals, raw

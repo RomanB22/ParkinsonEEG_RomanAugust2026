@@ -45,10 +45,21 @@
     "ordinal_output_root": "ordinal_analysis/parameter_sweep",
     "embedding_dimensions": [3, 4, 5, 6],
     "delay_samples": 1,
-    "metrics": ["entropy", "complexity", "fisher_information"],
+    "metrics": [
+      "entropy",
+      "complexity",
+      "fisher_information",
+      "renyi_entropy_alpha_0_9",
+      "renyi_complexity_alpha_0_9",
+      "renyi_entropy_alpha_1_1",
+      "renyi_complexity_alpha_1_1",
+      "renyi_entropy_alpha_2",
+      "renyi_complexity_alpha_2"
+    ],
     "bands": ["delta", "theta", "alpha", "beta", "low_gamma", "broad_5_15"],
-    "role": "sensitivity_analysis_only",
-    "fdr_scope": "across_all_84_dimension_sensitivity_features_per_method"
+    "role": "D6_primary_D3_D4_D5_sensitivity",
+    "analysis_block_policy": "one_separate_feature_matrix_per_embedding_dimension",
+    "fdr_scope": "within_each_dimension_across_all_63_features_per_method"
   },
   "expected": {
     "embedding_dimension": 6,

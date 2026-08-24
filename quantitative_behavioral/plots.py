@@ -16,6 +16,19 @@ import numpy as np
 import pandas as pd
 
 
+DIMENSION_METRIC_TITLES = {
+    "entropy": "Permutation entropy H",
+    "complexity": "Statistical complexity C",
+    "fisher_information": "Fisher information F",
+    "renyi_entropy_alpha_0_9": "Rényi entropy Hα (α=0.9)",
+    "renyi_complexity_alpha_0_9": "Rényi complexity Cα (α=0.9)",
+    "renyi_entropy_alpha_1_1": "Rényi entropy Hα (α=1.1)",
+    "renyi_complexity_alpha_1_1": "Rényi complexity Cα (α=1.1)",
+    "renyi_entropy_alpha_2": "Rényi entropy Hα (α=2)",
+    "renyi_complexity_alpha_2": "Rényi complexity Cα (α=2)",
+}
+
+
 def _save(fig: Any, path: Path, dpi: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=int(dpi), bbox_inches="tight")
@@ -280,17 +293,18 @@ def plot_dimension_sensitivity_heatmaps(
     selected = correlations.loc[
         correlations["method"].eq("partial_spearman_age_sex")
     ].copy()
-    metrics = ["entropy", "complexity", "fisher_information"]
-    metric_titles = {
-        "entropy": "Permutation entropy H",
-        "complexity": "Statistical complexity C",
-        "fisher_information": "Fisher information F",
-    }
+    metrics = [
+        metric for metric in DIMENSION_METRIC_TITLES if metric in set(selected["metric"])
+    ]
     bands = selected["band"].drop_duplicates().tolist()
     dimensions = sorted(selected["embedding_dimension"].astype(int).unique())
-    fig, axes = plt.subplots(1, 3, figsize=(14.5, 6.2), sharey=True)
+    columns = 3
+    rows = math.ceil(len(metrics) / columns)
+    fig, axes = plt.subplots(
+        rows, columns, figsize=(15.5, 4.7 * rows), sharey=True, squeeze=False
+    )
     image = None
-    for axis, metric in zip(axes, metrics):
+    for axis, metric in zip(axes.flat, metrics):
         values = (
             selected.loc[selected["metric"].eq(metric)]
             .pivot(index="band", columns="embedding_dimension", values="estimate")
@@ -313,7 +327,7 @@ def plot_dimension_sensitivity_heatmaps(
             np.arange(len(bands)),
             [band.replace("_", " ").title() for band in bands],
         )
-        axis.set_title(metric_titles[metric])
+        axis.set_title(DIMENSION_METRIC_TITLES[metric])
         for row in range(len(bands)):
             for column in range(len(dimensions)):
                 value = values.iloc[row, column]
@@ -327,13 +341,16 @@ def plot_dimension_sensitivity_heatmaps(
                         va="center",
                         fontsize=8,
                     )
+    for axis in axes.flat[len(metrics) :]:
+        axis.set_visible(False)
     if image is not None:
-        fig.colorbar(image, ax=axes, label="Partial Spearman ρ", shrink=0.72)
+        colorbar_axis = fig.add_axes([0.91, 0.12, 0.015, 0.75])
+        fig.colorbar(image, cax=colorbar_axis, label="Partial Spearman ρ")
     fig.suptitle(
-        "MOCA ordinal sensitivity across embedding dimensions (age/sex adjusted)\n"
-        "* BH-FDR significant across all 84 dimension-sensitivity features"
+        "MOCA ordinal analyses across embedding dimensions (age/sex adjusted)\n"
+        "* BH-FDR significant within that D's separate 63-feature analysis block"
     )
-    fig.subplots_adjust(left=0.10, right=0.91, bottom=0.10, top=0.84, wspace=0.18)
+    fig.subplots_adjust(left=0.10, right=0.88, bottom=0.07, top=0.90, hspace=0.28, wspace=0.18)
     _save(fig, path, dpi)
 
 
@@ -346,17 +363,23 @@ def plot_dimension_stability_lines(
     selected = correlations.loc[
         correlations["method"].eq("partial_spearman_age_sex")
     ].copy()
-    metrics = ["entropy", "complexity", "fisher_information"]
-    metric_titles = {
-        "entropy": "Permutation entropy H",
-        "complexity": "Statistical complexity C",
-        "fisher_information": "Fisher information F",
-    }
+    metrics = [
+        metric for metric in DIMENSION_METRIC_TITLES if metric in set(selected["metric"])
+    ]
     dimensions = sorted(selected["embedding_dimension"].astype(int).unique())
     bands = selected["band"].drop_duplicates().tolist()
     colors = plt.get_cmap("tab10")(np.linspace(0.0, 0.9, len(bands)))
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharex=True, sharey=True)
-    for axis, metric in zip(axes, metrics):
+    columns = 3
+    rows = math.ceil(len(metrics) / columns)
+    fig, axes = plt.subplots(
+        rows,
+        columns,
+        figsize=(15.5, 4.3 * rows),
+        sharex=True,
+        sharey=True,
+        squeeze=False,
+    )
+    for axis, metric in zip(axes.flat, metrics):
         metric_rows = selected.loc[selected["metric"].eq(metric)]
         for band, color in zip(bands, colors):
             values = (
@@ -373,13 +396,16 @@ def plot_dimension_stability_lines(
                 label=band.replace("_", " ").title(),
             )
         axis.axhline(0.0, color="black", linewidth=0.8)
-        axis.set_title(metric_titles[metric])
+        axis.set_title(DIMENSION_METRIC_TITLES[metric])
         axis.set_xticks(dimensions)
         axis.set_xlabel("Embedding dimension D (τ=1)")
         axis.grid(alpha=0.2)
-    axes[0].set_ylabel("Partial Spearman ρ with MOCA")
-    handles, labels = axes[-1].get_legend_handles_labels()
+    for row in range(rows):
+        axes[row, 0].set_ylabel("Partial Spearman ρ with MOCA")
+    for axis in axes.flat[len(metrics) :]:
+        axis.set_visible(False)
+    handles, labels = axes.flat[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower center", ncol=7, frameon=False)
     fig.suptitle("Stability of age/sex-adjusted ordinal–MOCA associations")
-    fig.subplots_adjust(bottom=0.20, top=0.86, wspace=0.12)
+    fig.subplots_adjust(bottom=0.10, top=0.93, hspace=0.30, wspace=0.12)
     _save(fig, path, dpi)

@@ -14,6 +14,12 @@ METRIC_LABELS = {
     "entropy": "Permutation entropy H",
     "complexity": "Statistical complexity C",
     "fisher_information": "Fisher information F",
+    "renyi_entropy_alpha_0_9": "Rényi entropy Hα (α=0.9)",
+    "renyi_complexity_alpha_0_9": "Rényi complexity Cα (α=0.9)",
+    "renyi_entropy_alpha_1_1": "Rényi entropy Hα (α=1.1)",
+    "renyi_complexity_alpha_1_1": "Rényi complexity Cα (α=1.1)",
+    "renyi_entropy_alpha_2": "Rényi entropy Hα (α=2)",
+    "renyi_complexity_alpha_2": "Rényi complexity Cα (α=2)",
     "oscillatory_occupancy": "Oscillatory occupancy",
     "bouts_per_minute": "Bouts per minute",
     "bout_duration_mean_s": "Mean bout duration",
@@ -25,6 +31,12 @@ METRIC_UNITS = {
     "entropy": "normalized",
     "complexity": "normalized",
     "fisher_information": "normalized",
+    "renyi_entropy_alpha_0_9": "normalized",
+    "renyi_complexity_alpha_0_9": "normalized",
+    "renyi_entropy_alpha_1_1": "normalized",
+    "renyi_complexity_alpha_1_1": "normalized",
+    "renyi_entropy_alpha_2": "normalized",
+    "renyi_complexity_alpha_2": "normalized",
     "oscillatory_occupancy": "proportion",
     "bouts_per_minute": "bouts/minute",
     "bout_duration_mean_s": "seconds",
@@ -451,7 +463,7 @@ def _dimension_source_paths(
 def build_dimension_sensitivity_features(
     config: dict[str, Any], cohort: pd.DataFrame
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, list[str]]:
-    """Load regular ordinal H/C/F across prespecified embedding dimensions."""
+    """Load regular and Rényi ordinal quantities in separate D analysis blocks."""
     settings = config["dimension_sensitivity"]
     dimensions = [int(value) for value in settings["embedding_dimensions"]]
     delay = int(settings["delay_samples"])
@@ -533,6 +545,13 @@ def build_dimension_sensitivity_features(
                 feature_id = f"ordinal_D{dimension}_tau{delay}_{band}_{metric}"
                 band_label = BAND_LABELS.get(band, band.replace("_", " ").title())
                 metric_label = METRIC_LABELS[metric]
+                if metric.startswith("renyi_"):
+                    alpha_token = metric.rsplit("_alpha_", 1)[1]
+                    renyi_alpha = float(alpha_token.replace("_", "."))
+                    quantity_set = f"renyi_alpha_{alpha_token}"
+                else:
+                    renyi_alpha = np.nan
+                    quantity_set = "regular"
                 feature_label = (
                     f"D={dimension} broadband {metric_label}"
                     if band == "broadband"
@@ -551,8 +570,8 @@ def build_dimension_sensitivity_features(
                 dictionary_rows.append(
                     {
                         "feature_id": feature_id,
-                        "family": "ordinal_dimension_sensitivity",
-                        "domain": "ordinal_dimension_sensitivity",
+                        "family": f"ordinal_D{dimension}",
+                        "domain": f"ordinal_D{dimension}",
                         "band": band,
                         "metric": metric,
                         "feature_label": feature_label,
@@ -563,6 +582,8 @@ def build_dimension_sensitivity_features(
                         "analysis_level": "subject_mean_across_shared_electrodes",
                         "embedding_dimension": dimension,
                         "delay_samples": delay,
+                        "quantity_set": quantity_set,
+                        "renyi_alpha": renyi_alpha,
                     }
                 )
 

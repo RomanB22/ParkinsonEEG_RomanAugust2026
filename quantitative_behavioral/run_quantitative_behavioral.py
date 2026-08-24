@@ -16,7 +16,7 @@ from quantitative_behavioral.pipeline import run_analysis
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Analyze cross-sectional MOCA associations with regular ordinal "
+            "Analyze cross-sectional MOCA associations with regular and Rényi ordinal "
             "quantities, bout properties, and within-bout ordinal quantities."
         )
     )
@@ -48,4 +48,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

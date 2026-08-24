@@ -31,6 +31,10 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             config["dimension_sensitivity"]["embedding_dimensions"], [3, 4, 5, 6]
         )
         self.assertEqual(config["dimension_sensitivity"]["delay_samples"], 1)
+        self.assertEqual(
+            config["dimension_sensitivity"]["fdr_scope"],
+            "within_each_dimension_across_all_63_features_per_method",
+        )
 
     def test_partial_spearman_removes_age_confounding(self):
         rng = np.random.default_rng(42)
@@ -113,20 +117,30 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         self.assertEqual(len(pd_features), 100 * 53)
         self.assertTrue(pd_features["value"].notna().all())
 
-    def test_dimension_sensitivity_has_84_balanced_regular_ordinal_features(self):
+    def test_dimension_blocks_have_63_balanced_regular_and_renyi_features(self):
         config = load_analysis_config("quantitative_behavioral/config.json")
         cohort, _, _ = build_subject_features(config)
         features, dictionary, electrode_features, electrode_order = (
             build_dimension_sensitivity_features(config, cohort)
         )
-        self.assertEqual(len(dictionary), 84)
+        self.assertEqual(len(dictionary), 252)
         self.assertEqual(set(dictionary["embedding_dimension"]), {3, 4, 5, 6})
         self.assertEqual(set(dictionary["delay_samples"]), {1})
+        self.assertEqual(dictionary.groupby("embedding_dimension").size().to_dict(), {
+            3: 63,
+            4: 63,
+            5: 63,
+            6: 63,
+        })
         self.assertEqual(
-            set(dictionary["metric"]),
-            {"entropy", "complexity", "fisher_information"},
+            set(dictionary["family"]),
+            {"ordinal_D3", "ordinal_D4", "ordinal_D5", "ordinal_D6"},
         )
-        self.assertFalse(dictionary["feature_id"].str.contains("renyi").any())
+        self.assertEqual(int(dictionary["feature_id"].str.contains("renyi").sum()), 168)
+        self.assertEqual(
+            set(dictionary.loc[dictionary["quantity_set"].ne("regular"), "renyi_alpha"]),
+            {0.9, 1.1, 2.0},
+        )
         self.assertEqual(len(electrode_order), 60)
         self.assertFalse(features.duplicated(["subject_id", "feature_id"]).any())
         self.assertFalse(
@@ -135,7 +149,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             ).any()
         )
         self.assertEqual(
-            len(features.loc[features["group"].eq("PD")]), 100 * 84
+            len(features.loc[features["group"].eq("PD")]), 100 * 252
         )
 
 
