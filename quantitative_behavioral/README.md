@@ -1,8 +1,9 @@
 # Quantitative behavioral associations with MOCA
 
 This pipeline relates Montreal Cognitive Assessment (**MOCA**) scores to
-subject-level EEG quantities from the ordinal, scale-free bout, and within-bout
-ordinal workflows.
+subject-level EEG quantities from the ordinal, scale-free aperiodic/bout, and
+within-bout ordinal workflows. It also compares the aperiodic exponent between
+Control and PD participants.
 
 The complete statistical specification, including the age/sex-adjusted partial
 Spearman calculation, p-values, bootstrap intervals, and FDR scopes, is in
@@ -31,22 +32,25 @@ are never treated as independent patients.
 
 ## Prespecified feature families
 
-The defaults produce 53 transparent features:
+The defaults produce 54 transparent features:
 
 | Family | Features | Count |
 |---|---|---:|
+| Aperiodic | Fixed-mode specparam exponent over 1–50 Hz | 1 |
 | Broadband ordinal | H, C, F from `D=6`, `tau=1` | 3 |
 | Band ordinal | H, C, F in delta, theta, alpha, beta, low gamma, and broad 5–15 Hz | 18 |
 | Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in four eBOSC bands | 20 |
 | Within-bout ordinal | H, C, F pooled within detected theta, alpha, low-beta, and high-beta bouts | 12 |
 
-The original 53-feature primary table retains regular permutation entropy,
+The 54-feature primary table retains regular permutation entropy,
 statistical complexity, and Fisher information. Rényi quantities are added in
 the separate embedding-dimension analysis blocks described below. Within-bout
 ordinal quantities remain regular H/C/F only.
 
 The primary ordinal source is the completed 60-electrode `D6_tau1` parameter
-sweep. Bout properties come from the 1–50 Hz scale-free analysis. Within-bout
+sweep. The aperiodic exponent and bout properties come from the 1–50 Hz
+scale-free analysis. The exponent is estimated in fixed mode at each shared
+electrode and averaged across those 60 electrodes within each subject. Within-bout
 ordinal features come from `bout_analyses/`. All upstream manifests are checked
 for the expected 60 shared electrodes and analysis parameters before any
 correlation is calculated.
@@ -128,6 +132,8 @@ quantitative_behavioral/processed/
 │   ├── subject_features_long.csv
 │   ├── analysis_dataset.csv
 │   ├── subject_level_correlations.csv
+│   ├── aperiodic_exponent_group_comparison.csv
+│   ├── aperiodic_exponent_subject_data.csv
 │   ├── significant_primary_correlations.csv
 │   ├── electrode_correlations.csv
 │   ├── pd_feature_spearman_matrix.csv
@@ -144,6 +150,7 @@ quantitative_behavioral/processed/
 │       └── electrode_correlations.csv
 └── figures/
     ├── audit/cohort_and_coverage.png
+    ├── aperiodic/group_comparison.png
     ├── correlations/
     │   ├── <family>_forest.png
     │   └── <family>_adjusted_sensitivity_heatmap.png
@@ -170,6 +177,15 @@ Scatter grids retain the raw subject observations and annotate the adjusted
 correlation. Forest plots show adjusted estimates and bootstrap intervals;
 green points indicate family-specific FDR rejection. Adjusted and unadjusted
 heatmaps make covariate sensitivity visible.
+
+The aperiodic group comparison uses one mean exponent per subject. Its primary
+effect is the PD-minus-Control coefficient from `exponent ~ PD + age + sex`,
+with an HC3 robust standard error and confidence interval. Welch's t test,
+Mann–Whitney U, and Hedges' g are included as unadjusted sensitivity and effect
+size summaries. The PD-only exponent–MOCA relationship is the
+`aperiodic_exponent` row in `subject_level_correlations.csv`; its raw scatter,
+partial Spearman estimate, and electrode-level localization are generated with
+the other feature-family figures.
 
 For the D=3,4,5,6 robustness analysis, use
 `dimension_sensitivity_correlations.csv`. A correlation is considered

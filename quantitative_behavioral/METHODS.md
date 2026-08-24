@@ -15,6 +15,33 @@ The implementation is in [`statistics.py`](statistics.py), feature construction
 is in [`features.py`](features.py), and all prespecified settings are in
 [`config.json`](config.json).
 
+## Aperiodic exponent construction and diagnostic-group comparison
+
+The scale-free workflow fits fixed-mode specparam models over 1–50 Hz. For each
+participant it exports the aperiodic exponent at every one of the 60 electrodes
+shared by all participants. The primary exponent is the arithmetic mean across
+those electrodes, giving one value per participant.
+
+The Control-versus-PD analysis uses all 149 participants. Its primary model is:
+
+```text
+aperiodic exponent = beta0 + betaPD I(PD) + betaage age + betasex sex_male + error
+```
+
+`betaPD` is the adjusted PD-minus-Control difference in native exponent units.
+Inference uses an HC3 heteroskedasticity-robust standard error, two-sided
+p-value, and 95% confidence interval. The table also reports group means,
+standard deviations and medians, the raw mean difference, Welch's unequal-
+variance t test, Mann–Whitney U test, and Hedges' g. These latter quantities are
+unadjusted sensitivity/descriptive summaries. Because this is one targeted
+aperiodic-exponent group comparison, no multiple-comparison correction is
+applied to its adjusted-model p-value.
+
+The exponent–MOCA question is separate: it uses PD participants only and the
+same partial Spearman procedure described below. The single exponent test is
+its own feature family, so its within-family BH-FDR value equals its raw
+p-value. Electrode-level exponent–MOCA maps are secondary localization results.
+
 ## Cohort, outcome, and covariates
 
 - Primary cohort: PD participants only.
@@ -158,12 +185,13 @@ itself adjusted for all tested features.
 Benjamini-Hochberg false-discovery-rate (BH-FDR) correction is applied at
 `alpha=0.05`. Adjusted and unadjusted methods are corrected separately.
 
-### Original 53-feature analysis
+### Primary 54-feature analysis
 
 BH-FDR is applied within each prespecified feature family:
 
 | Family | Tests per method |
 |---|---:|
+| Aperiodic exponent | 1 |
 | Broadband regular ordinal quantities | 3 |
 | Band-resolved regular ordinal quantities | 18 |
 | Bout properties | 20 |

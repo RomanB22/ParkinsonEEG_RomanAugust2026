@@ -8,6 +8,8 @@
     "ordinal_electrode_sets_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/electrode_sets.json",
     "bout_subject_file": "scale_free_analysis/processed/metrics/subject_band_metrics.csv",
     "bout_electrode_file": "scale_free_analysis/processed/metrics/electrode_band_metrics.csv",
+    "aperiodic_subject_file": "scale_free_analysis/processed/metrics/subject_aperiodic_metrics.csv",
+    "aperiodic_electrode_file": "scale_free_analysis/processed/metrics/electrode_aperiodic_metrics.csv",
     "bout_ordinal_subject_file": "bout_analyses/processed/metrics/subject_band_metrics.csv",
     "bout_ordinal_electrode_file": "bout_analyses/processed/metrics/subject_electrode_band_metrics.csv",
     "epoch_example_glob": "processed/epochs/sub-*_task-Rest_desc-cleaned_epo.fif"
@@ -28,6 +30,7 @@
     "fdr_scope": "within_feature_family_and_correlation_method"
   },
   "features": {
+    "aperiodic_metrics": ["aperiodic_exponent"],
     "ordinal_metrics": ["entropy", "complexity", "fisher_information"],
     "ordinal_bands": ["delta", "theta", "alpha", "beta", "low_gamma", "broad_5_15"],
     "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],

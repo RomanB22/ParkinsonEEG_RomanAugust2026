@@ -29,6 +29,7 @@ METRIC_LABELS = {
     "bout_duration_mean_s": "Mean bout duration",
     "bout_cycles_mean": "Mean cycles per bout",
     "bout_snr_mean": "Mean bout threshold ratio",
+    "aperiodic_exponent": "Aperiodic exponent",
 }
 
 METRIC_UNITS = {
@@ -50,6 +51,7 @@ METRIC_UNITS = {
     "bout_duration_mean_s": "seconds",
     "bout_cycles_mean": "cycles",
     "bout_snr_mean": "ratio",
+    "aperiodic_exponent": "dimensionless",
 }
 
 BAND_LABELS = {
@@ -142,15 +144,14 @@ def _append_subject_features(
             raise ValueError(f"{source_file}: requested band is unavailable: {band}")
         for metric in metrics:
             prefix = {
+                "aperiodic": "aperiodic",
                 "ordinal_broadband": "ordinal_broadband",
                 "ordinal_band": "ordinal_band",
                 "bout_properties": "bout",
                 "bout_ordinal": "bout_ordinal",
             }[family]
-            feature_id = (
-                f"{prefix}_{metric}"
-                if band == "broadband"
-                else f"{prefix}_{band}_{metric}"
+            feature_id = metric if family == "aperiodic" else (
+                f"{prefix}_{metric}" if band == "broadband" else f"{prefix}_{band}_{metric}"
             )
             rows.append(
                 selected[["subject_id", metric]]
@@ -206,11 +207,16 @@ def build_subject_features(
     expected_subjects = set(cohort["subject_id"])
     inputs = config["input"]
     requested = config["features"]
+    aperiodic_metrics = [str(value) for value in requested["aperiodic_metrics"]]
     ordinal_metrics = [str(value) for value in requested["ordinal_metrics"]]
     bout_properties = [str(value) for value in requested["bout_properties"]]
     bout_ordinal_metrics = [str(value) for value in requested["bout_ordinal_metrics"]]
     required_ordinal = {"subject_id", "group", "n_electrodes", *ordinal_metrics}
 
+    aperiodic_subject = _read_csv(
+        inputs["aperiodic_subject_file"],
+        {"subject_id", "group", "n_electrodes", *aperiodic_metrics},
+    )
     ordinal_subject = _read_csv(inputs["ordinal_subject_file"], required_ordinal)
     ordinal_band = _read_csv(
         inputs["ordinal_band_subject_file"], required_ordinal | {"band"}
@@ -224,6 +230,7 @@ def build_subject_features(
         {"subject_id", "group", "band", "n_electrodes", *bout_ordinal_metrics},
     )
     for name, table in (
+        ("aperiodic exponent", aperiodic_subject),
         ("ordinal broadband", ordinal_subject),
         ("ordinal bands", ordinal_band),
         ("bout properties", bout_subject),
@@ -252,6 +259,16 @@ def build_subject_features(
 
     feature_rows: list[pd.DataFrame] = []
     dictionary_rows: list[dict[str, Any]] = []
+    _append_subject_features(
+        feature_rows,
+        dictionary_rows,
+        aperiodic_subject,
+        source_file=inputs["aperiodic_subject_file"],
+        family="aperiodic",
+        domain="aperiodic",
+        metrics=aperiodic_metrics,
+        bands=None,
+    )
     _append_subject_features(
         feature_rows,
         dictionary_rows,
@@ -325,15 +342,14 @@ def _append_electrode_features(
         selected = table if bands is None else table.loc[table["band"].eq(band)]
         for metric in metrics:
             prefix = {
+                "aperiodic": "aperiodic",
                 "ordinal_broadband": "ordinal_broadband",
                 "ordinal_band": "ordinal_band",
                 "bout_properties": "bout",
                 "bout_ordinal": "bout_ordinal",
             }[family]
-            feature_id = (
-                f"{prefix}_{metric}"
-                if band == "broadband"
-                else f"{prefix}_{band}_{metric}"
+            feature_id = metric if family == "aperiodic" else (
+                f"{prefix}_{metric}" if band == "broadband" else f"{prefix}_{band}_{metric}"
             )
             rows.append(
                 selected[["subject_id", "group", "electrode", metric]]
@@ -348,9 +364,14 @@ def build_electrode_features(
     """Return secondary electrode-level features for spatial correlations."""
     inputs = config["input"]
     requested = config["features"]
+    aperiodic_metrics = [str(value) for value in requested["aperiodic_metrics"]]
     ordinal_metrics = [str(value) for value in requested["ordinal_metrics"]]
     bout_properties = [str(value) for value in requested["bout_properties"]]
     bout_ordinal_metrics = [str(value) for value in requested["bout_ordinal_metrics"]]
+    aperiodic_electrode = _read_csv(
+        inputs["aperiodic_electrode_file"],
+        {"subject_id", "group", "electrode", *aperiodic_metrics},
+    )
     ordinal_electrode = _read_csv(
         inputs["ordinal_electrode_file"],
         {"subject_id", "group", "electrode", *ordinal_metrics},
@@ -369,6 +390,7 @@ def build_electrode_features(
     )
     expected_subjects = set(cohort["subject_id"])
     for name, table in (
+        ("aperiodic electrodes", aperiodic_electrode),
         ("ordinal broadband electrodes", ordinal_electrode),
         ("ordinal band electrodes", ordinal_band_electrode),
         ("bout-property electrodes", bout_electrode),
@@ -390,6 +412,7 @@ def build_electrode_features(
         raise ValueError(f"Expected {expected_count} shared electrodes")
     expected_electrodes = set(electrode_order)
     for name, table in (
+        ("aperiodic electrodes", aperiodic_electrode),
         ("ordinal broadband electrodes", ordinal_electrode),
         ("ordinal band electrodes", ordinal_band_electrode),
         ("bout-property electrodes", bout_electrode),
@@ -399,6 +422,13 @@ def build_electrode_features(
             raise ValueError(f"{name} does not use the prespecified shared-electrode set")
 
     rows: list[pd.DataFrame] = []
+    _append_electrode_features(
+        rows,
+        aperiodic_electrode,
+        family="aperiodic",
+        metrics=aperiodic_metrics,
+        bands=None,
+    )
     _append_electrode_features(
         rows,
         ordinal_electrode,

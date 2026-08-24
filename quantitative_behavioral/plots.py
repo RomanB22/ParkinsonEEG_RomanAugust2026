@@ -33,6 +33,82 @@ DIMENSION_METRIC_TITLES = {
 }
 
 
+def plot_aperiodic_exponent_group_comparison(
+    features: pd.DataFrame,
+    comparison: pd.DataFrame,
+    path: Path,
+    dpi: int,
+) -> None:
+    """Show all subject means and the age/sex-adjusted group estimate."""
+    table = features.loc[
+        features["feature_id"].eq("aperiodic_exponent")
+    ].dropna(subset=["value", "group"])
+    result = comparison.iloc[0]
+    groups = ["Control", "PD"]
+    values = [
+        table.loc[table["group"].eq(group), "value"].to_numpy(dtype=float)
+        for group in groups
+    ]
+    fig, axis = plt.subplots(figsize=(8.2, 6.2))
+    violin = axis.violinplot(values, positions=[0, 1], widths=0.8, showextrema=False)
+    for body, color in zip(violin["bodies"], ["#0072B2", "#D55E00"]):
+        body.set_facecolor(color)
+        body.set_edgecolor(color)
+        body.set_alpha(0.22)
+    box = axis.boxplot(
+        values,
+        positions=[0, 1],
+        widths=0.25,
+        patch_artist=True,
+        showfliers=False,
+        medianprops={"color": "black", "linewidth": 1.5},
+    )
+    for patch, color in zip(box["boxes"], ["#0072B2", "#D55E00"]):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.45)
+    rng = np.random.default_rng(20260824)
+    for position, (group, group_values, color) in enumerate(
+        zip(groups, values, ["#0072B2", "#D55E00"])
+    ):
+        axis.scatter(
+            position + rng.uniform(-0.13, 0.13, len(group_values)),
+            group_values,
+            color=color,
+            alpha=0.62,
+            s=24,
+            edgecolors="white",
+            linewidths=0.3,
+            label=f"{group} (n={len(group_values)})",
+        )
+    axis.set_xticks([0, 1], groups)
+    axis.set(
+        ylabel="Subject-mean aperiodic exponent",
+        title="Aperiodic exponent by diagnostic group (specparam, 1–50 Hz)",
+    )
+    axis.grid(axis="y", alpha=0.2)
+    axis.legend(frameon=False, loc="upper left")
+    axis.text(
+        0.98,
+        0.98,
+        (
+            "Age/sex-adjusted PD − Control\n"
+            f"Δ={result['adjusted_pd_coefficient']:.3f} "
+            f"[{result['adjusted_pd_ci_lower']:.3f}, "
+            f"{result['adjusted_pd_ci_upper']:.3f}]\n"
+            f"HC3 p={result['adjusted_pd_p_value']:.4g}\n"
+            f"Hedges g={result['hedges_g_pd_minus_control']:.3f}; "
+            f"Welch p={result['welch_p_value']:.4g}"
+        ),
+        transform=axis.transAxes,
+        ha="right",
+        va="top",
+        fontsize=9,
+        bbox={"facecolor": "white", "edgecolor": "0.75", "alpha": 0.9},
+    )
+    fig.tight_layout()
+    _save(fig, path, dpi)
+
+
 def _save(fig: Any, path: Path, dpi: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=int(dpi), bbox_inches="tight")
@@ -78,6 +154,7 @@ def plot_cohort_audit(
     )
     colors = dictionary["family"].map(
         {
+            "aperiodic": "#E69F00",
             "ordinal_broadband": "#0072B2",
             "ordinal_band": "#56B4E9",
             "bout_properties": "#D55E00",
@@ -192,7 +269,7 @@ def plot_family_scatter_grid(
         correlations["family"].eq(family)
         & correlations["method"].eq("partial_spearman_age_sex")
     ].set_index("feature_id")
-    columns = 3 if len(specifications) <= 18 else 4
+    columns = min(3, len(specifications)) if len(specifications) <= 18 else 4
     rows = math.ceil(len(specifications) / columns)
     fig, axes = plt.subplots(rows, columns, figsize=(4.2 * columns, 3.4 * rows), squeeze=False)
     rng = np.random.default_rng(0)
@@ -216,14 +293,20 @@ def plot_family_scatter_grid(
             line_x = np.linspace(float(x.min()), float(x.max()), 100)
             axis.plot(line_x, intercept + slope * line_x, color="0.25", linestyle="--", linewidth=1)
         row = primary.loc[feature_id]
+        displayed_estimate = 0.0 if abs(float(row["estimate"])) < 0.005 else row["estimate"]
         star = " *FDR" if bool(row["fdr_reject"]) else ""
-        axis.set_title(f"{specification['feature_label']}\npartial ρ={row['estimate']:.2f}{star}", fontsize=9)
+        axis.set_title(
+            f"{specification['feature_label']}\npartial ρ={displayed_estimate:.2f}{star}",
+            fontsize=9,
+        )
         axis.set(xlabel=f"EEG feature ({specification['unit']})", ylabel="MOCA")
         axis.grid(alpha=0.2)
     for axis in axes.flat[len(specifications) :]:
         axis.set_visible(False)
+    title_separator = "\n" if columns == 1 else " — "
     fig.suptitle(
-        f"{primary_group} subject-level observations — raw points; inference uses age/sex-adjusted ranks"
+        f"{primary_group} subject-level observations{title_separator}"
+        "Raw points; inference uses age/sex-adjusted ranks"
     )
     fig.tight_layout()
     _save(fig, path, dpi)

@@ -28,6 +28,7 @@ from .features import (
     subject_feature_matrix,
 )
 from .plots import (
+    plot_aperiodic_exponent_group_comparison,
     plot_cohort_audit,
     plot_dimension_sensitivity_heatmaps,
     plot_dimension_stability_lines,
@@ -36,10 +37,15 @@ from .plots import (
     plot_family_heatmap,
     plot_family_scatter_grid,
 )
-from .statistics import correlate_electrodes, correlate_subject_features
+from .statistics import (
+    compare_aperiodic_exponent_groups,
+    correlate_electrodes,
+    correlate_subject_features,
+)
 
 
 FAMILIES = (
+    "aperiodic",
     "ordinal_broadband",
     "ordinal_band",
     "bout_properties",
@@ -91,6 +97,8 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("FDR scope must remain within prespecified feature families")
     requested = config["features"]
     regular_metrics = ["entropy", "complexity", "fisher_information"]
+    if requested.get("aperiodic_metrics") != ["aperiodic_exponent"]:
+        raise ValueError("The aperiodic feature must be the fixed-mode exponent")
     if requested.get("ordinal_metrics") != regular_metrics:
         raise ValueError("Only regular ordinal H, C, and F are supported")
     if requested.get("bout_ordinal_metrics") != regular_metrics:
@@ -182,6 +190,11 @@ def _validate_upstream_manifests(config: dict[str, Any]) -> dict[str, Any]:
     actual_range = [float(psd["fmin_hz"]), float(psd["fmax_hz"])]
     if actual_range != [float(value) for value in expected["scale_free_psd_range_hz"]]:
         raise ValueError("Scale-free source does not use the expected PSD range")
+    specparam = manifests["scale_free"]["analysis_config"]["specparam"]
+    if specparam.get("aperiodic_mode") != "fixed":
+        raise ValueError("Aperiodic exponent source must use fixed-mode specparam")
+    if [float(value) for value in specparam["frequency_range_hz"]] != actual_range:
+        raise ValueError("Aperiodic exponent and PSD frequency ranges disagree")
     provenance = {
         name: {
             "manifest_file": str(path.resolve()),
@@ -245,12 +258,17 @@ def _write_report(
     cohort: pd.DataFrame,
     dictionary: pd.DataFrame,
     correlations: pd.DataFrame,
+    aperiodic_group_comparison: pd.DataFrame,
     dimension_correlations: pd.DataFrame,
     config: dict[str, Any],
 ) -> None:
     settings = config["analysis"]
     pd_cohort = cohort.loc[cohort["group"].eq(settings["primary_group"])]
     primary = correlations.loc[correlations["method"].eq("partial_spearman_age_sex")]
+    exponent_moca = primary.loc[
+        primary["feature_id"].eq("aperiodic_exponent")
+    ].iloc[0]
+    exponent_group = aperiodic_group_comparison.iloc[0]
     top = primary.reindex(primary["estimate"].abs().sort_values(ascending=False).index).head(12)
     lines = [
         "# Quantitative-behavioral MOCA association report",
@@ -278,6 +296,42 @@ def _write_report(
         (
             "Benjamini–Hochberg FDR is controlled separately within each prespecified feature "
             "family and correlation method."
+        ),
+        "",
+        "## Aperiodic exponent",
+        "",
+        (
+            "The exponent is estimated by fixed-mode specparam over 1–50 Hz at each of the "
+            "60 shared electrodes, then averaged within subject before inference."
+        ),
+        (
+            f"PD mean={exponent_group['pd_mean']:.3f} (n={int(exponent_group['n_pd'])}); "
+            f"Control mean={exponent_group['control_mean']:.3f} "
+            f"(n={int(exponent_group['n_control'])})."
+        ),
+        (
+            "The primary age/sex-adjusted PD-minus-Control coefficient was "
+            f"{exponent_group['adjusted_pd_coefficient']:.3f} "
+            f"(95% CI [{exponent_group['adjusted_pd_ci_lower']:.3f}, "
+            f"{exponent_group['adjusted_pd_ci_upper']:.3f}], HC3 p="
+            f"{exponent_group['adjusted_pd_p_value']:.4g})."
+        ),
+        (
+            f"Unadjusted sensitivity results: Hedges g="
+            f"{exponent_group['hedges_g_pd_minus_control']:.3f}, Welch p="
+            f"{exponent_group['welch_p_value']:.4g}, Mann–Whitney p="
+            f"{exponent_group['mann_whitney_p_value']:.4g}."
+        ),
+        (
+            "Within PD, the age/sex-adjusted partial Spearman association with MOCA was "
+            f"rho={exponent_moca['estimate']:.3f} "
+            f"(95% bootstrap CI [{exponent_moca['ci_lower']:.3f}, "
+            f"{exponent_moca['ci_upper']:.3f}], raw p={exponent_moca['p_value']:.4g}, "
+            f"family FDR p={exponent_moca['p_fdr_bh']:.4g})."
+        ),
+        (
+            "The diagnostic-group comparison and the PD-only MOCA association answer "
+            "different questions and use separate models."
         ),
         "",
         "## Strongest adjusted associations by absolute effect size",
@@ -382,6 +436,10 @@ def run_analysis(
         len(dictionary),
     )
     subject_correlations = correlate_subject_features(subject_features, dictionary, config)
+    aperiodic_group_comparison = compare_aperiodic_exponent_groups(
+        subject_features,
+        confidence_level=float(config["analysis"]["bootstrap_confidence_level"]),
+    )
     electrode_features, electrode_order = build_electrode_features(
         config, cohort, dictionary
     )
@@ -417,6 +475,26 @@ def run_analysis(
     _write_csv(subject_features, metrics_dir / "subject_features_long.csv")
     _write_csv(wide, metrics_dir / "analysis_dataset.csv")
     _write_csv(subject_correlations, metrics_dir / "subject_level_correlations.csv")
+    _write_csv(
+        aperiodic_group_comparison,
+        metrics_dir / "aperiodic_exponent_group_comparison.csv",
+    )
+    _write_csv(
+        subject_features.loc[
+            subject_features["feature_id"].eq("aperiodic_exponent"),
+            [
+                "subject_id",
+                "group",
+                "moca",
+                "age_years",
+                "gender",
+                "sex_male",
+                "value",
+                "feature_id",
+            ],
+        ].rename(columns={"value": "aperiodic_exponent"}),
+        metrics_dir / "aperiodic_exponent_subject_data.csv",
+    )
     _write_csv(
         subject_correlations.loc[
             subject_correlations["method"].eq("partial_spearman_age_sex")
@@ -502,6 +580,12 @@ def run_analysis(
         dictionary,
         primary_group,
         figures_dir / "audit" / "cohort_and_coverage.png",
+        dpi,
+    )
+    plot_aperiodic_exponent_group_comparison(
+        subject_features,
+        aperiodic_group_comparison,
+        figures_dir / "aperiodic" / "group_comparison.png",
         dpi,
     )
     for family in FAMILIES:
@@ -606,6 +690,7 @@ def run_analysis(
         cohort,
         dictionary,
         subject_correlations,
+        aperiodic_group_comparison,
         dimension_correlations,
         config,
     )
@@ -637,6 +722,29 @@ def run_analysis(
         "n_subject_level_tests_per_method": len(dictionary),
         "n_primary_fdr_rejections": int(primary_results["fdr_reject"].sum()),
         "n_electrode_tests": len(electrode_correlations),
+        "aperiodic_exponent": {
+            "group_comparison_model": str(
+                aperiodic_group_comparison.iloc[0]["adjusted_model"]
+            ),
+            "adjusted_pd_minus_control": float(
+                aperiodic_group_comparison.iloc[0]["adjusted_pd_coefficient"]
+            ),
+            "adjusted_pd_p_value": float(
+                aperiodic_group_comparison.iloc[0]["adjusted_pd_p_value"]
+            ),
+            "moca_partial_spearman": float(
+                primary_results.loc[
+                    primary_results["feature_id"].eq("aperiodic_exponent"),
+                    "estimate",
+                ].iloc[0]
+            ),
+            "moca_partial_spearman_p_value": float(
+                primary_results.loc[
+                    primary_results["feature_id"].eq("aperiodic_exponent"),
+                    "p_value",
+                ].iloc[0]
+            ),
+        },
         "dimension_sensitivity": {
             "embedding_dimensions": config["dimension_sensitivity"]["embedding_dimensions"],
             "delay_samples": config["dimension_sensitivity"]["delay_samples"],

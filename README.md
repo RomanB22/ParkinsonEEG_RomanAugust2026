@@ -253,7 +253,9 @@ bash bout_analyses/run_bout_analyses.sh --overwrite
 The cross-sectional workflow in
 [`quantitative_behavioral/`](quantitative_behavioral/README.md) relates MOCA to
 regular broadband/band ordinal H/C/F, eBOSC bout properties, and within-bout
-ordinal H/C/F among PD participants. It uses subject-level partial Spearman
+ordinal H/C/F among PD participants. It also tests the fixed-mode 1–50 Hz
+aperiodic exponent between Control and PD and its association with MOCA. It
+uses subject-level partial Spearman
 correlations adjusted for age and sex, deterministic bootstrap intervals,
 prespecified family-specific FDR correction, raw-data scatter grids, forest
 plots, sensitivity heatmaps, and secondary spatial maps. Separate D=3,4,5,6

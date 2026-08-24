@@ -9,6 +9,7 @@ from quantitative_behavioral.features import (
 )
 from quantitative_behavioral.pipeline import load_analysis_config
 from quantitative_behavioral.statistics import (
+    compare_aperiodic_exponent_groups,
     correlate_subject_features,
     fdr_bh,
     partial_spearman,
@@ -27,6 +28,9 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             ["entropy", "complexity", "fisher_information"],
         )
         self.assertEqual(config["expected"]["shared_electrodes"], 60)
+        self.assertEqual(
+            config["features"]["aperiodic_metrics"], ["aperiodic_exponent"]
+        )
         self.assertEqual(
             config["dimension_sensitivity"]["embedding_dimensions"], [3, 4, 5, 6]
         )
@@ -105,16 +109,42 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             {"partial_spearman_age_sex", "spearman_unadjusted"},
         )
 
+    def test_aperiodic_group_comparison_adjusts_for_age_and_sex(self):
+        rng = np.random.default_rng(29)
+        n_per_group = 80
+        group = np.repeat(["Control", "PD"], n_per_group)
+        age = rng.uniform(50.0, 82.0, 2 * n_per_group)
+        sex = rng.integers(0, 2, 2 * n_per_group)
+        pd_indicator = (group == "PD").astype(float)
+        exponent = 0.8 + 0.2 * pd_indicator + 0.01 * age + 0.05 * sex
+        exponent += rng.normal(0.0, 0.08, len(exponent))
+        table = pd.DataFrame(
+            {
+                "subject_id": [f"sub-{index:03d}" for index in range(len(group))],
+                "group": group,
+                "feature_id": "aperiodic_exponent",
+                "value": exponent,
+                "age_years": age,
+                "sex_male": sex,
+            }
+        )
+        result = compare_aperiodic_exponent_groups(table).iloc[0]
+        self.assertEqual(result["n_pd"], n_per_group)
+        self.assertEqual(result["n_control"], n_per_group)
+        self.assertAlmostEqual(result["adjusted_pd_coefficient"], 0.2, delta=0.04)
+        self.assertLess(result["adjusted_pd_p_value"], 1e-10)
+
     def test_real_feature_table_is_subject_balanced_and_excludes_renyi(self):
         config = load_analysis_config("quantitative_behavioral/config.json")
         cohort, features, dictionary = build_subject_features(config)
         self.assertEqual(len(cohort), 149)
         self.assertEqual(int(cohort["group"].eq("PD").sum()), 100)
-        self.assertEqual(len(dictionary), 53)
+        self.assertEqual(len(dictionary), 54)
+        self.assertIn("aperiodic_exponent", set(dictionary["feature_id"]))
         self.assertFalse(dictionary["feature_id"].str.contains("renyi").any())
         self.assertFalse(features.duplicated(["subject_id", "feature_id"]).any())
         pd_features = features.loc[features["group"].eq("PD")]
-        self.assertEqual(len(pd_features), 100 * 53)
+        self.assertEqual(len(pd_features), 100 * 54)
         self.assertTrue(pd_features["value"].notna().all())
 
     def test_dimension_blocks_have_91_balanced_regular_and_renyi_features(self):

@@ -6,7 +6,116 @@ from typing import Callable
 
 import numpy as np
 import pandas as pd
-from scipy.stats import pearsonr, rankdata, spearmanr, t as student_t
+import statsmodels.api as sm
+from scipy.stats import (
+    mannwhitneyu,
+    pearsonr,
+    rankdata,
+    spearmanr,
+    t as student_t,
+    ttest_ind,
+)
+
+
+def compare_aperiodic_exponent_groups(
+    features: pd.DataFrame,
+    *,
+    confidence_level: float = 0.95,
+) -> pd.DataFrame:
+    """Compare subject-mean aperiodic exponent between PD and Control.
+
+    The primary group estimate is an OLS PD indicator coefficient
+    adjusted for age and sex, with HC3 heteroskedasticity-robust uncertainty.
+    Welch's t test, Mann–Whitney U, and Hedges' g are unadjusted sensitivity and
+    effect-size summaries.
+    """
+    required = {
+        "subject_id",
+        "group",
+        "feature_id",
+        "value",
+        "age_years",
+        "sex_male",
+    }
+    missing = sorted(required - set(features.columns))
+    if missing:
+        raise ValueError(f"Aperiodic comparison input is missing columns: {missing}")
+    table = features.loc[
+        features["feature_id"].eq("aperiodic_exponent")
+    ].dropna(subset=["value", "age_years", "sex_male", "group"])
+    if table["subject_id"].duplicated().any():
+        raise ValueError("Aperiodic exponent comparison must have one row per subject")
+    if set(table["group"]) != {"PD", "Control"}:
+        raise ValueError("Aperiodic exponent comparison requires PD and Control groups")
+
+    pd_values = table.loc[table["group"].eq("PD"), "value"].to_numpy(dtype=float)
+    control_values = table.loc[
+        table["group"].eq("Control"), "value"
+    ].to_numpy(dtype=float)
+    if min(len(pd_values), len(control_values)) < 3:
+        raise ValueError("Aperiodic exponent comparison requires at least 3 subjects per group")
+
+    welch = ttest_ind(pd_values, control_values, equal_var=False)
+    mann_whitney = mannwhitneyu(pd_values, control_values, alternative="two-sided")
+    pooled_degrees = len(pd_values) + len(control_values) - 2
+    pooled_sd = np.sqrt(
+        (
+            (len(pd_values) - 1) * np.var(pd_values, ddof=1)
+            + (len(control_values) - 1) * np.var(control_values, ddof=1)
+        )
+        / pooled_degrees
+    )
+    cohen_d = (np.mean(pd_values) - np.mean(control_values)) / pooled_sd
+    hedges_correction = 1.0 - 3.0 / (4.0 * pooled_degrees - 1.0)
+    hedges_g = hedges_correction * cohen_d
+
+    design = pd.DataFrame(
+        {
+            "pd_indicator": table["group"].eq("PD").astype(float),
+            "age_years": table["age_years"].astype(float),
+            "sex_male": table["sex_male"].astype(float),
+        },
+        index=table.index,
+    )
+    fitted = sm.OLS(
+        table["value"].to_numpy(dtype=float),
+        sm.add_constant(design, has_constant="add"),
+    ).fit(cov_type="HC3")
+    alpha = 1.0 - float(confidence_level)
+    interval = fitted.conf_int(alpha=alpha).loc["pd_indicator"]
+    return pd.DataFrame.from_records(
+        [
+            {
+                "feature_id": "aperiodic_exponent",
+                "feature_label": "Aperiodic exponent (1–50 Hz)",
+                "unit_of_analysis": "subject mean across shared electrodes",
+                "n_pd": int(len(pd_values)),
+                "n_control": int(len(control_values)),
+                "pd_mean": float(np.mean(pd_values)),
+                "pd_std": float(np.std(pd_values, ddof=1)),
+                "pd_median": float(np.median(pd_values)),
+                "control_mean": float(np.mean(control_values)),
+                "control_std": float(np.std(control_values, ddof=1)),
+                "control_median": float(np.median(control_values)),
+                "mean_difference_pd_minus_control": float(
+                    np.mean(pd_values) - np.mean(control_values)
+                ),
+                "hedges_g_pd_minus_control": float(hedges_g),
+                "welch_t": float(welch.statistic),
+                "welch_p_value": float(welch.pvalue),
+                "mann_whitney_u": float(mann_whitney.statistic),
+                "mann_whitney_p_value": float(mann_whitney.pvalue),
+                "adjusted_model": "OLS: exponent ~ PD + age + sex; HC3 robust SE",
+                "adjusted_pd_coefficient": float(fitted.params["pd_indicator"]),
+                "adjusted_pd_se_hc3": float(fitted.bse["pd_indicator"]),
+                "adjusted_pd_ci_lower": float(interval.iloc[0]),
+                "adjusted_pd_ci_upper": float(interval.iloc[1]),
+                "adjusted_pd_p_value": float(fitted.pvalues["pd_indicator"]),
+                "confidence_level": float(confidence_level),
+                "multiplicity_scope": "single targeted aperiodic-exponent group comparison",
+            }
+        ]
+    )
 
 
 def fdr_bh(p_values: np.ndarray, alpha: float) -> tuple[np.ndarray, np.ndarray]:
@@ -253,4 +362,3 @@ def correlate_electrodes(
         result.loc[indices, "p_fdr_bh_within_feature"] = adjusted
         result.loc[indices, "fdr_reject_within_feature"] = rejected
     return result
-

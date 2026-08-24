@@ -167,8 +167,11 @@ exploration_current() {
 
 quantitative_current() {
     [[ -f quantitative_behavioral/processed/manifest.json ]] || return 1
+    local primary_dictionary="quantitative_behavioral/processed/metrics/feature_dictionary.csv"
     local dictionary="quantitative_behavioral/processed/metrics/dimension_sensitivity_feature_dictionary.csv"
+    [[ -f "$primary_dictionary" ]] || return 1
     [[ -f "$dictionary" ]] || return 1
+    grep -q 'aperiodic_exponent' "$primary_dictionary" || return 1
     grep -q 'renyi_entropy_alpha_0_5' "$dictionary" || return 1
     grep -q 'renyi_complexity_alpha_0_5' "$dictionary" || return 1
     grep -q 'renyi_entropy_alpha_5' "$dictionary" || return 1
