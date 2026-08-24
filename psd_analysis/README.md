@@ -5,9 +5,11 @@ cleaned EEG epochs. It does not alter the dataset or preprocessing outputs.
 
 ## What is calculated
 
-For each subject, accepted four-second epochs are loaded in their stored
-temporal order and concatenated separately for every electrode. The pipeline
-then makes one Welch call on that `electrodes × concatenated samples` array.
+The pipeline first inventories every analyzed subject and restricts the run to
+the electrode intersection shared by all of them. For each subject, accepted
+four-second epochs are then loaded in their stored temporal order and
+concatenated separately for those shared electrodes. The pipeline makes one
+Welch call on that `electrodes × concatenated samples` array.
 Welch uses non-overlapping four-second Hann windows, so a spectral window never
 straddles an artificial join between epochs. At 120 Hz, the 480-sample window
 produces a 0.25 Hz frequency grid. The default analysis retains 1–50 Hz.
@@ -18,8 +20,8 @@ Aggregation is deliberately hierarchical and subject-balanced:
 2. Calculate one Welch PSD per subject/electrode. Welch averages the
    non-overlapping window periodograms in linear µV²/Hz; there is no
    median-across-epochs step.
-3. For the whole-head subject curve, take the median across the 60 electrodes
-   present in every participant.
+3. For the whole-head subject curve, take the median across the electrodes
+   present in every analyzed participant.
 4. Take the median of those subject curves within PD and Control.
 5. Bootstrap subjects within each group to obtain a pointwise 95% percentile
    confidence interval around the group median.
@@ -59,9 +61,10 @@ double-counting an interval of power.
 Group topomaps show the electrode-wise median across subjects in relative band
 power, displayed as a percentage of total 1–50 Hz power. Normalization occurs
 for every subject/electrode before the group median is calculated. They use the
-60 common electrodes so PD and Control maps are directly comparable. For each
-band, both groups use the same color limits. The CSV tables retain absolute
-band power alongside total and relative power.
+same common electrodes used everywhere else in the analysis, so PD and Control
+maps are directly comparable. For each band, both groups use the same color
+limits. The CSV tables retain absolute band power alongside total and relative
+power.
 
 ## Run
 
@@ -104,9 +107,11 @@ psd_analysis/processed/
 ```
 
 `subject_electrode_psd.npz` is the compact lossless spectral array. It contains
-subject IDs, group labels, the 66-electrode union, frequencies, and a
-`subjects × electrodes × frequencies` PSD array in µV²/Hz. Electrodes absent
-from one of the two layouts are represented by `NaN`; no values are invented.
+subject IDs, group labels, the cohort-wide shared electrodes, frequencies, and
+a dense `subjects × shared electrodes × frequencies` PSD array in µV²/Hz.
+Source-layout union information is retained separately in
+`electrode_sets.json`, but union-only electrodes do not enter PSD or band-power
+calculations.
 
 The CSV tables retain 17 significant digits. `manifest.json` records the full
 configuration, software versions, aggregation sequence, confidence-interval

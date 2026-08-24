@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+
+cd "$PROJECT_ROOT"
+
+BASE_CONFIG="${ORDINAL_BASE_CONFIG:-ordinal_analysis/config.json}"
+OUTPUT_ROOT="${ORDINAL_SWEEP_OUTPUT_ROOT:-ordinal_analysis/parameter_sweep}"
+CONDA_ENV="${ORDINAL_CONDA_ENV:-MNE_Roman}"
+
+embedding_dimensions=(4 5 6 7)
+delays=(1 2 5 10 15 20)
+total_runs=$(( ${#embedding_dimensions[@]} * ${#delays[@]} ))
+run_number=0
+overwrite=false
+
+for argument in "$@"; do
+    case "$argument" in
+        -h|--help)
+            cat <<'EOF'
+Usage: bash ordinal_analysis/run_ordinal_parameter_sweep.sh [ANALYSIS_OPTIONS]
+
+Run all 24 combinations of D={4,5,6,7} and tau={1,2,5,10,15,20}.
+ANALYSIS_OPTIONS are forwarded to run_ordinal_analysis.sh; for example:
+  --subjects sub-001 sub-101
+  --overwrite
+  --no-progress
+
+Environment overrides:
+  ORDINAL_BASE_CONFIG       Base JSON configuration
+  ORDINAL_SWEEP_OUTPUT_ROOT Root directory for all sweep outputs
+  ORDINAL_CONDA_ENV         Conda environment name
+EOF
+            exit 0
+            ;;
+        --config|--config=*)
+            printf '%s\n' \
+                'Do not pass --config to the sweep; use ORDINAL_BASE_CONFIG instead.' >&2
+            exit 2
+            ;;
+        --overwrite)
+            overwrite=true
+            ;;
+    esac
+done
+
+if [[ ! -f "$BASE_CONFIG" ]]; then
+    printf 'Base configuration not found: %s\n' "$BASE_CONFIG" >&2
+    exit 1
+fi
+
+for dimension in "${embedding_dimensions[@]}"; do
+    for delay in "${delays[@]}"; do
+        run_number=$((run_number + 1))
+        output_dir="${OUTPUT_ROOT}/D${dimension}_tau${delay}"
+        config_path="${output_dir}/config.json"
+
+        mkdir -p "$output_dir"
+        if [[ ! -f "$config_path" || "$overwrite" == true ]]; then
+            conda run -n "$CONDA_ENV" python -c '
+import json
+import sys
+from pathlib import Path
+
+base_path, config_path, output_dir, dimension, delay = sys.argv[1:]
+with Path(base_path).open(encoding="utf-8") as stream:
+    config = json.load(stream)
+config["ordinal"]["embedding_dimension"] = int(dimension)
+config["ordinal"]["delay_samples"] = int(delay)
+config["output_dir"] = output_dir
+Path(config_path).write_text(
+    json.dumps(config, indent=2) + "\n",
+    encoding="utf-8",
+)
+' "$BASE_CONFIG" "$config_path" "$output_dir" "$dimension" "$delay"
+        fi
+
+        printf '\n[%d/%d] Running ordinal analysis with D=%d, tau=%d\n' \
+            "$run_number" "$total_runs" "$dimension" "$delay"
+        bash "${SCRIPT_DIR}/run_ordinal_analysis.sh" \
+            --config "$config_path" "$@"
+    done
+done
+
+printf '\nCompleted all %d ordinal parameter combinations. Outputs: %s\n' \
+    "$total_runs" "$OUTPUT_ROOT"

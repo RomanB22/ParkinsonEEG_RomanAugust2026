@@ -6,9 +6,12 @@ import ordpy
 import pandas as pd
 
 from ordinal_analysis.metrics import (
+    METRICS,
+    RENYI_ALPHA_METRICS,
     analyze_epoch_data,
     band_subject_electrode_means,
     filter_epoch_data,
+    metrics_from_probabilities,
     ordinal_probabilities,
     subject_electrode_means,
 )
@@ -52,6 +55,19 @@ class OrdinalMetricTests(unittest.TestCase):
         self.assertEqual(n_patterns, 5)
         self.assertEqual(n_ties, 0)
 
+    def test_renyi_complexity_entropy_matches_ordpy_for_all_alphas(self):
+        probabilities = np.asarray([1 / 3, 1 / 15, 4 / 15, 2 / 15, 1 / 5, 0])
+        actual = metrics_from_probabilities(probabilities, dx=3)
+        for alpha, entropy_metric, complexity_metric in RENYI_ALPHA_METRICS:
+            expected_entropy, expected_complexity = ordpy.renyi_complexity_entropy(
+                probabilities,
+                alpha=alpha,
+                dx=3,
+                probs=True,
+            )
+            self.assertAlmostEqual(actual[entropy_metric], expected_entropy)
+            self.assertAlmostEqual(actual[complexity_metric], expected_complexity)
+
     def test_patterns_never_cross_epoch_boundaries(self):
         data = np.asarray(
             [
@@ -90,6 +106,9 @@ class OrdinalMetricTests(unittest.TestCase):
         self.assertAlmostEqual(
             means.loc[0, "fisher_information"], metrics["fisher_information"].mean()
         )
+        for metric in METRICS:
+            self.assertIn(metric, metrics)
+            self.assertAlmostEqual(means.loc[0, metric], metrics[metric].mean())
 
     def test_band_filter_is_epoch_local_and_frequency_selective(self):
         sfreq = 120.0
@@ -125,6 +144,8 @@ class OrdinalMetricTests(unittest.TestCase):
                 "fisher_information": [0.3, 0.5, 0.4, 0.6],
             }
         )
+        for metric in METRICS[3:]:
+            table[metric] = [0.2, 0.4, 0.6, 0.8]
         means = band_subject_electrode_means(table)
         self.assertEqual(means["band"].tolist(), ["delta", "theta"])
         self.assertEqual(means["n_electrodes"].tolist(), [2, 2])

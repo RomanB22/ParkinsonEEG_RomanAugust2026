@@ -13,7 +13,19 @@ import pandas as pd
 from scipy.signal import butter, sosfiltfilt
 
 
-METRICS = ("entropy", "complexity", "fisher_information")
+CORE_METRICS = ("entropy", "complexity", "fisher_information")
+RENYI_ALPHA_METRICS = (
+    (0.9, "renyi_entropy_alpha_0_9", "renyi_complexity_alpha_0_9"),
+    (1.1, "renyi_entropy_alpha_1_1", "renyi_complexity_alpha_1_1"),
+    (2.0, "renyi_entropy_alpha_2", "renyi_complexity_alpha_2"),
+)
+RENYI_ALPHAS = tuple(alpha for alpha, _, _ in RENYI_ALPHA_METRICS)
+RENYI_METRICS = tuple(
+    metric
+    for _, entropy_metric, complexity_metric in RENYI_ALPHA_METRICS
+    for metric in (entropy_metric, complexity_metric)
+)
+METRICS = (*CORE_METRICS, *RENYI_METRICS)
 
 
 def filter_epoch_data(
@@ -130,8 +142,8 @@ def metrics_from_probabilities(
     probabilities: np.ndarray,
     *,
     dx: int,
-) -> tuple[float, float, float]:
-    """Calculate normalized H, statistical complexity, and Fisher information."""
+) -> dict[str, float]:
+    """Calculate Shannon, Fisher, and configured Rényi ordinal quantities."""
     entropy, complexity = ordpy.complexity_entropy(probabilities, dx=dx, probs=True)
     with warnings.catch_warnings():
         warnings.filterwarnings(
@@ -144,10 +156,34 @@ def metrics_from_probabilities(
         )
     if not np.isclose(entropy, fisher_entropy, rtol=1e-12, atol=1e-12):
         raise RuntimeError("ordpy returned inconsistent entropy values for HxC and HxF")
-    values = np.asarray([entropy, complexity, fisher], dtype=float)
+
+    renyi_pairs = np.asarray(
+        ordpy.renyi_complexity_entropy(
+            probabilities,
+            alpha=RENYI_ALPHAS,
+            dx=dx,
+            probs=True,
+        ),
+        dtype=float,
+    )
+    if renyi_pairs.shape != (len(RENYI_ALPHAS), 2):
+        raise RuntimeError("ordpy.renyi_complexity_entropy returned an unexpected shape")
+
+    result = {
+        "entropy": float(entropy),
+        "complexity": float(complexity),
+        "fisher_information": float(fisher),
+    }
+    for index, (_, entropy_metric, complexity_metric) in enumerate(
+        RENYI_ALPHA_METRICS
+    ):
+        result[entropy_metric] = float(renyi_pairs[index, 0])
+        result[complexity_metric] = float(renyi_pairs[index, 1])
+
+    values = np.asarray(list(result.values()), dtype=float)
     if not np.all(np.isfinite(values)):
         raise RuntimeError("ordpy returned a non-finite metric")
-    return tuple(float(value) for value in values)
+    return result
 
 
 def analyze_epoch_data(
@@ -161,7 +197,7 @@ def analyze_epoch_data(
     tau: int = 1,
     tie_precision: int | None = None,
 ) -> pd.DataFrame:
-    """Calculate one H/C/F triplet per electrode for one participant."""
+    """Calculate Shannon, Fisher, and Rényi quantities for each electrode."""
     array = np.asarray(data, dtype=np.float64)
     if array.ndim != 3:
         raise ValueError("data must have shape (epochs, channels, samples)")
@@ -176,17 +212,13 @@ def analyze_epoch_data(
             tau=tau,
             tie_precision=tie_precision,
         )
-        entropy, complexity, fisher = metrics_from_probabilities(
-            probabilities, dx=dx
-        )
+        metric_values = metrics_from_probabilities(probabilities, dx=dx)
         rows.append(
             {
                 "subject_id": subject_id,
                 "group": group,
                 "electrode": electrode,
-                "entropy": entropy,
-                "complexity": complexity,
-                "fisher_information": fisher,
+                **metric_values,
                 "n_epochs": int(array.shape[0]),
                 "samples_per_epoch": int(array.shape[2]),
                 "n_samples": int(array.shape[0] * array.shape[2]),

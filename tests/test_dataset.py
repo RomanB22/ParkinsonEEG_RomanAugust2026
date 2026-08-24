@@ -1,6 +1,6 @@
 import unittest
 
-from src.dataset import discover_recordings, load_participants
+from src.dataset import discover_recordings, load_participants, ordered_channel_inventory
 from src.metadata import expected_channels_from_dataset
 
 
@@ -18,7 +18,23 @@ class DatasetTests(unittest.TestCase):
         self.assertNotIn("X", channels)
         self.assertIn("Fp1", channels)
 
+    def test_channel_inventory_returns_only_cohort_intersection(self):
+        shared, union = ordered_channel_inventory(
+            {
+                "sub-001": ["Fp1", "Fz", "Cz"],
+                "sub-002": ["Fz", "Cz", "Pz"],
+                "sub-003": ["Cz", "Fz"],
+            }
+        )
+        self.assertEqual(shared, ["Fz", "Cz"])
+        self.assertEqual(union, ["Fp1", "Fz", "Cz", "Pz"])
+
+    def test_channel_inventory_rejects_an_empty_intersection(self):
+        with self.assertRaisesRegex(ValueError, "no EEG electrodes in common"):
+            ordered_channel_inventory(
+                {"sub-001": ["Fp1"], "sub-002": ["Pz"]}
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
-

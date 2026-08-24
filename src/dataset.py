@@ -129,3 +129,40 @@ def channel_names_from_sidecar(set_path: str | Path, auxiliary_names: list[str] 
     channels = pd.read_csv(sidecar_paths(set_path)["channels_tsv"], sep="\t")
     excluded = set(auxiliary_names or [])
     return [str(name) for name in channels["name"] if str(name) not in excluded]
+
+
+def ordered_channel_inventory(
+    channels_by_subject: dict[str, list[str]],
+) -> tuple[list[str], list[str]]:
+    """Return the ordered cohort intersection and union of channel names.
+
+    Both orders follow the first analyzed subject, with channels found only in
+    later subjects appended to the union in their first-observed order.
+    """
+    if not channels_by_subject:
+        raise ValueError("Cannot determine shared electrodes without subjects")
+
+    first_subject, first_channels = next(iter(channels_by_subject.items()))
+    if not first_channels:
+        raise ValueError(f"{first_subject}: no EEG channels available")
+    if len(first_channels) != len(set(first_channels)):
+        raise ValueError(f"{first_subject}: duplicate EEG channel names")
+
+    shared = set(first_channels)
+    union = list(first_channels)
+    seen = set(first_channels)
+    for subject_id, channels in channels_by_subject.items():
+        if not channels:
+            raise ValueError(f"{subject_id}: no EEG channels available")
+        if len(channels) != len(set(channels)):
+            raise ValueError(f"{subject_id}: duplicate EEG channel names")
+        shared.intersection_update(channels)
+        for channel in channels:
+            if channel not in seen:
+                union.append(channel)
+                seen.add(channel)
+
+    shared_order = [channel for channel in first_channels if channel in shared]
+    if not shared_order:
+        raise ValueError("Analyzed subjects have no EEG electrodes in common")
+    return shared_order, union

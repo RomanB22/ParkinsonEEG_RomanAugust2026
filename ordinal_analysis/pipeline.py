@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from src.runtime import configure_runtime
+from src.dataset import ordered_channel_inventory
 
 configure_runtime()
 
@@ -23,7 +24,10 @@ import scipy
 from tqdm.auto import tqdm
 
 from .metrics import (
+    CORE_METRICS,
     METRICS,
+    RENYI_ALPHAS,
+    RENYI_ALPHA_METRICS,
     analyze_epoch_data,
     band_subject_electrode_means,
     filter_epoch_data,
@@ -144,23 +148,6 @@ def _configure_logger(output_dir: Path, overwrite: bool) -> logging.Logger:
     return logger
 
 
-def _electrode_order(subject_infos: dict[str, mne.Info]) -> list[str]:
-    order: list[str] = []
-    for info in subject_infos.values():
-        for channel in info.ch_names:
-            if channel not in order:
-                order.append(channel)
-    return order
-
-
-def _common_channels(subject_infos: dict[str, mne.Info]) -> list[str]:
-    infos = list(subject_infos.values())
-    common = set(infos[0].ch_names)
-    for info in infos[1:]:
-        common.intersection_update(info.ch_names)
-    return [channel for channel in infos[0].ch_names if channel in common]
-
-
 def _group_summary(table: pd.DataFrame, by: list[str]) -> pd.DataFrame:
     grouped = table.groupby(by, sort=True)
     rows = []
@@ -216,6 +203,15 @@ def run_analysis(
     if missing_files:
         raise FileNotFoundError(f"Missing cleaned epoch files for: {missing_files}")
 
+    available_channels: dict[str, list[str]] = {}
+    for subject_id in expected_subjects:
+        epochs = mne.read_epochs(files[subject_id], preload=False, verbose="ERROR")
+        eeg_picks = mne.pick_types(epochs.info, eeg=True, exclude=[])
+        available_channels[subject_id] = [
+            epochs.ch_names[pick] for pick in eeg_picks
+        ]
+    common_channels, electrode_union = ordered_channel_inventory(available_channels)
+
     groups = participant_table.set_index("participant_id")["GROUP"].astype(str).to_dict()
     dx = int(config["ordinal"]["embedding_dimension"])
     tau = int(config["ordinal"]["delay_samples"])
@@ -227,13 +223,14 @@ def run_analysis(
     filter_order = int(config["band_filter"]["order"])
     logger.info(
         "Starting ordinal analysis | subjects=%d | dx=%d | tau=%d | "
-        "tie_precision=%s | bands=%s | filter_order=%d",
+        "tie_precision=%s | bands=%s | filter_order=%d | shared_electrodes=%d",
         len(expected_subjects),
         dx,
         tau,
         tie_precision,
         ",".join(bands),
         filter_order,
+        len(common_channels),
     )
 
     metric_tables = []
@@ -252,11 +249,9 @@ def run_analysis(
         analysis_progress.set_postfix_str(f"{subject_id} | loading", refresh=True)
         logger.debug("[%d/%d] %s | %s", index, len(expected_subjects), subject_id, path)
         epochs = mne.read_epochs(path, preload=True, verbose="ERROR")
-        picks = mne.pick_types(epochs.info, eeg=True, exclude=[])
-        if not len(picks):
-            raise ValueError(f"{subject_id}: no EEG channels in {path}")
+        picks = [epochs.ch_names.index(channel) for channel in common_channels]
         data = epochs.get_data(picks=picks, copy=True)
-        channel_names = [epochs.ch_names[pick] for pick in picks]
+        channel_names = list(common_channels)
         info = mne.pick_info(epochs.info, picks, copy=True)
         info["bads"] = []
         subject_infos[subject_id] = info
@@ -317,6 +312,7 @@ def run_analysis(
                 "epoch_file": str(path.resolve()),
                 "n_epochs": len(epochs),
                 "n_electrodes": len(channel_names),
+                "n_available_electrodes": len(available_channels[subject_id]),
                 "sampling_frequency_hz": float(epochs.info["sfreq"]),
             }
         )
@@ -358,12 +354,8 @@ def run_analysis(
     )
     _write_csv(input_table, metrics_dir / "analyzed_inputs.csv")
 
-    electrode_order = _electrode_order(subject_infos)
-    common_channels = _common_channels(subject_infos)
-    first_info = next(iter(subject_infos.values()))
-    common_picks = [first_info.ch_names.index(channel) for channel in common_channels]
-    common_info = mne.pick_info(first_info, common_picks, copy=True)
-    common_info["bads"] = []
+    electrode_order = list(common_channels)
+    common_info = next(iter(subject_infos.values())).copy()
 
     configured_groups = [str(group) for group in config["plots"]["group_order"]]
     present_groups = set(electrode_metrics["group"].unique())
@@ -395,7 +387,7 @@ def run_analysis(
         figures_dir / "violins" / "subject_electrode_mean_violins.png",
         dpi,
     )
-    logger.info("Creating HxC and HxF planes")
+    logger.info("Creating Shannon, Fisher, and Rényi entropy-complexity planes")
     plot_electrode_plane_pages(
         electrode_metrics,
         electrode_order,
@@ -450,7 +442,9 @@ def run_analysis(
         band: str(configured_band_labels.get(band, band.replace("_", " ").title()))
         for band in band_order
     }
-    logger.info("Creating band-resolved violins and HxC/HxF planes")
+    logger.info(
+        "Creating band-resolved Shannon, Fisher, and Rényi violins and planes"
+    )
     for band in band_order:
         selected = band_electrode_metrics.loc[band_electrode_metrics["band"].eq(band)]
         selected_means = band_subject_means.loc[band_subject_means["band"].eq(band)]
@@ -551,9 +545,12 @@ def run_analysis(
     common_payload = {
         "common_electrodes": common_channels,
         "n_common_electrodes": len(common_channels),
-        "electrode_union": electrode_order,
-        "n_electrode_union": len(electrode_order),
-        "group_topomap_policy": "Group maps use only electrodes present in every analyzed subject.",
+        "electrode_union": electrode_union,
+        "n_electrode_union": len(electrode_union),
+        "analysis_electrode_policy": (
+            "Every metric, aggregation, table, and figure uses only electrodes "
+            "present in every analyzed subject."
+        ),
     }
     (metrics_dir / "electrode_sets.json").write_text(
         json.dumps(common_payload, indent=2) + "\n", encoding="utf-8"
@@ -577,7 +574,11 @@ def run_analysis(
         "n_band_electrode_rows": len(band_electrode_metrics),
         "n_band_subject_rows": len(band_subject_means),
         "n_common_electrodes": len(common_channels),
-        "n_electrode_union": len(electrode_order),
+        "n_electrode_union": len(electrode_union),
+        "analysis_electrode_policy": (
+            "Only electrodes present in every analyzed subject are loaded for ordinal "
+            "metrics and included in any table, aggregation, or figure."
+        ),
         "tie_handling": (
             "tie_precision=None: ordinal ranking uses original float64 samples with no decimal "
             "rounding and no artificial jitter; exact tied embedding windows are counted in "
@@ -585,8 +586,21 @@ def run_analysis(
         ),
         "epoch_pooling": (
             "Ordinal pattern counts are pooled across accepted epochs. Patterns crossing epoch "
-            "boundaries are excluded before H, C, and F are calculated."
+            "boundaries are excluded before Shannon, Fisher, and Rényi quantities are "
+            "calculated."
         ),
+        "renyi": {
+            "function": "ordpy.renyi_complexity_entropy",
+            "alphas": [float(alpha) for alpha in RENYI_ALPHAS],
+            "probability_input": True,
+            "outputs": {
+                f"alpha_{alpha:g}": {
+                    "entropy_column": entropy_metric,
+                    "complexity_column": complexity_metric,
+                }
+                for alpha, entropy_metric, complexity_metric in RENYI_ALPHA_METRICS
+            },
+        },
         "band_filtering": (
             "Each accepted epoch and electrode is independently band-pass filtered with a "
             f"{filter_order}th-order Butterworth SOS and scipy.signal.sosfiltfilt. Filtering "
@@ -594,11 +608,13 @@ def run_analysis(
             "patterns are then pooled across epochs with boundary-crossing embeddings excluded."
         ),
         "subject_average_definition": (
-            "Arithmetic mean of the subject's electrode-level H, C, and F values; the average-"
+            "Arithmetic mean of every subject's electrode-level Shannon, Fisher, and Rényi "
+            "quantities across the electrodes shared by every analyzed subject; the average-"
             "referenced EEG waveform is not averaged across channels."
         ),
         "topomap_scale_limits": {
-            metric: [float(value) for value in limits[metric]] for metric in METRICS
+            metric: [float(value) for value in limits[metric]]
+            for metric in CORE_METRICS
         },
         "electrode_zscore_topomap_policy": (
             "For each metric, values are z-scored across all subjects pooled across groups "
@@ -608,19 +624,19 @@ def run_analysis(
         ),
         "topomap_zscore_scale_limits": {
             metric: [float(value) for value in standardized_limits[metric]]
-            for metric in METRICS
+            for metric in CORE_METRICS
         },
         "band_topomap_scale_limits": {
             band: {
                 metric: [float(value) for value in band_limits[band][metric]]
-                for metric in METRICS
+                for metric in CORE_METRICS
             }
             for band in band_order
         },
         "band_topomap_zscore_scale_limits": {
             band: {
                 metric: [float(value) for value in standardized_band_limits[band][metric]]
-                for metric in METRICS
+                for metric in CORE_METRICS
             }
             for band in band_order
         },

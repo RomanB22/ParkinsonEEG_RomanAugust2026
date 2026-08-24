@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from src.runtime import configure_runtime
+from src.dataset import ordered_channel_inventory
 
 configure_runtime()
 
@@ -136,12 +137,27 @@ def run_analysis(
     if missing:
         raise FileNotFoundError(f"Missing cleaned epoch files for: {missing}")
 
+    available_channels: dict[str, list[str]] = {}
+    for subject_id in expected_subjects:
+        epochs = mne.read_epochs(files[subject_id], preload=False, verbose="ERROR")
+        eeg_picks = mne.pick_types(epochs.info, eeg=True, exclude=[])
+        available_channels[subject_id] = [
+            epochs.ch_names[pick] for pick in eeg_picks
+        ]
+    common_channels, electrode_union = ordered_channel_inventory(available_channels)
+
     group_lookup = participant_table.set_index("participant_id")["GROUP"].astype(str).to_dict()
     fmin = float(config["psd"]["fmin_hz"])
     fmax = float(config["psd"]["fmax_hz"])
-    logger.info("Starting PSD analysis | subjects=%d | %.2f-%.2f Hz", len(expected_subjects), fmin, fmax)
+    logger.info(
+        "Starting PSD analysis | subjects=%d | %.2f-%.2f Hz | shared_electrodes=%d",
+        len(expected_subjects),
+        fmin,
+        fmax,
+        len(common_channels),
+    )
 
-    subject_psds: dict[str, dict[str, np.ndarray]] = {}
+    subject_psds: dict[str, np.ndarray] = {}
     subject_infos: dict[str, mne.Info] = {}
     input_rows = []
     frequencies = None
@@ -149,9 +165,8 @@ def run_analysis(
         path = files[subject_id]
         logger.info("[%d/%d] %s | %s", index, len(expected_subjects), subject_id, path)
         epochs = mne.read_epochs(path, preload=True, verbose="ERROR")
-        picks = mne.pick_types(epochs.info, eeg=True, exclude=[])
+        picks = [epochs.ch_names.index(channel) for channel in common_channels]
         data = epochs.get_data(picks=picks, copy=True)
-        names = [epochs.ch_names[pick] for pick in picks]
         current_frequencies, electrode_psd = compute_subject_electrode_psd(
             data,
             float(epochs.info["sfreq"]),
@@ -162,9 +177,7 @@ def run_analysis(
             frequencies = current_frequencies
         elif not np.array_equal(frequencies, current_frequencies):
             raise ValueError(f"{subject_id}: PSD frequency grid differs from prior subjects")
-        subject_psds[subject_id] = {
-            name: electrode_psd[channel_index] for channel_index, name in enumerate(names)
-        }
+        subject_psds[subject_id] = electrode_psd
         info = mne.pick_info(epochs.info, picks, copy=True)
         info["bads"] = []
         subject_infos[subject_id] = info
@@ -174,7 +187,8 @@ def run_analysis(
                 "group": group_lookup[subject_id],
                 "epoch_file": str(path.resolve()),
                 "n_epochs": len(epochs),
-                "n_electrodes": len(names),
+                "n_electrodes": len(common_channels),
+                "n_available_electrodes": len(available_channels[subject_id]),
                 "samples_per_epoch": data.shape[2],
                 "concatenated_samples_per_electrode": int(len(epochs) * data.shape[2]),
                 "concatenated_duration_sec": float(len(epochs) * data.shape[2] / epochs.info["sfreq"]),
@@ -184,26 +198,8 @@ def run_analysis(
         )
     assert frequencies is not None
 
-    electrode_union: list[str] = []
-    common = set(next(iter(subject_infos.values())).ch_names)
-    for info in subject_infos.values():
-        common.intersection_update(info.ch_names)
-        for channel in info.ch_names:
-            if channel not in electrode_union:
-                electrode_union.append(channel)
-    common_channels = [
-        channel for channel in next(iter(subject_infos.values())).ch_names if channel in common
-    ]
-    union_index = {channel: index for index, channel in enumerate(electrode_union)}
-    cube = np.full(
-        (len(expected_subjects), len(electrode_union), len(frequencies)), np.nan, dtype=np.float64
-    )
-    for subject_index, subject_id in enumerate(expected_subjects):
-        for electrode, values in subject_psds[subject_id].items():
-            cube[subject_index, union_index[electrode], :] = values
-
-    common_indices = [union_index[channel] for channel in common_channels]
-    subject_global_psd = np.median(cube[:, common_indices, :], axis=1)
+    cube = np.stack([subject_psds[subject_id] for subject_id in expected_subjects])
+    subject_global_psd = np.median(cube, axis=1)
     subject_global_rows = []
     for subject_index, subject_id in enumerate(expected_subjects):
         for frequency_index, frequency in enumerate(frequencies):
@@ -260,9 +256,7 @@ def run_analysis(
     )
     subject_band_rows = []
     for subject_index, subject_id in enumerate(expected_subjects):
-        for electrode_index, electrode in enumerate(electrode_union):
-            if np.isnan(cube[subject_index, electrode_index]).all():
-                continue
+        for electrode_index, electrode in enumerate(common_channels):
             for band, values in band_arrays.items():
                 power = float(values[subject_index, electrode_index])
                 relative_power = float(
@@ -337,7 +331,7 @@ def run_analysis(
         metrics_dir / "subject_electrode_psd.npz",
         subject_ids=np.asarray(expected_subjects),
         groups=subject_groups,
-        electrodes=np.asarray(electrode_union),
+        electrodes=np.asarray(common_channels),
         frequencies_hz=frequencies,
         psd_uv2_hz=cube,
     )
@@ -357,10 +351,7 @@ def run_analysis(
         output_dir / "figures" / "group_median_psd_with_ci.png",
         dpi,
     )
-    first_info = next(iter(subject_infos.values()))
-    common_picks = [first_info.ch_names.index(channel) for channel in common_channels]
-    common_info = mne.pick_info(first_info, common_picks, copy=True)
-    common_info["bads"] = []
+    common_info = next(iter(subject_infos.values())).copy()
     display_names = config["plots"].get("band_display_names", {})
     band_labels = {
         band: f"{display_names.get(band, band.replace('_', ' ').title())}\n"
@@ -369,7 +360,7 @@ def run_analysis(
     }
     logger.info("Creating group relative-band-power topomaps")
     topomap_limits = plot_group_band_topomaps(
-        group_band_table.loc[group_band_table["electrode"].isin(common_channels)],
+        group_band_table,
         common_info,
         list(bands),
         band_labels,
@@ -383,6 +374,10 @@ def run_analysis(
         "n_common_electrodes": len(common_channels),
         "electrode_union": electrode_union,
         "n_electrode_union": len(electrode_union),
+        "analysis_electrode_policy": (
+            "Every PSD, band-power value, aggregation, table, saved array, and figure "
+            "uses only electrodes present in every analyzed subject."
+        ),
     }
     (metrics_dir / "electrode_sets.json").write_text(
         json.dumps(electrode_payload, indent=2) + "\n", encoding="utf-8"
@@ -403,13 +398,18 @@ def run_analysis(
         "group_counts": pd.Series(subject_groups).value_counts().to_dict(),
         "n_common_electrodes": len(common_channels),
         "n_electrode_union": len(electrode_union),
+        "analysis_electrode_policy": (
+            "Only electrodes present in every analyzed subject are loaded for PSD and "
+            "included in any table, saved array, aggregation, or figure."
+        ),
         "frequency_bins": len(frequencies),
         "frequency_resolution_hz": float(frequencies[1] - frequencies[0]),
         "aggregation": (
             "Accepted epochs are concatenated in stored temporal order for each electrode. "
             "One Welch call uses non-overlapping four-second Hann windows and mean Welch "
             "aggregation to produce each subject/electrode PSD; there is no median-across-"
-            "epochs step. The global subject PSD is the median across 60 common electrodes, "
+            f"epochs step. The global subject PSD is the median across {len(common_channels)} "
+            "electrodes shared by every analyzed subject, "
             "and the group curve is the median across subjects. Conversion to dB occurs only "
             "after aggregation."
         ),
@@ -419,7 +419,8 @@ def run_analysis(
         "topomap": (
             f"For each subject/electrode, band power is divided by total {fmin:g}-{fmax:g} Hz "
             "power before group aggregation. Group maps show the electrode-wise median "
-            "relative power as a percentage on 60 common electrodes. Absolute band and "
+            f"relative power as a percentage on the same {len(common_channels)} shared "
+            "electrodes. Absolute band and "
             "total powers remain in the subject-level table."
         ),
         "topomap_relative_power_percent_limits": {

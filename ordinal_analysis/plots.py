@@ -15,14 +15,43 @@ import mne
 import numpy as np
 import pandas as pd
 
-from .metrics import METRICS
+from .metrics import CORE_METRICS, METRICS
 
 
 METRIC_STYLE = {
     "entropy": ("Normalized permutation entropy (H)", "viridis"),
     "complexity": ("Statistical complexity (C)", "magma"),
     "fisher_information": ("Fisher information (F)", "cividis"),
+    "renyi_entropy_alpha_0_9": ("Rényi entropy (Hα, α=0.9)", "viridis"),
+    "renyi_complexity_alpha_0_9": ("Rényi complexity (Cα, α=0.9)", "magma"),
+    "renyi_entropy_alpha_1_1": ("Rényi entropy (Hα, α=1.1)", "viridis"),
+    "renyi_complexity_alpha_1_1": ("Rényi complexity (Cα, α=1.1)", "magma"),
+    "renyi_entropy_alpha_2": ("Rényi entropy (Hα, α=2)", "viridis"),
+    "renyi_complexity_alpha_2": ("Rényi complexity (Cα, α=2)", "magma"),
 }
+
+PLANE_PAIRS = (
+    ("entropy", "complexity", "electrode_hxc", "H × C"),
+    ("entropy", "fisher_information", "electrode_hxf", "H × F"),
+    (
+        "renyi_entropy_alpha_0_9",
+        "renyi_complexity_alpha_0_9",
+        "electrode_renyi_hxc_alpha_0_9",
+        "Rényi Hα × Cα (α=0.9)",
+    ),
+    (
+        "renyi_entropy_alpha_1_1",
+        "renyi_complexity_alpha_1_1",
+        "electrode_renyi_hxc_alpha_1_1",
+        "Rényi Hα × Cα (α=1.1)",
+    ),
+    (
+        "renyi_entropy_alpha_2",
+        "renyi_complexity_alpha_2",
+        "electrode_renyi_hxc_alpha_2",
+        "Rényi Hα × Cα (α=2)",
+    ),
+)
 
 
 def _save(fig, path: Path, dpi: int) -> None:
@@ -112,9 +141,16 @@ def plot_subject_average_violins(
     analysis_label: str | None = None,
 ) -> None:
     """Plot subject-level means across electrode metrics."""
-    fig, axes = plt.subplots(1, 3, figsize=(14, 4.8))
+    columns = 3
+    rows = math.ceil(len(METRICS) / columns)
+    fig, axes = plt.subplots(
+        rows,
+        columns,
+        figsize=(14, 4.5 * rows),
+        squeeze=False,
+    )
     positions = np.arange(len(group_order), dtype=float)
-    for axis, metric in zip(axes, METRICS):
+    for axis, metric in zip(axes.flat, METRICS):
         label, _ = METRIC_STYLE[metric]
         for position, group in zip(positions, group_order):
             values = table.loc[table["group"].eq(group), metric].to_numpy(dtype=float)
@@ -132,7 +168,9 @@ def plot_subject_average_violins(
         axis.set(ylabel=label, title=label)
         axis.set_ylim(_limits(table[metric].to_numpy(), lower_zero=True))
         axis.grid(axis="y", alpha=0.2)
-    title = "Subject means across available electrode-level ordinal metrics"
+    for axis in axes.flat[len(METRICS) :]:
+        axis.axis("off")
+    title = "Subject means across shared electrode-level ordinal metrics"
     if analysis_label:
         title = f"{analysis_label} — {title}"
     fig.suptitle(title)
@@ -143,6 +181,7 @@ def plot_subject_average_violins(
 def _scatter_groups(
     axis,
     table: pd.DataFrame,
+    x_metric: str,
     y_metric: str,
     group_order: list[str],
     colors: dict[str, str],
@@ -150,7 +189,7 @@ def _scatter_groups(
     for group in group_order:
         selected = table.loc[table["group"].eq(group)]
         axis.scatter(
-            selected["entropy"],
+            selected[x_metric],
             selected[y_metric],
             s=18,
             alpha=0.55,
@@ -168,23 +207,28 @@ def plot_subject_average_planes(
     dpi: int,
     analysis_label: str | None = None,
 ) -> None:
-    fig, axes = plt.subplots(1, 2, figsize=(11, 5))
-    for axis, metric, title in zip(
-        axes,
-        ("complexity", "fisher_information"),
-        ("H × C plane", "H × F plane"),
-    ):
-        _scatter_groups(axis, table, metric, group_order, colors)
+    columns = 2
+    rows = math.ceil(len(PLANE_PAIRS) / columns)
+    fig, axes = plt.subplots(
+        rows,
+        columns,
+        figsize=(11, 4.7 * rows),
+        squeeze=False,
+    )
+    for axis, (x_metric, y_metric, _, title) in zip(axes.flat, PLANE_PAIRS):
+        _scatter_groups(axis, table, x_metric, y_metric, group_order, colors)
         axis.set(
-            xlabel=METRIC_STYLE["entropy"][0],
-            ylabel=METRIC_STYLE[metric][0],
-            title=title,
+            xlabel=METRIC_STYLE[x_metric][0],
+            ylabel=METRIC_STYLE[y_metric][0],
+            title=f"{title} plane",
         )
-        axis.set_xlim(_limits(table["entropy"].to_numpy(), lower_zero=True))
-        axis.set_ylim(_limits(table[metric].to_numpy(), lower_zero=True))
+        axis.set_xlim(_limits(table[x_metric].to_numpy(), lower_zero=True))
+        axis.set_ylim(_limits(table[y_metric].to_numpy(), lower_zero=True))
         axis.grid(alpha=0.2)
-    axes[0].legend(frameon=False)
-    title = "Subject means across available electrode-level metrics"
+    for axis in axes.flat[len(PLANE_PAIRS) :]:
+        axis.axis("off")
+    axes.flat[0].legend(frameon=False)
+    title = "Subject means across shared electrode-level metrics"
     if analysis_label:
         title = f"{analysis_label} — {title}"
     fig.suptitle(title)
@@ -204,11 +248,11 @@ def plot_electrode_plane_pages(
 ) -> None:
     """Plot all subject points on per-electrode HxC and HxF planes."""
     columns = 4
-    for y_metric, stem, plane_title in (
-        ("complexity", "electrode_hxc", "H × C"),
-        ("fisher_information", "electrode_hxf", "H × F"),
-    ):
-        xlim = _limits(table["entropy"].to_numpy(), lower_zero=True)
+    for x_metric, y_metric, stem, plane_title in PLANE_PAIRS:
+        if output_dir.exists():
+            for stale_page in output_dir.glob(f"{stem}_p*.png"):
+                stale_page.unlink()
+        xlim = _limits(table[x_metric].to_numpy(), lower_zero=True)
         ylim = _limits(table[y_metric].to_numpy(), lower_zero=True)
         for page, start in enumerate(range(0, len(electrode_order), channels_per_page), 1):
             channels = electrode_order[start : start + channels_per_page]
@@ -216,7 +260,14 @@ def plot_electrode_plane_pages(
             fig, axes = plt.subplots(rows, columns, figsize=(14, 3.2 * rows), squeeze=False)
             for axis, electrode in zip(axes.flat, channels):
                 selected = table.loc[table["electrode"].eq(electrode)]
-                _scatter_groups(axis, selected, y_metric, group_order, colors)
+                _scatter_groups(
+                    axis,
+                    selected,
+                    x_metric,
+                    y_metric,
+                    group_order,
+                    colors,
+                )
                 axis.set(title=electrode, xlim=xlim, ylim=ylim)
                 axis.grid(alpha=0.15)
                 axis.tick_params(labelsize=7)
@@ -224,10 +275,10 @@ def plot_electrode_plane_pages(
                 axis.axis("off")
             for axis in axes[-1, :]:
                 if axis.axison:
-                    axis.set_xlabel("H")
+                    axis.set_xlabel(METRIC_STYLE[x_metric][0])
             for axis in axes[:, 0]:
                 if axis.axison:
-                    axis.set_ylabel("C" if y_metric == "complexity" else "F")
+                    axis.set_ylabel(METRIC_STYLE[y_metric][0])
             handles = [
                 plt.Line2D([], [], linestyle="", marker="o", color=colors[group], label=group)
                 for group in group_order
@@ -244,7 +295,7 @@ def plot_electrode_plane_pages(
 def metric_color_limits(table: pd.DataFrame) -> dict[str, tuple[float, float]]:
     """Use identical full-data scales for every subject and group topomap."""
     limits = {}
-    for metric in METRICS:
+    for metric in CORE_METRICS:
         values = table[metric].to_numpy(dtype=float)
         low, high = float(np.nanmin(values)), float(np.nanmax(values))
         if np.isclose(low, high):
@@ -265,22 +316,22 @@ def electrode_metric_zscores(
     group means retain between-group differences. Constant metric/electrode
     combinations are assigned zero.
     """
-    required = {"electrode", *strata, *METRICS}
+    required = {"electrode", *strata, *CORE_METRICS}
     missing = sorted(required - set(table.columns))
     if missing:
         raise ValueError(f"Missing z-score columns: {missing}")
 
     keys = [*strata, "electrode"]
-    grouped = table.groupby(keys, sort=False, dropna=False)[list(METRICS)]
+    grouped = table.groupby(keys, sort=False, dropna=False)[list(CORE_METRICS)]
     means = grouped.transform("mean")
     standard_deviations = grouped.transform("std", ddof=0)
     valid = standard_deviations.gt(0.0) & np.isfinite(standard_deviations)
-    zscores = (table.loc[:, METRICS] - means) / standard_deviations
+    zscores = (table.loc[:, CORE_METRICS] - means) / standard_deviations
     zscores = zscores.where(valid, 0.0)
-    zscores = zscores.where(table.loc[:, METRICS].notna())
+    zscores = zscores.where(table.loc[:, CORE_METRICS].notna())
 
     standardized = table.copy()
-    standardized.loc[:, METRICS] = zscores
+    standardized.loc[:, CORE_METRICS] = zscores
     return standardized
 
 
@@ -293,11 +344,11 @@ def group_mean_symmetric_color_limits(
         standardized_table.loc[
             standardized_table["electrode"].isin(common_channels)
         ]
-        .groupby(["group", "electrode"])[list(METRICS)]
+        .groupby(["group", "electrode"])[list(CORE_METRICS)]
         .mean()
     )
     limits = {}
-    for metric in METRICS:
+    for metric in CORE_METRICS:
         maximum = float(np.nanmax(np.abs(group_means[metric].to_numpy(dtype=float))))
         if not np.isfinite(maximum) or np.isclose(maximum, 0.0):
             maximum = 1.0
@@ -311,7 +362,7 @@ def _plot_topomap_row(
     info,
     limits: dict[str, tuple[float, float]],
 ) -> None:
-    for axis, metric in zip(axes, METRICS):
+    for axis, metric in zip(axes, CORE_METRICS):
         label, cmap = METRIC_STYLE[metric]
         image, _ = mne.viz.plot_topomap(
             values_by_metric[metric],
@@ -333,7 +384,7 @@ def _plot_standardized_topomap_row(
     info,
     limits: dict[str, tuple[float, float]],
 ) -> None:
-    for axis, metric in zip(axes, METRICS):
+    for axis, metric in zip(axes, CORE_METRICS):
         label, _ = METRIC_STYLE[metric]
         image, _ = mne.viz.plot_topomap(
             values_by_metric[metric],
@@ -364,7 +415,7 @@ def plot_subject_topomaps(
             raise ValueError(f"{subject_id}: metrics missing for channels {missing}")
         values = {
             metric: selected.loc[info.ch_names, metric].to_numpy(dtype=float)
-            for metric in METRICS
+            for metric in CORE_METRICS
         }
         fig, axes = plt.subplots(1, 3, figsize=(12, 4))
         _plot_topomap_row(axes, values, info, limits)
@@ -389,12 +440,12 @@ def plot_group_topomaps(
             table.loc[
                 table["group"].eq(group) & table["electrode"].isin(common_info.ch_names)
             ]
-            .groupby("electrode")[list(METRICS)]
+            .groupby("electrode")[list(CORE_METRICS)]
             .mean()
         )
         values = {
             metric: selected.loc[common_info.ch_names, metric].to_numpy(dtype=float)
-            for metric in METRICS
+            for metric in CORE_METRICS
         }
         _plot_topomap_row(axes[row], values, common_info, limits)
         axes[row, 0].text(
@@ -408,7 +459,10 @@ def plot_group_topomaps(
             fontsize=12,
             fontweight="bold",
         )
-    fig.suptitle("Group-mean ordinal topographies — 60 electrodes shared by all subjects")
+    fig.suptitle(
+        "Group-mean ordinal topographies — "
+        f"{len(common_info.ch_names)} electrodes shared by all analyzed subjects"
+    )
     fig.tight_layout()
     _save(fig, path, dpi)
 
@@ -432,12 +486,12 @@ def plot_group_standardized_topomaps(
                 standardized_table["group"].eq(group)
                 & standardized_table["electrode"].isin(common_info.ch_names)
             ]
-            .groupby("electrode")[list(METRICS)]
+            .groupby("electrode")[list(CORE_METRICS)]
             .mean()
         )
         values = {
             metric: selected.loc[common_info.ch_names, metric].to_numpy(dtype=float)
-            for metric in METRICS
+            for metric in CORE_METRICS
         }
         _plot_standardized_topomap_row(axes[row], values, common_info, limits)
         axes[row, 0].text(
@@ -484,7 +538,7 @@ def plot_subject_band_topomaps(
         subject_table = table.loc[table["subject_id"].eq(subject_id)]
         fig, axes = plt.subplots(
             len(band_order),
-            len(METRICS),
+            len(CORE_METRICS),
             figsize=(12, 3.6 * len(band_order)),
             squeeze=False,
         )
@@ -499,7 +553,7 @@ def plot_subject_band_topomaps(
                 )
             values = {
                 metric: selected.loc[info.ch_names, metric].to_numpy(dtype=float)
-                for metric in METRICS
+                for metric in CORE_METRICS
             }
             _plot_topomap_row(axes[row], values, info, limits[band])
             axes[row, 0].text(
@@ -541,12 +595,12 @@ def plot_group_band_topomaps(
                     band_table["group"].eq(group)
                     & band_table["electrode"].isin(common_info.ch_names)
                 ]
-                .groupby("electrode")[list(METRICS)]
+                .groupby("electrode")[list(CORE_METRICS)]
                 .mean()
             )
             values = {
                 metric: selected.loc[common_info.ch_names, metric].to_numpy(dtype=float)
-                for metric in METRICS
+                for metric in CORE_METRICS
             }
             _plot_topomap_row(axes[row], values, common_info, limits[band])
             axes[row, 0].text(

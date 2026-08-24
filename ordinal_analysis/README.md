@@ -6,12 +6,20 @@ or preprocessing decisions.
 
 ## Scientific scope
 
-For every available electrode in every participant, the analysis estimates the
-Bandt-Pompe ordinal-pattern distribution and uses `ordpy` 1.2.2 to calculate:
+Before calculating metrics, the pipeline inventories the EEG electrodes in
+every analyzed participant and takes their intersection. For every electrode
+in that shared set, it estimates the Bandt-Pompe ordinal-pattern distribution
+and uses `ordpy` 1.2.2 to calculate:
 
 - normalized permutation entropy, **H**;
 - Jensen-Shannon statistical complexity, **C**;
-- discrete Fisher information, **F**.
+- discrete Fisher information, **F**;
+- normalized Rényi permutation entropy, **Hα**, for `α = 0.9, 1.1, 2`;
+- Rényi statistical complexity, **Cα**, for `α = 0.9, 1.1, 2`.
+
+Both Rényi quantities come from one vectorized call to
+`ordpy.renyi_complexity_entropy` for each pooled ordinal distribution. The
+standalone `ordpy.renyi_entropy` function is not called.
 
 The same complete analysis is performed on the broadband cleaned epochs and on
 six band-pass versions: delta (1–4 Hz), theta (4–8 Hz), alpha (8–13 Hz), beta
@@ -20,9 +28,10 @@ theta, alpha, and the lower edge of beta; it is an additional targeted summary,
 not a statistically independent canonical band.
 
 It also calculates one subject-level value for each quantity by taking the
-arithmetic mean of that subject's electrode-level values. It deliberately does
-not average EEG voltages across electrodes first: the cleaned data use an
-average reference, so a spatially averaged waveform would collapse toward zero.
+arithmetic mean of that subject's shared-electrode values. The same electrode
+set therefore contributes to every participant. It deliberately does not
+average EEG voltages across electrodes first: the cleaned data use an average
+reference, so a spatially averaged waveform would collapse toward zero.
 
 This stage is descriptive. It creates no p-values, multiple-comparison claims,
 or classifier results.
@@ -50,6 +59,10 @@ The defaults in [`config.json`](config.json) are:
 | `delay_samples` | `1` | Adjacent elements of a pattern are one 120 Hz sample apart (`1/120 ≈ 8.33 ms`). |
 | `tie_precision` | `null` | Uses the `ordpy` default full-precision policy; samples retain their full float64 decimals and are never rounded. |
 
+Rényi alpha values are fixed at `0.9`, `1.1`, and `2`. Values below and above
+one provide order-sensitive alternatives around the Shannon limit, while
+`α = 2` gives stronger weight to higher-probability ordinal patterns.
+
 No noise or jitter is added. Exact equalities that remain at full precision use
 `ordpy`'s deterministic `argsort` behavior. Their counts and fractions are
 written for every subject/electrode so this edge case is visible rather than
@@ -62,7 +75,8 @@ pattern. Vectorized NumPy ordering implements the same ordinal symbolization as
 `ordpy.ordinal_sequence` without its row-wise overhead. The metric functions
 `ordpy.complexity_entropy(..., probs=True)` and
 `ordpy.fisher_shannon(..., probs=True)` receive the resulting pooled
-probability distribution in lexicographic permutation order.
+probability distribution in lexicographic permutation order, as does
+`ordpy.renyi_complexity_entropy(..., alpha=[0.9, 1.1, 2], probs=True)`.
 
 ## Band filtering
 
@@ -111,6 +125,20 @@ The runner refuses to replace an existing electrode-metrics table unless
 `--overwrite` is supplied. A custom configuration can be selected with
 `--config PATH`.
 
+To run the complete 24-combination parameter sweep for embedding dimensions
+`D = 4, 5, 6, 7` and delays `tau = 1, 2, 5, 10, 15, 20`:
+
+```bash
+bash ordinal_analysis/run_ordinal_parameter_sweep.sh --overwrite
+```
+
+Arguments such as `--subjects` and `--no-progress` are forwarded to every run.
+Results and the exact generated configuration for each combination are kept in
+`ordinal_analysis/parameter_sweep/D<dimension>_tau<delay>/`. The sweep runs
+sequentially and stops immediately if any combination fails. Its base config,
+output root, and Conda environment can be changed with `ORDINAL_BASE_CONFIG`,
+`ORDINAL_SWEEP_OUTPUT_ROOT`, and `ORDINAL_CONDA_ENV`, respectively.
+
 ## Outputs
 
 ```text
@@ -133,10 +161,13 @@ ordinal_analysis/processed/
     │   ├── electrode_entropy_violins.png
     │   ├── electrode_complexity_violins.png
     │   ├── electrode_fisher_information_violins.png
+    │   ├── electrode_renyi_entropy_alpha_*_violins.png
+    │   ├── electrode_renyi_complexity_alpha_*_violins.png
     │   └── subject_electrode_mean_violins.png
     ├── planes/
     │   ├── electrode_hxc_p*.png
     │   ├── electrode_hxf_p*.png
+    │   ├── electrode_renyi_hxc_alpha_*_p*.png
     │   └── subject_electrode_mean_hxc_hxf.png
     ├── topomaps/
     │   ├── group_mean_topomaps.png
@@ -154,15 +185,23 @@ ordinal_analysis/processed/
 
 ### Tables
 
-`electrode_metrics.csv` contains one row per subject/electrode with H, C, F,
-sample and epoch counts, the number of ordinal patterns, exact-tie diagnostics,
-sampling rate, embedding parameters, and tie policy. Floating-point results are
-written with 17 significant digits.
+`electrode_metrics.csv` contains one row per subject/shared-electrode with H, C,
+F, all six Rényi quantities, sample and epoch counts, the number of ordinal
+patterns, exact-tie diagnostics, sampling rate, embedding parameters, and tie
+policy. The Rényi columns are:
+
+```text
+renyi_entropy_alpha_0_9       renyi_complexity_alpha_0_9
+renyi_entropy_alpha_1_1       renyi_complexity_alpha_1_1
+renyi_entropy_alpha_2         renyi_complexity_alpha_2
+```
+
+Floating-point results are written with 17 significant digits.
 
 `subject_electrode_mean_metrics.csv` contains one row per participant and the
-mean of each metric across their available electrodes. Each participant has one
-of two 63-electrode layouts. `electrode_sets.json` records the 66-electrode union
-and the 60 electrodes shared by everyone.
+mean of each metric across the same cohort-wide shared electrode set.
+`electrode_sets.json` records both that analyzed intersection and the source
+electrode union for provenance; union-only electrodes never enter metrics.
 
 `band_electrode_metrics.csv` adds one row per subject, electrode, and band. It
 includes H/C/F, pattern and exact-tie diagnostics, numerical band limits, and
@@ -177,16 +216,19 @@ and medians for PD and Control without inferential testing.
 ### Figures
 
 - Electrode violin figures compare the subject distributions for PD and Control
-  at every electrode in the union.
-- Subject-mean violins give each participant one value, preventing participants
-  with more electrodes from receiving more weight.
+  at every electrode shared by all analyzed participants.
+- Subject-mean violins give each participant one value calculated from exactly
+  the same electrodes.
 - Per-electrode H×C and H×F pages plot every subject, colored by group.
+- Per-electrode Rényi Hα×Cα pages do the same separately for each alpha.
 - Subject-mean planes plot one point per participant.
-- Every participant receives a three-panel H/C/F topomap using their actual
-  available electrode locations.
-- The group figure averages values at the 60 common electrodes. All subject and
+- Every participant receives a three-panel H/C/F topomap using only the shared
+  electrode locations.
+- The group figure averages values at the common electrodes. All subject and
   group topomaps use the same full-dataset color limits for a given metric.
 - Each band receives the same violin and H×C/H×F products as broadband.
+- Rényi quantities are included in the broadband and band-resolved violins and
+  entropy-complexity planes. H/C/F topomaps remain the original three metrics.
 - Each participant also receives one 6-band × 3-metric topomap figure. Scales
   are fixed across participants and groups within each band/metric pair.
 - Six group band figures compare PD and Control on the shared electrode set.
@@ -200,7 +242,8 @@ and medians for PD and Control without inferential testing.
 
 `manifest.json` records the complete configuration, software versions, group
 counts, electrode sets, tie policy, epoch pooling policy, subject-mean
-definition, filter policy, band limits, and broadband/band topomap color limits.
+definition, Rényi function and alpha values, filter policy, band limits, and
+broadband/band topomap color limits.
 `ordinal_analysis.log` records progress through every subject and every band.
 
 Run all repository tests with:

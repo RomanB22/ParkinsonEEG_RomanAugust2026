@@ -15,7 +15,10 @@ from ordinal_analysis.pipeline import run_analysis
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Calculate ordpy entropy, complexity, and Fisher information from cleaned EEG epochs."
+        description=(
+            "Calculate ordpy Shannon, Fisher, and Rényi ordinal quantities "
+            "from cleaned EEG epochs."
+        )
     )
     parser.add_argument(
         "--config",
