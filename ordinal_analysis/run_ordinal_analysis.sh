@@ -12,4 +12,8 @@ export MPLCONFIGDIR="${TMPDIR:-/tmp}/parkinson_eeg_mpl"
 export XDG_CACHE_HOME="${TMPDIR:-/tmp}/parkinson_eeg_cache"
 mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME"
 
-exec conda run -n MNE_Roman python ordinal_analysis/run_ordinal_analysis.py "$@"
+# Conda captures subprocess output by default, which hides tqdm updates until
+# the process exits. Stream stdout/stderr directly so interactive terminals
+# render the progress bar in real time.
+exec conda run --no-capture-output -n MNE_Roman \
+    python ordinal_analysis/run_ordinal_analysis.py "$@"

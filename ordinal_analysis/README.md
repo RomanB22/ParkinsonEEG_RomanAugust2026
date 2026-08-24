@@ -97,7 +97,8 @@ The terminal displays a `tqdm` progress bar covering every subject/analysis
 stage and identifies the current subject and stage (loading, broadband, or band
 name). Detailed subject/band progress is also retained in
 `ordinal_analysis.log`. Use `--no-progress` to suppress the terminal bar in
-non-interactive jobs.
+non-interactive jobs. The Bash launcher uses Conda's live-output mode so the
+bar updates immediately in interactive terminals such as VS Code's terminal.
 
 For a quick selected-subject run:
 
