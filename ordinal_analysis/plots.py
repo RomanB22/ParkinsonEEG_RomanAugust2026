@@ -254,6 +254,57 @@ def metric_color_limits(table: pd.DataFrame) -> dict[str, tuple[float, float]]:
     return limits
 
 
+def electrode_metric_zscores(
+    table: pd.DataFrame,
+    *,
+    strata: tuple[str, ...] = (),
+) -> pd.DataFrame:
+    """Z-score metrics across subjects within each stratum and electrode.
+
+    Groups are deliberately pooled during standardization so that subsequent
+    group means retain between-group differences. Constant metric/electrode
+    combinations are assigned zero.
+    """
+    required = {"electrode", *strata, *METRICS}
+    missing = sorted(required - set(table.columns))
+    if missing:
+        raise ValueError(f"Missing z-score columns: {missing}")
+
+    keys = [*strata, "electrode"]
+    grouped = table.groupby(keys, sort=False, dropna=False)[list(METRICS)]
+    means = grouped.transform("mean")
+    standard_deviations = grouped.transform("std", ddof=0)
+    valid = standard_deviations.gt(0.0) & np.isfinite(standard_deviations)
+    zscores = (table.loc[:, METRICS] - means) / standard_deviations
+    zscores = zscores.where(valid, 0.0)
+    zscores = zscores.where(table.loc[:, METRICS].notna())
+
+    standardized = table.copy()
+    standardized.loc[:, METRICS] = zscores
+    return standardized
+
+
+def group_mean_symmetric_color_limits(
+    standardized_table: pd.DataFrame,
+    common_channels: list[str],
+) -> dict[str, tuple[float, float]]:
+    """Return zero-centered limits spanning standardized group means."""
+    group_means = (
+        standardized_table.loc[
+            standardized_table["electrode"].isin(common_channels)
+        ]
+        .groupby(["group", "electrode"])[list(METRICS)]
+        .mean()
+    )
+    limits = {}
+    for metric in METRICS:
+        maximum = float(np.nanmax(np.abs(group_means[metric].to_numpy(dtype=float))))
+        if not np.isfinite(maximum) or np.isclose(maximum, 0.0):
+            maximum = 1.0
+        limits[metric] = (-maximum, maximum)
+    return limits
+
+
 def _plot_topomap_row(
     axes,
     values_by_metric: dict[str, np.ndarray],
@@ -273,6 +324,28 @@ def _plot_topomap_row(
             vlim=limits[metric],
         )
         axis.set_title(label, fontsize=9)
+        axis.figure.colorbar(image, ax=axis, shrink=0.72, pad=0.04)
+
+
+def _plot_standardized_topomap_row(
+    axes,
+    values_by_metric: dict[str, np.ndarray],
+    info,
+    limits: dict[str, tuple[float, float]],
+) -> None:
+    for axis, metric in zip(axes, METRICS):
+        label, _ = METRIC_STYLE[metric]
+        image, _ = mne.viz.plot_topomap(
+            values_by_metric[metric],
+            info,
+            axes=axis,
+            show=False,
+            sensors=True,
+            contours=6,
+            cmap="RdBu_r",
+            vlim=limits[metric],
+        )
+        axis.set_title(f"{label}\nMean pooled-cohort z-score", fontsize=9)
         axis.figure.colorbar(image, ax=axis, shrink=0.72, pad=0.04)
 
 
@@ -336,6 +409,52 @@ def plot_group_topomaps(
             fontweight="bold",
         )
     fig.suptitle("Group-mean ordinal topographies — 60 electrodes shared by all subjects")
+    fig.tight_layout()
+    _save(fig, path, dpi)
+
+
+def plot_group_standardized_topomaps(
+    standardized_table: pd.DataFrame,
+    common_info,
+    group_order: list[str],
+    limits: dict[str, tuple[float, float]],
+    path: Path,
+    dpi: int,
+    analysis_label: str,
+) -> None:
+    """Plot pooled-cohort, electrode-wise z-score means for each group."""
+    fig, axes = plt.subplots(
+        len(group_order), 3, figsize=(12, 4 * len(group_order)), squeeze=False
+    )
+    for row, group in enumerate(group_order):
+        selected = (
+            standardized_table.loc[
+                standardized_table["group"].eq(group)
+                & standardized_table["electrode"].isin(common_info.ch_names)
+            ]
+            .groupby("electrode")[list(METRICS)]
+            .mean()
+        )
+        values = {
+            metric: selected.loc[common_info.ch_names, metric].to_numpy(dtype=float)
+            for metric in METRICS
+        }
+        _plot_standardized_topomap_row(axes[row], values, common_info, limits)
+        axes[row, 0].text(
+            -0.22,
+            0.5,
+            group,
+            transform=axes[row, 0].transAxes,
+            rotation=90,
+            va="center",
+            ha="center",
+            fontsize=12,
+            fontweight="bold",
+        )
+    fig.suptitle(
+        f"{analysis_label} — group-mean electrode-wise z-scores "
+        f"({len(common_info.ch_names)} shared electrodes)"
+    )
     fig.tight_layout()
     _save(fig, path, dpi)
 

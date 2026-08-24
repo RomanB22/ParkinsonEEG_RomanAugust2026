@@ -133,6 +133,7 @@ ordinal_analysis/processed/
     │   └── subject_electrode_mean_hxc_hxf.png
     ├── topomaps/
     │   ├── group_mean_topomaps.png
+    │   ├── group_mean_zscored_topomaps.png
     │   └── subjects/sub-*_ordinal_topomaps.png
     └── bands/
         ├── delta|theta|alpha|beta|low_gamma|broad_5_15/
@@ -140,6 +141,7 @@ ordinal_analysis/processed/
         │   └── planes/*.png
         └── topomaps/
             ├── group_means/<band>_group_mean_topomaps.png
+            ├── group_means_zscored/<band>_group_mean_zscored_topomaps.png
             └── subjects/sub-*_band_ordinal_topomaps.png
 ```
 
@@ -181,6 +183,11 @@ and medians for PD and Control without inferential testing.
 - Each participant also receives one 6-band × 3-metric topomap figure. Scales
   are fixed across participants and groups within each band/metric pair.
 - Six group band figures compare PD and Control on the shared electrode set.
+- Additional broadband and band-resolved group maps z-score each metric across
+  all subjects pooled across groups, separately within every electrode (and
+  band). Their diverging, zero-centered scales show standardized group
+  deviations rather than absolute metric levels. Constant combinations are
+  assigned zero; population standard deviation (`ddof=0`) is used.
 
 ## Provenance and validation
 

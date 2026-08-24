@@ -6,7 +6,7 @@
   },
   "output_dir": "ordinal_analysis/processed",
   "ordinal": {
-    "embedding_dimension": 3,
+    "embedding_dimension": 6,
     "delay_samples": 1,
     "tie_precision": null
   },

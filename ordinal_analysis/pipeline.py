@@ -30,10 +30,13 @@ from .metrics import (
 )
 from .plots import (
     band_metric_color_limits,
+    electrode_metric_zscores,
+    group_mean_symmetric_color_limits,
     metric_color_limits,
     plot_electrode_plane_pages,
     plot_electrode_violins,
     plot_group_band_topomaps,
+    plot_group_standardized_topomaps,
     plot_group_topomaps,
     plot_subject_average_planes,
     plot_subject_average_violins,
@@ -407,6 +410,19 @@ def run_analysis(
         figures_dir / "topomaps" / "group_mean_topomaps.png",
         dpi,
     )
+    standardized_metrics = electrode_metric_zscores(electrode_metrics)
+    standardized_limits = group_mean_symmetric_color_limits(
+        standardized_metrics, common_channels
+    )
+    plot_group_standardized_topomaps(
+        standardized_metrics,
+        common_info,
+        group_order,
+        standardized_limits,
+        figures_dir / "topomaps" / "group_mean_zscored_topomaps.png",
+        dpi,
+        "Broadband",
+    )
 
     band_order = list(bands)
     configured_band_labels = config["plots"].get("band_display_names", {})
@@ -477,6 +493,40 @@ def run_analysis(
         figures_dir / "bands" / "topomaps" / "group_means",
         dpi,
     )
+    standardized_band_metrics = electrode_metric_zscores(
+        band_electrode_metrics, strata=("band",)
+    )
+    standardized_band_limits = {
+        band: group_mean_symmetric_color_limits(
+            standardized_band_metrics.loc[
+                standardized_band_metrics["band"].eq(band)
+            ],
+            common_channels,
+        )
+        for band in band_order
+    }
+    logger.info("Creating electrode-wise z-scored group band topomaps")
+    for band in band_order:
+        standardized_label = band_labels[band]
+        if "hz" not in standardized_label.lower():
+            standardized_label = (
+                f"{standardized_label} ({bands[band][0]:g}–{bands[band][1]:g} Hz)"
+            )
+        plot_group_standardized_topomaps(
+            standardized_band_metrics.loc[
+                standardized_band_metrics["band"].eq(band)
+            ],
+            common_info,
+            group_order,
+            standardized_band_limits[band],
+            figures_dir
+            / "bands"
+            / "topomaps"
+            / "group_means_zscored"
+            / f"{band}_group_mean_zscored_topomaps.png",
+            dpi,
+            standardized_label,
+        )
 
     common_payload = {
         "common_electrodes": common_channels,
@@ -530,9 +580,26 @@ def run_analysis(
         "topomap_scale_limits": {
             metric: [float(value) for value in limits[metric]] for metric in METRICS
         },
+        "electrode_zscore_topomap_policy": (
+            "For each metric, values are z-scored across all subjects pooled across groups "
+            "within each electrode (and within each band for band-resolved maps), using "
+            "population standard deviation (ddof=0). Constant combinations map to zero. "
+            "Group means are plotted on shared symmetric zero-centered limits."
+        ),
+        "topomap_zscore_scale_limits": {
+            metric: [float(value) for value in standardized_limits[metric]]
+            for metric in METRICS
+        },
         "band_topomap_scale_limits": {
             band: {
                 metric: [float(value) for value in band_limits[band][metric]]
+                for metric in METRICS
+            }
+            for band in band_order
+        },
+        "band_topomap_zscore_scale_limits": {
+            band: {
+                metric: [float(value) for value in standardized_band_limits[band][metric]]
                 for metric in METRICS
             }
             for band in band_order

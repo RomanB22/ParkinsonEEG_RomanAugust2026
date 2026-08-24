@@ -13,9 +13,35 @@ from ordinal_analysis.metrics import (
     subject_electrode_means,
 )
 from ordinal_analysis.pipeline import load_analysis_config
+from ordinal_analysis.plots import electrode_metric_zscores
 
 
 class OrdinalMetricTests(unittest.TestCase):
+    def test_electrode_zscores_pool_groups_within_band_and_electrode(self):
+        table = pd.DataFrame(
+            {
+                "subject_id": ["s1", "s2", "s3", "s4"] * 2,
+                "group": ["PD", "PD", "Control", "Control"] * 2,
+                "band": ["delta"] * 4 + ["theta"] * 4,
+                "electrode": ["Fz"] * 8,
+                "entropy": [1.0, 2.0, 3.0, 4.0, 10.0, 12.0, 14.0, 16.0],
+                "complexity": [4.0, 3.0, 2.0, 1.0, 16.0, 14.0, 12.0, 10.0],
+                "fisher_information": [2.0] * 8,
+            }
+        )
+        standardized = electrode_metric_zscores(table, strata=("band",))
+        for _, selected in standardized.groupby(["band", "electrode"]):
+            self.assertAlmostEqual(selected["entropy"].mean(), 0.0)
+            self.assertAlmostEqual(selected["entropy"].std(ddof=0), 1.0)
+            self.assertAlmostEqual(selected["complexity"].mean(), 0.0)
+            self.assertAlmostEqual(selected["complexity"].std(ddof=0), 1.0)
+            np.testing.assert_array_equal(selected["fisher_information"], 0.0)
+        delta = standardized.loc[standardized["band"].eq("delta")]
+        self.assertLess(delta.loc[delta["group"].eq("PD"), "entropy"].mean(), 0.0)
+        self.assertGreater(
+            delta.loc[delta["group"].eq("Control"), "entropy"].mean(), 0.0
+        )
+
     def test_single_epoch_probabilities_match_ordpy(self):
         data = np.asarray([[4.0, 7.0, 9.0, 10.0, 6.0, 11.0, 3.0]])
         _, expected = ordpy.ordinal_distribution(
