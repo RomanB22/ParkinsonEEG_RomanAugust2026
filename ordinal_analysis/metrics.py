@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 import math
 import warnings
+from functools import lru_cache
 from typing import Any
 
 import numpy as np
@@ -26,6 +27,17 @@ RENYI_METRICS = tuple(
     for metric in (entropy_metric, complexity_metric)
 )
 METRICS = (*CORE_METRICS, *RENYI_METRICS)
+
+
+@lru_cache(maxsize=None)
+def _permutation_code_lookup(dx: int) -> tuple[np.ndarray, np.ndarray]:
+    """Map compact base-D permutation codes to lexicographic indices."""
+    permutations = np.asarray(list(itertools.permutations(range(dx))), dtype=np.int64)
+    powers = np.power(dx, np.arange(dx - 1, -1, -1), dtype=np.int64)
+    permutation_codes = permutations @ powers
+    lookup = np.full(dx**dx, -1, dtype=np.int64)
+    lookup[permutation_codes] = np.arange(len(permutations), dtype=np.int64)
+    return lookup, powers
 
 
 def filter_epoch_data(
@@ -120,12 +132,16 @@ def ordinal_probabilities(
     )[..., ::tau]
     symbols = np.argsort(windows, axis=-1).reshape(-1, dx)
 
-    permutations = list(itertools.permutations(range(dx)))
-    permutation_index = {pattern: index for index, pattern in enumerate(permutations)}
-    counts = np.zeros(math.factorial(dx), dtype=np.int64)
-    unique, unique_counts = np.unique(symbols, axis=0, return_counts=True)
-    for pattern, count in zip(unique, unique_counts):
-        counts[permutation_index[tuple(int(value) for value in pattern)]] = int(count)
+    # Encode each permutation as a base-D integer and look up its lexicographic
+    # permutation index. This is mathematically identical to row-wise unique
+    # counting but avoids repeatedly sorting a large structured array at D>=5.
+    lookup, powers = _permutation_code_lookup(dx)
+    permutation_indices = lookup[symbols @ powers]
+    if np.any(permutation_indices < 0):
+        raise RuntimeError("Ordinal symbols contain an invalid permutation")
+    counts = np.bincount(
+        permutation_indices, minlength=math.factorial(dx)
+    ).astype(np.int64, copy=False)
 
     n_patterns = int(counts.sum())
     if n_patterns != data.shape[0] * (n_times - span):

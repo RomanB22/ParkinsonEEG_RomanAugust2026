@@ -1,4 +1,6 @@
 import json
+import itertools
+import math
 import unittest
 
 import numpy as np
@@ -54,6 +56,29 @@ class OrdinalMetricTests(unittest.TestCase):
         np.testing.assert_allclose(actual, expected)
         self.assertEqual(n_patterns, 5)
         self.assertEqual(n_ties, 0)
+
+    def test_vectorized_permutation_counts_match_reference_for_all_dimensions(self):
+        rng = np.random.default_rng(20260824)
+        for dimension in range(3, 8):
+            data = rng.normal(size=(4, 80))
+            actual, n_patterns, _ = ordinal_probabilities(
+                data, dx=dimension, tau=1
+            )
+            windows = np.lib.stride_tricks.sliding_window_view(
+                data, dimension, axis=1
+            )
+            symbols = np.argsort(windows, axis=-1).reshape(-1, dimension)
+            lookup = {
+                permutation: index
+                for index, permutation in enumerate(
+                    itertools.permutations(range(dimension))
+                )
+            }
+            counts = np.zeros(math.factorial(dimension), dtype=np.int64)
+            for symbol in symbols:
+                counts[lookup[tuple(int(value) for value in symbol)]] += 1
+            np.testing.assert_array_equal(actual, counts / counts.sum())
+            self.assertEqual(n_patterns, int(counts.sum()))
 
     def test_renyi_complexity_entropy_matches_ordpy_for_all_alphas(self):
         probabilities = np.asarray([1 / 3, 1 / 15, 4 / 15, 2 / 15, 1 / 5, 0])
