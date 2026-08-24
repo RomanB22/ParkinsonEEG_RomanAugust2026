@@ -235,6 +235,19 @@ and example/group/topographic figures.
 bash scale_free_analysis/run_scale_free_analysis.sh --overwrite
 ```
 
+## Ordinal analysis inside detected bouts
+
+The independent workflow in [`bout_analyses/`](bout_analyses/README.md) detects
+aperiodic-relative eBOSC bouts and converts each time-limited bout to a
+boundary-safe ordinal representation. It calculates only regular permutation
+entropy, statistical complexity, and Fisher information—no Rényi metrics—and
+saves per-bout tables, pooled subject/electrode/band count tensors, diagnostics,
+group figures, electrode figures, and individual topomaps.
+
+```bash
+bash bout_analyses/run_bout_analyses.sh --overwrite
+```
+
 ## 60 Hz notch decision
 
 The final required passband is 1–50 Hz. Therefore the configured 60 Hz line
