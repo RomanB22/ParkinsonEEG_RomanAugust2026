@@ -7,6 +7,7 @@ from psd_analysis.metrics import (
     bootstrap_median_ci,
     compute_subject_electrode_psd,
     integrate_bands,
+    relative_band_powers,
 )
 from psd_analysis.pipeline import load_psd_config
 
@@ -58,6 +59,23 @@ class PsdAnalysisTests(unittest.TestCase):
         psd = np.full((2, len(frequencies)), 2.0)
         powers = integrate_bands(frequencies, psd, {"test": (2.0, 6.0)})
         np.testing.assert_allclose(powers["test"], [8.0, 8.0])
+
+    def test_relative_band_power_uses_each_rows_total_power(self):
+        frequencies = np.arange(1.0, 9.25, 0.25)
+        psd = np.stack(
+            [
+                np.full(len(frequencies), 2.0),
+                np.full(len(frequencies), 20.0),
+            ]
+        )
+        relative, total = relative_band_powers(
+            frequencies,
+            psd,
+            {"test": (2.0, 6.0)},
+            total_range=(1.0, 9.0),
+        )
+        np.testing.assert_allclose(total, [16.0, 160.0])
+        np.testing.assert_allclose(relative["test"], [0.5, 0.5])
 
     def test_bootstrap_median_is_reproducible(self):
         values = np.arange(30.0).reshape(10, 3)

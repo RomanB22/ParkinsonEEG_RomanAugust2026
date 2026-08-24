@@ -60,7 +60,7 @@ def plot_group_band_topomaps(
     path: Path,
     dpi: int,
 ) -> dict[str, tuple[float, float]]:
-    """Plot group median absolute band power on common electrodes."""
+    """Plot group median relative band power on common electrodes."""
     fig = plt.figure(figsize=(3.7 * len(band_order), 3.9 * len(group_order)))
     grid = fig.add_gridspec(
         len(group_order) + 1,
@@ -82,11 +82,10 @@ def plot_group_band_topomaps(
     limits: dict[str, tuple[float, float]] = {}
     images = {}
     for column, band in enumerate(band_order):
-        band_values = to_db(
-            group_band_table.loc[
-                group_band_table["band"].eq(band), "median_band_power_uv2"
-            ].to_numpy(dtype=float)
-        )
+        band_values = group_band_table.loc[
+            group_band_table["band"].eq(band),
+            "median_relative_band_power_percent",
+        ].to_numpy(dtype=float)
         low, high = float(np.min(band_values)), float(np.max(band_values))
         if np.isclose(low, high):
             padding = max(abs(low) * 0.01, 1e-6)
@@ -100,9 +99,9 @@ def plot_group_band_topomaps(
             missing = [channel for channel in info.ch_names if channel not in selected.index]
             if missing:
                 raise ValueError(f"{group}/{band}: missing common electrodes {missing}")
-            values = to_db(
-                selected.loc[info.ch_names, "median_band_power_uv2"].to_numpy(dtype=float)
-            )
+            values = selected.loc[
+                info.ch_names, "median_relative_band_power_percent"
+            ].to_numpy(dtype=float)
             image, _ = mne.viz.plot_topomap(
                 values,
                 info,
@@ -133,9 +132,11 @@ def plot_group_band_topomaps(
             cax=colorbar_axes[column],
             orientation="horizontal",
         )
-        colorbar.set_label("10 log₁₀(power / 1 µV²) (dB)", fontsize=8)
+        colorbar.set_label("Relative power (% of total 1–50 Hz power)", fontsize=8)
         colorbar.ax.tick_params(labelsize=7)
-    fig.suptitle("Group median absolute band-power topographies — common electrodes")
+    fig.suptitle(
+        "Group median relative band-power topographies — common electrodes"
+    )
     fig.subplots_adjust(top=0.90, bottom=0.08)
     _save(fig, path, dpi)
     return limits

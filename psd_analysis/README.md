@@ -33,8 +33,11 @@ hypothesis tests.
 
 ## Frequency bands
 
-Absolute band power is the trapezoidal integral of each concatenated
-subject/electrode linear PSD:
+Band power is the trapezoidal integral of each concatenated subject/electrode
+linear PSD. Relative band power divides that integral by the same subject and
+electrode's total integrated power from 1–50 Hz:
+
+`relative band power = band power / total 1–50 Hz power`
 
 | Band | Limits |
 |---|---:|
@@ -53,10 +56,12 @@ Endpoints are included. A shared boundary such as 4 Hz is a single point with
 zero width; the adjacent trapezoids cover the intervals on either side without
 double-counting an interval of power.
 
-Group topomaps show the electrode-wise median across subjects in absolute band
-power, displayed as `10 log10(power / 1 µV²)`. They use the 60 common electrodes
-so PD and Control maps are directly comparable. For each band, both groups use
-the same color limits.
+Group topomaps show the electrode-wise median across subjects in relative band
+power, displayed as a percentage of total 1–50 Hz power. Normalization occurs
+for every subject/electrode before the group median is calculated. They use the
+60 common electrodes so PD and Control maps are directly comparable. For each
+band, both groups use the same color limits. The CSV tables retain absolute
+band power alongside total and relative power.
 
 ## Run
 

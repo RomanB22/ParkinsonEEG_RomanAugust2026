@@ -83,6 +83,46 @@ def integrate_bands(
     return results
 
 
+def relative_band_powers(
+    frequencies: np.ndarray,
+    electrode_psd: np.ndarray,
+    bands: Mapping[str, tuple[float, float] | list[float]],
+    *,
+    total_range: tuple[float, float] = (1.0, 50.0),
+) -> tuple[dict[str, np.ndarray], np.ndarray]:
+    """Return band/total power ratios and total power for each leading row.
+
+    Each ratio is calculated independently for a subject/electrode before any
+    group aggregation. Missing electrode rows represented entirely by NaNs are
+    preserved as NaN.
+    """
+    frequencies = np.asarray(frequencies, dtype=float)
+    total_low, total_high = (float(value) for value in total_range)
+    if not frequencies[0] <= total_low < total_high <= frequencies[-1]:
+        raise ValueError("total_range must be contained in the PSD frequency interval")
+
+    absolute_band_powers = integrate_bands(frequencies, electrode_psd, bands)
+    total_power = integrate_bands(
+        frequencies,
+        electrode_psd,
+        {"total": (total_low, total_high)},
+    )["total"]
+    finite_totals = np.isfinite(total_power)
+    if np.any(total_power[finite_totals] <= 0.0):
+        raise ValueError("Finite total power must be positive for relative power")
+
+    relative = {
+        band: np.divide(
+            values,
+            total_power,
+            out=np.full_like(values, np.nan, dtype=float),
+            where=finite_totals & (total_power > 0.0),
+        )
+        for band, values in absolute_band_powers.items()
+    }
+    return relative, total_power
+
+
 def bootstrap_median_ci(
     values: np.ndarray,
     *,

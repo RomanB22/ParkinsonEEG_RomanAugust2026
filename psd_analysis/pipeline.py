@@ -20,7 +20,13 @@ import numpy as np
 import pandas as pd
 import scipy
 
-from .metrics import bootstrap_median_ci, compute_subject_electrode_psd, integrate_bands, to_db
+from .metrics import (
+    bootstrap_median_ci,
+    compute_subject_electrode_psd,
+    integrate_bands,
+    relative_band_powers,
+    to_db,
+)
 from .plots import plot_group_band_topomaps, plot_group_median_psd
 
 
@@ -246,6 +252,12 @@ def run_analysis(
 
     bands = {name: tuple(limits) for name, limits in config["bands"].items()}
     band_arrays = integrate_bands(frequencies, cube, bands)
+    relative_band_arrays, total_power_array = relative_band_powers(
+        frequencies,
+        cube,
+        bands,
+        total_range=(fmin, fmax),
+    )
     subject_band_rows = []
     for subject_index, subject_id in enumerate(expected_subjects):
         for electrode_index, electrode in enumerate(electrode_union):
@@ -253,6 +265,9 @@ def run_analysis(
                 continue
             for band, values in band_arrays.items():
                 power = float(values[subject_index, electrode_index])
+                relative_power = float(
+                    relative_band_arrays[band][subject_index, electrode_index]
+                )
                 subject_band_rows.append(
                     {
                         "subject_id": subject_id,
@@ -263,6 +278,13 @@ def run_analysis(
                         "band_high_hz": float(bands[band][1]),
                         "band_power_uv2": power,
                         "band_power_db_uv2": float(to_db(power)),
+                        "total_power_low_hz": fmin,
+                        "total_power_high_hz": fmax,
+                        "total_power_uv2": float(
+                            total_power_array[subject_index, electrode_index]
+                        ),
+                        "relative_band_power": relative_power,
+                        "relative_band_power_percent": 100.0 * relative_power,
                     }
                 )
     subject_band_table = pd.DataFrame.from_records(subject_band_rows)
@@ -271,6 +293,7 @@ def run_analysis(
         ["group", "electrode", "band"], sort=True
     ):
         values = selected["band_power_uv2"].to_numpy(dtype=float)
+        relative_values = selected["relative_band_power"].to_numpy(dtype=float)
         group_band_rows.append(
             {
                 "group": group,
@@ -283,6 +306,22 @@ def run_analysis(
                 "median_band_power_db_uv2": float(to_db(np.median(values))),
                 "iqr_lower_band_power_uv2": float(np.quantile(values, 0.25)),
                 "iqr_upper_band_power_uv2": float(np.quantile(values, 0.75)),
+                "median_relative_band_power": float(np.median(relative_values)),
+                "median_relative_band_power_percent": float(
+                    100.0 * np.median(relative_values)
+                ),
+                "iqr_lower_relative_band_power": float(
+                    np.quantile(relative_values, 0.25)
+                ),
+                "iqr_upper_relative_band_power": float(
+                    np.quantile(relative_values, 0.75)
+                ),
+                "iqr_lower_relative_band_power_percent": float(
+                    100.0 * np.quantile(relative_values, 0.25)
+                ),
+                "iqr_upper_relative_band_power_percent": float(
+                    100.0 * np.quantile(relative_values, 0.75)
+                ),
             }
         )
     group_band_table = pd.DataFrame.from_records(group_band_rows)
@@ -328,7 +367,7 @@ def run_analysis(
         f"{limits[0]:g}–{limits[1]:g} Hz"
         for band, limits in bands.items()
     }
-    logger.info("Creating group band-power topomaps")
+    logger.info("Creating group relative-band-power topomaps")
     topomap_limits = plot_group_band_topomaps(
         group_band_table.loc[group_band_table["electrode"].isin(common_channels)],
         common_info,
@@ -378,10 +417,12 @@ def run_analysis(
             "Pointwise nonparametric percentile bootstrap of subjects around the group median."
         ),
         "topomap": (
-            "Absolute band power is integrated from each concatenated subject/electrode linear PSD; "
-            "group maps show the electrode-wise subject median on 60 common electrodes."
+            f"For each subject/electrode, band power is divided by total {fmin:g}-{fmax:g} Hz "
+            "power before group aggregation. Group maps show the electrode-wise median "
+            "relative power as a percentage on 60 common electrodes. Absolute band and "
+            "total powers remain in the subject-level table."
         ),
-        "topomap_db_limits": {
+        "topomap_relative_power_percent_limits": {
             band: [float(value) for value in limits] for band, limits in topomap_limits.items()
         },
     }

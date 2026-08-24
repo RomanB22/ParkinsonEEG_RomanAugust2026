@@ -199,7 +199,8 @@ bash ordinal_analysis/run_ordinal_analysis.sh --overwrite
 
 The separate workflow in [`psd_analysis/`](psd_analysis/README.md) estimates
 subject-balanced median Welch spectra, pointwise 95% bootstrap confidence bands
-for PD and Control, and group median absolute-power topographies for delta,
+for PD and Control, and group median relative-power topographies normalized to
+each subject/electrode's total 1–50 Hz power for delta,
 theta, alpha, beta, 30–50 Hz low gamma, and an additional broad 5–15 Hz band.
 
 ```bash
