@@ -1,7 +1,10 @@
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from ebosc.BOSC import BOSC_tf
 from specparam.sim import sim_power_spectrum
 
@@ -15,6 +18,7 @@ from scale_free_analysis.metrics import (
     summarize_cycles,
 )
 from scale_free_analysis.pipeline import load_analysis_config
+from scale_free_analysis.specparam_gallery import generate_specparam_gallery
 
 
 class ScaleFreeAnalysisTests(unittest.TestCase):
@@ -35,7 +39,14 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
             },
         )
 
+    def test_config_covers_full_cleaned_frequency_range(self):
+        config = load_analysis_config("scale_free_analysis/config.json")
+        self.assertEqual(config["psd"]["fmin_hz"], 1.0)
+        self.assertEqual(config["psd"]["fmax_hz"], 50.0)
+        self.assertEqual(config["specparam"]["frequency_range_hz"], [1.0, 50.0])
+
     def test_specparam_recovers_aperiodic_and_alpha_peak(self):
+        np.random.seed(0)
         frequencies, power = sim_power_spectrum(
             [1, 40],
             {"fixed": [1.0, 1.5]},
@@ -122,6 +133,49 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
         self.assertGreater(summary["n_cycles"], 20)
         self.assertAlmostEqual(summary["cycle_frequency_mean_hz"], 10.0, delta=0.5)
         self.assertAlmostEqual(summary["rise_decay_symmetry_mean"], 0.5, delta=0.1)
+
+    def test_specparam_gallery_renders_every_subject_electrode(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            spectra_dir = root / "spectra"
+            spectra_dir.mkdir()
+            frequencies = np.arange(1.0, 40.25, 0.25)
+            aperiodic = np.stack([10.0 / frequencies, 8.0 / frequencies])
+            modeled = aperiodic.copy()
+            observed = modeled * (1.0 + 0.2 * np.exp(-((frequencies - 10.0) ** 2)))
+            np.savez_compressed(
+                spectra_dir / "sub-001_specparam_spectra.npz",
+                electrodes=np.asarray(["Fz", "Cz"]),
+                frequencies_hz=frequencies,
+                observed_psd_uv2_hz=observed,
+                modeled_psd_uv2_hz=modeled,
+                aperiodic_psd_uv2_hz=aperiodic,
+                periodic_psd_uv2_hz=observed - modeled,
+            )
+            metrics = pd.DataFrame(
+                {
+                    "subject_id": ["sub-001", "sub-001"],
+                    "group": ["PD", "PD"],
+                    "electrode": ["Fz", "Cz"],
+                    "aperiodic_offset": [1.0, 0.9],
+                    "aperiodic_exponent": [1.0, 1.0],
+                    "specparam_r_squared": [0.98, 0.97],
+                    "specparam_error_mae": [0.01, 0.02],
+                }
+            )
+            gallery_root = root / "gallery"
+            index = generate_specparam_gallery(
+                spectra_dir,
+                metrics,
+                gallery_root,
+                dpi=60,
+                workers=1,
+            )
+            self.assertEqual(len(index), 2)
+            self.assertTrue((gallery_root / "PD" / "sub-001" / "Fz.png").exists())
+            self.assertTrue((gallery_root / "PD" / "sub-001" / "Cz.png").exists())
+            self.assertTrue((gallery_root / "PD" / "sub-001" / "index.html").exists())
+            self.assertTrue((gallery_root / "index.html").exists())
 
 
 if __name__ == "__main__":

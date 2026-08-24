@@ -13,14 +13,14 @@
   },
   "psd": {
     "fmin_hz": 1.0,
-    "fmax_hz": 40.0,
+    "fmax_hz": 50.0,
     "window": "hann",
     "epoch_combination": "concatenate_in_temporal_order",
     "welch_aggregation": "mean"
   },
   "specparam": {
     "aperiodic_mode": "fixed",
-    "frequency_range_hz": [1.0, 40.0],
+    "frequency_range_hz": [1.0, 50.0],
     "peak_width_limits_hz": [0.5, 12.0],
     "max_n_peaks": 8,
     "min_peak_height": 0.0,
@@ -43,6 +43,9 @@
   },
   "plots": {
     "dpi": 150,
+    "specparam_gallery_enabled": true,
+    "specparam_gallery_dpi": 100,
+    "specparam_gallery_workers": 4,
     "group_order": ["PD", "Control"],
     "group_colors": {"PD": "#D55E00", "Control": "#0072B2"},
     "band_display_names": {

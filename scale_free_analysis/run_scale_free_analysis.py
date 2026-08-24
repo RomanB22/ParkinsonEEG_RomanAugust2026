@@ -41,6 +41,11 @@ def main() -> None:
     )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--no-progress", action="store_true")
+    parser.add_argument(
+        "--skip-specparam-gallery",
+        action="store_true",
+        help="Skip the per-subject/electrode decomposition PNG gallery",
+    )
     args = parser.parse_args()
     manifest = run_analysis(
         args.config,
@@ -49,6 +54,7 @@ def main() -> None:
         output_dir_override=args.output_dir,
         overwrite=args.overwrite,
         show_progress=not args.no_progress,
+        skip_specparam_gallery=args.skip_specparam_gallery,
     )
     print(
         f"Completed scale-free analysis for {manifest['n_subjects']} subjects; "

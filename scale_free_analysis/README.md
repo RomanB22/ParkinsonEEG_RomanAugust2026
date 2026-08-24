@@ -21,7 +21,7 @@ union-only electrode contributes to a table, summary, statistic, or figure.
 
 For each subject/shared electrode, accepted epochs are concatenated in stored
 order and passed to one Welch PSD calculation. Non-overlapping four-second Hann
-windows produce a 0.25 Hz grid. The linear 1–40 Hz PSD is fitted with
+windows produce a 0.25 Hz grid. The linear 1–50 Hz PSD is fitted with
 `specparam.SpectralModel` in fixed aperiodic mode.
 
 Saved broadband parameters are:
@@ -34,6 +34,12 @@ The highest fitted peak in each theta (4–7 Hz), alpha (8–13 Hz), low-beta
 (13–20 Hz), and high-beta (20–30 Hz) band supplies center frequency, power, and
 bandwidth. A `peak_present` indicator distinguishes a missing peak from a
 numerical value.
+
+For visual inspection, the pipeline also writes one decomposition PNG for
+every analyzed subject and shared electrode. The files are organized by group
+and subject, and HTML indexes allow navigation without manually opening 8,940
+filenames in a file browser. Each title includes group, aperiodic exponent, and
+model R². These plots reuse the saved fitted curves and never refit specparam.
 
 ### 2. Aperiodic-relative eBOSC bouts
 
@@ -98,6 +104,16 @@ Run the full cohort and all shared electrodes:
 bash scale_free_analysis/run_scale_free_analysis.sh --overwrite
 ```
 
+If the scale-free analysis already exists, generate or resume only the
+subject/electrode decomposition gallery without rerunning eBOSC or bycycle:
+
+```bash
+bash scale_free_analysis/generate_specparam_figures.sh
+```
+
+Use `--overwrite` to regenerate existing images. The defaults use four worker
+processes and 100 DPI; both can be overridden with `--workers` and `--dpi`.
+
 Run a small development pilot without changing the configured output:
 
 ```bash
@@ -123,6 +139,7 @@ scale_free_analysis/processed/
 │   ├── electrode_sets.json
 │   ├── electrode_aperiodic_metrics.csv
 │   ├── electrode_band_metrics.csv
+│   ├── specparam_figure_index.csv
 │   ├── subject_aperiodic_metrics.csv
 │   ├── subject_band_metrics.csv
 │   ├── group_aperiodic_summary.csv
@@ -139,7 +156,12 @@ scale_free_analysis/processed/
     │   ├── detected_bout_and_time_frequency.png
     │   └── bycycle_waveform_landmarks.png
     ├── group_comparisons/*.png
-    └── topomaps/*.png
+    ├── topomaps/*.png
+    └── specparam_decomposition/
+        ├── index.html
+        ├── figure_index.csv
+        ├── PD/sub-*/index.html + <electrode>.png
+        └── Control/sub-*/index.html + <electrode>.png
 ```
 
 The compressed intermediate files preserve individual bout and cycle rows, the

@@ -1,0 +1,503 @@
+"""End-to-end transparent PD versus Control exploration pipeline."""
+
+from __future__ import annotations
+
+import copy
+import json
+import logging
+import platform
+from datetime import datetime, timezone
+from importlib.metadata import version
+from pathlib import Path
+from typing import Any
+
+from src.runtime import configure_runtime
+
+configure_runtime()
+
+import matplotlib
+import numpy as np
+import pandas as pd
+import scipy
+import sklearn
+
+from .features import (
+    LEAKAGE_EXCLUSIONS,
+    build_feature_table,
+    discover_completed_sweeps,
+)
+from .modeling import (
+    average_repeated_predictions,
+    bootstrap_auc_differences,
+    bootstrap_performance,
+    fit_final_models,
+    run_nested_validation,
+)
+from .plots import (
+    plot_calibration,
+    plot_coefficient_stability,
+    plot_confusion_matrices,
+    plot_entropy_complexity_plane,
+    plot_feature_correlations,
+    plot_feature_distributions,
+    plot_model_performance,
+    plot_roc_and_precision_recall,
+    plot_sweep_sensitivity,
+)
+
+
+def load_exploration_config(path: str | Path) -> dict[str, Any]:
+    with Path(path).open(encoding="utf-8") as stream:
+        config = json.load(stream)
+    required = {
+        "input",
+        "output_dir",
+        "primary_ordinal_parameters",
+        "ordinal_sweep",
+        "ordinal_model_bands",
+        "psd_log_ratio",
+        "models",
+        "validation",
+        "plots",
+    }
+    missing = sorted(required - set(config))
+    if missing:
+        raise ValueError(f"Missing exploration config sections: {missing}")
+    validation = config["validation"]
+    if int(validation["outer_folds"]) < 2 or int(validation["inner_folds"]) < 2:
+        raise ValueError("Inner and outer cross-validation require at least two folds")
+    if int(validation["outer_repeats"]) < 1:
+        raise ValueError("outer_repeats must be positive")
+    if int(validation["bootstrap_resamples"]) < 20:
+        raise ValueError("bootstrap_resamples must be at least 20")
+    threshold = float(validation["classification_threshold"])
+    if not 0.0 < threshold < 1.0:
+        raise ValueError("classification_threshold must lie between zero and one")
+    if str(validation.get("threshold_policy", "fixed")) not in {
+        "fixed",
+        "inner_youden",
+    }:
+        raise ValueError("threshold_policy must be fixed or inner_youden")
+    return config
+
+
+def _configure_logger(output_dir: Path, overwrite: bool) -> logging.Logger:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    logger = logging.getLogger("exploration")
+    logger.handlers.clear()
+    logger.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+    for handler in (
+        logging.StreamHandler(),
+        logging.FileHandler(
+            output_dir / "exploration.log", mode="w" if overwrite else "a"
+        ),
+    ):
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+    return logger
+
+
+def _write_csv(table: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(path, index=False, float_format="%.17g")
+
+
+def _feature_summary(table: pd.DataFrame, features: list[str]) -> pd.DataFrame:
+    rows = []
+    for group, selected in table.groupby("group", sort=False):
+        for feature in features:
+            values = selected[feature].to_numpy(dtype=float)
+            rows.append(
+                {
+                    "group": group,
+                    "feature": feature,
+                    "n_subjects": int(len(values)),
+                    "mean": float(np.mean(values)),
+                    "std": float(np.std(values, ddof=1)),
+                    "median": float(np.median(values)),
+                    "q25": float(np.quantile(values, 0.25)),
+                    "q75": float(np.quantile(values, 0.75)),
+                }
+            )
+    return pd.DataFrame.from_records(rows)
+
+
+def _coefficient_summary(coefficients: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for (model, feature), selected in coefficients.groupby(
+        ["model", "feature"], sort=False
+    ):
+        values = selected["coefficient_per_sd"].to_numpy(dtype=float)
+        positive_fraction = float(np.mean(values > 0.0))
+        rows.append(
+            {
+                "model": model,
+                "model_label": selected["model_label"].iloc[0],
+                "model_role": selected["model_role"].iloc[0],
+                "feature": feature,
+                "n_outer_fits": int(len(values)),
+                "coefficient_median": float(np.median(values)),
+                "coefficient_ci_lower": float(np.quantile(values, 0.025)),
+                "coefficient_ci_upper": float(np.quantile(values, 0.975)),
+                "positive_fraction": positive_fraction,
+                "same_sign_fraction": max(positive_fraction, 1.0 - positive_fraction),
+            }
+        )
+    return pd.DataFrame.from_records(rows)
+
+
+def _sweep_status(
+    config: dict[str, Any], completed: list[dict[str, Any]]
+) -> pd.DataFrame:
+    completed_lookup = {
+        (item["embedding_dimension"], item["delay_samples"]): item["path"]
+        for item in completed
+    }
+    rows = []
+    for dimension in config["ordinal_sweep"]["expected_dimensions"]:
+        for delay in config["ordinal_sweep"]["expected_delays"]:
+            key = (int(dimension), int(delay))
+            rows.append(
+                {
+                    "embedding_dimension": key[0],
+                    "delay_samples": key[1],
+                    "complete": key in completed_lookup,
+                    "metrics_path": completed_lookup.get(key, ""),
+                }
+            )
+    return pd.DataFrame.from_records(rows)
+
+
+def _run_sweep_sensitivity(
+    base_table: pd.DataFrame,
+    completed: list[dict[str, Any]],
+    config: dict[str, Any],
+    logger: logging.Logger,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    performance_tables = []
+    prediction_tables = []
+    coefficient_tables = []
+    feature_names = [
+        "ordinal_global_entropy",
+        "ordinal_global_complexity",
+        "ordinal_global_fisher_information",
+    ]
+    for index, item in enumerate(completed, start=1):
+        dimension = int(item["embedding_dimension"])
+        delay = int(item["delay_samples"])
+        label = f"D={dimension}, tau={delay}"
+        logger.info(
+            "Ordinal sweep sensitivity [%d/%d] | %s",
+            index,
+            len(completed),
+            label,
+        )
+        ordinal = pd.read_csv(item["path"])
+        required = {
+            "subject_id",
+            "entropy",
+            "complexity",
+            "fisher_information",
+        }
+        missing = sorted(required - set(ordinal))
+        if missing:
+            raise ValueError(f"{item['path']} is missing columns: {missing}")
+        ordinal = ordinal.rename(
+            columns={
+                "entropy": feature_names[0],
+                "complexity": feature_names[1],
+                "fisher_information": feature_names[2],
+            }
+        )
+        selected = base_table[["subject_id", "target_pd"]].merge(
+            ordinal[["subject_id", *feature_names]],
+            on="subject_id",
+            how="left",
+            validate="one_to_one",
+        )
+        if selected[feature_names].isna().any().any():
+            raise ValueError(f"{label} does not contain every modeling subject")
+        model_name = f"D{dimension}_tau{delay}"
+        models = {
+            model_name: {
+                "label": label,
+                "role": "ordinal_parameter_sensitivity",
+                "features": feature_names,
+            }
+        }
+        predictions, _, coefficients = run_nested_validation(
+            selected, models, config["validation"]
+        )
+        averaged = average_repeated_predictions(predictions)
+        performance = bootstrap_performance(
+            averaged,
+            n_resamples=int(config["validation"]["bootstrap_resamples"]),
+            seed=int(config["validation"]["random_seed"]) + dimension * 100 + delay,
+        )
+        for table in (performance, averaged, coefficients):
+            table.insert(0, "delay_samples", delay)
+            table.insert(0, "embedding_dimension", dimension)
+        performance_tables.append(performance)
+        prediction_tables.append(averaged)
+        coefficient_tables.append(coefficients)
+    empty = pd.DataFrame()
+    return (
+        pd.concat(performance_tables, ignore_index=True) if performance_tables else empty,
+        pd.concat(prediction_tables, ignore_index=True) if prediction_tables else empty,
+        pd.concat(coefficient_tables, ignore_index=True) if coefficient_tables else empty,
+    )
+
+
+def run_analysis(
+    config_path: str | Path,
+    *,
+    output_dir_override: str | Path | None = None,
+    overwrite: bool = False,
+    quick: bool = False,
+    skip_sweep: bool = False,
+    skip_permutations: bool = False,
+) -> dict[str, Any]:
+    """Run feature assembly, nested validation, final descriptive fits, and plots."""
+    config_path = Path(config_path)
+    config = load_exploration_config(config_path)
+    config = copy.deepcopy(config)
+    if output_dir_override is not None:
+        config["output_dir"] = str(output_dir_override)
+    if quick:
+        config["validation"]["outer_repeats"] = 2
+        config["validation"]["bootstrap_resamples"] = 100
+        config["validation"]["permutation_resamples"] = 20
+    if skip_permutations:
+        config["validation"]["permutation_resamples"] = 0
+    output_dir = Path(config["output_dir"])
+    sentinel = output_dir / "metrics" / "model_performance.csv"
+    if sentinel.exists() and not overwrite:
+        raise FileExistsError(
+            f"Exploration outputs exist at {sentinel}; rerun with --overwrite"
+        )
+    logger = _configure_logger(output_dir, overwrite)
+    logger.info("Building one-row-per-subject feature table")
+    feature_table, provenance = build_feature_table(config)
+    models = config["models"]
+    all_features = list(
+        dict.fromkeys(
+            feature
+            for specification in models.values()
+            for feature in specification["features"]
+        )
+    )
+    logger.info(
+        "Feature audit passed | subjects=%d | PD=%d | Control=%d | candidate_features=%d",
+        len(feature_table),
+        int(feature_table["target_pd"].sum()),
+        int((1 - feature_table["target_pd"]).sum()),
+        len(all_features),
+    )
+
+    features_dir = output_dir / "features"
+    metrics_dir = output_dir / "metrics"
+    cv_dir = output_dir / "cross_validation"
+    predictions_dir = output_dir / "predictions"
+    models_dir = output_dir / "models"
+    figures_dir = output_dir / "figures"
+    _write_csv(feature_table, features_dir / "subject_modeling_table.csv")
+    _write_csv(provenance, features_dir / "feature_provenance.csv")
+    _write_csv(
+        _feature_summary(feature_table, all_features),
+        features_dir / "feature_group_summary.csv",
+    )
+    _write_csv(
+        feature_table[all_features].corr(method="spearman").rename_axis("feature").reset_index(),
+        features_dir / "feature_spearman_correlations.csv",
+    )
+
+    logger.info(
+        "Running repeated nested cross-validation | models=%d | outer=%dx%d | inner=%d",
+        len(models),
+        int(config["validation"]["outer_folds"]),
+        int(config["validation"]["outer_repeats"]),
+        int(config["validation"]["inner_folds"]),
+    )
+    predictions, fold_metrics, fold_coefficients = run_nested_validation(
+        feature_table, models, config["validation"]
+    )
+    averaged_predictions = average_repeated_predictions(predictions)
+    performance = bootstrap_performance(
+        averaged_predictions,
+        n_resamples=int(config["validation"]["bootstrap_resamples"]),
+        seed=int(config["validation"]["random_seed"]),
+    )
+    auc_differences = bootstrap_auc_differences(
+        averaged_predictions,
+        reference_model="demographics",
+        n_resamples=int(config["validation"]["bootstrap_resamples"]),
+        seed=int(config["validation"]["random_seed"]) + 1,
+    )
+    coefficient_summary = _coefficient_summary(fold_coefficients)
+    first_model = next(iter(models))
+    fold_assignments = predictions.loc[
+        predictions["model"].eq(first_model),
+        ["repeat", "fold", "subject_id", "target_pd"],
+    ].sort_values(["repeat", "fold", "subject_id"])
+    _write_csv(predictions, predictions_dir / "repeated_outer_predictions.csv")
+    _write_csv(averaged_predictions, predictions_dir / "subject_out_of_fold_predictions.csv")
+    _write_csv(fold_assignments, cv_dir / "outer_fold_assignments.csv")
+    _write_csv(fold_metrics, cv_dir / "outer_fold_metrics.csv")
+    _write_csv(fold_coefficients, cv_dir / "outer_fold_coefficients.csv")
+    _write_csv(performance, metrics_dir / "model_performance.csv")
+    _write_csv(auc_differences, metrics_dir / "auc_differences_vs_demographics.csv")
+    _write_csv(coefficient_summary, metrics_dir / "coefficient_stability.csv")
+
+    logger.info("Fitting descriptive final models and permutation tests")
+    final_coefficients, permutation_results = fit_final_models(
+        feature_table,
+        models,
+        config["validation"],
+        models_dir,
+    )
+    _write_csv(final_coefficients, metrics_dir / "final_model_coefficients.csv")
+    _write_csv(permutation_results, metrics_dir / "permutation_tests.csv")
+
+    completed_sweeps = discover_completed_sweeps(config)
+    sweep_status = _sweep_status(config, completed_sweeps)
+    _write_csv(sweep_status, metrics_dir / "ordinal_sweep_status.csv")
+    sweep_performance = sweep_predictions = sweep_coefficients = pd.DataFrame()
+    if completed_sweeps and not skip_sweep:
+        sweep_performance, sweep_predictions, sweep_coefficients = _run_sweep_sensitivity(
+            feature_table,
+            completed_sweeps,
+            config,
+            logger,
+        )
+        _write_csv(sweep_performance, metrics_dir / "ordinal_sweep_performance.csv")
+        _write_csv(sweep_predictions, predictions_dir / "ordinal_sweep_predictions.csv")
+        _write_csv(sweep_coefficients, cv_dir / "ordinal_sweep_coefficients.csv")
+    elif skip_sweep:
+        logger.info("Skipping ordinal parameter sensitivity by request")
+    else:
+        logger.info("No completed ordinal parameter sweep outputs were found")
+
+    logger.info("Creating documented feature and validation figures")
+    group_order = [
+        group
+        for group in config["plots"]["group_order"]
+        if group in set(feature_table["group"])
+    ]
+    colors = {
+        group: str(config["plots"]["group_colors"].get(group, "0.4"))
+        for group in group_order
+    }
+    model_order = [
+        model
+        for model in config["plots"]["model_order"]
+        if model in models
+    ]
+    dpi = int(config["plots"]["dpi"])
+    plot_feature_distributions(
+        feature_table,
+        all_features,
+        group_order,
+        colors,
+        figures_dir / "features" / "candidate_feature_distributions.png",
+        dpi,
+    )
+    plot_entropy_complexity_plane(
+        feature_table,
+        group_order,
+        colors,
+        figures_dir / "features" / "ordinal_entropy_complexity_plane.png",
+        dpi,
+    )
+    plot_feature_correlations(
+        feature_table,
+        all_features,
+        figures_dir / "features" / "feature_correlation_heatmap.png",
+        dpi,
+    )
+    plot_model_performance(
+        performance,
+        model_order,
+        figures_dir / "validation" / "model_performance_comparison.png",
+        dpi,
+    )
+    plot_roc_and_precision_recall(
+        averaged_predictions,
+        model_order,
+        figures_dir / "validation" / "roc_and_precision_recall_curves.png",
+        dpi,
+    )
+    plot_calibration(
+        averaged_predictions,
+        model_order,
+        figures_dir / "validation" / "calibration_and_prediction_distributions.png",
+        dpi,
+    )
+    plot_confusion_matrices(
+        averaged_predictions,
+        model_order,
+        figures_dir / "validation" / "confusion_matrices.png",
+        dpi,
+    )
+    for model_name in ("ordinal_adjusted", "ordinal_psd_adjusted"):
+        plot_coefficient_stability(
+            fold_coefficients,
+            model_name,
+            figures_dir / "explainability" / f"{model_name}_coefficient_stability.png",
+            dpi,
+        )
+    if not sweep_performance.empty:
+        plot_sweep_sensitivity(
+            sweep_performance.loc[sweep_performance["metric"].eq("roc_auc")],
+            figures_dir / "sensitivity" / "ordinal_parameter_sweep_roc_auc.png",
+            dpi,
+        )
+
+    manifest = {
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "config_file": str(config_path.resolve()),
+        "analysis_config": config,
+        "runtime_options": {
+            "quick": bool(quick),
+            "skip_sweep": bool(skip_sweep),
+            "skip_permutations": bool(skip_permutations),
+            "overwrite": bool(overwrite),
+        },
+        "software": {
+            "python": platform.python_version(),
+            "numpy": np.__version__,
+            "pandas": pd.__version__,
+            "scipy": scipy.__version__,
+            "matplotlib": matplotlib.__version__,
+            "scikit_learn": sklearn.__version__,
+            "joblib": version("joblib"),
+        },
+        "n_subjects": int(len(feature_table)),
+        "group_counts": feature_table["group"].value_counts().to_dict(),
+        "outcome": "target_pd: PD=1, Control=0",
+        "primary_model": "ordinal_adjusted",
+        "primary_ordinal_parameters": config["primary_ordinal_parameters"],
+        "leakage_exclusions": LEAKAGE_EXCLUSIONS,
+        "feature_policy": (
+            "Every model uses one row per subject. Ordinal and PSD electrode values are "
+            "aggregated within subject upstream. PSD predictors are prespecified log2 "
+            "ratios against low gamma; overlapping broad_5_15 is excluded."
+        ),
+        "validation_policy": (
+            "All scaling and ridge-C selection occur within repeated nested stratified "
+            "cross-validation. Reported discrimination uses averaged out-of-fold "
+            "predictions; final all-subject fits are descriptive deployment artifacts, "
+            "not independent validation."
+        ),
+        "ordinal_sweep_completed": int(sweep_status["complete"].sum()),
+        "ordinal_sweep_expected": int(len(sweep_status)),
+        "limitations": (
+            "This is internal case-control discrimination in one cohort. It does not "
+            "establish clinical diagnostic utility and requires external validation."
+        ),
+    }
+    (output_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    logger.info("Exploration analysis completed | output=%s", output_dir)
+    return manifest

@@ -209,6 +209,19 @@ band after taking each subject's median across shared electrodes.
 bash psd_analysis/run_psd_analysis.sh --overwrite
 ```
 
+## Transparent PD versus Control modeling
+
+The documented workflow in [`exploration/`](exploration/README.md) combines
+subject-level ordinal H/C/F, conservative PSD log-ratio features, age, sex, and
+an explicitly separate MOCA extension using interpretable ridge logistic
+regression. Repeated nested cross-validation, out-of-fold predictions,
+permutation tests, coefficient stability, model comparisons, and all feature
+and validation figures are saved.
+
+```bash
+bash exploration/run_exploration.sh --overwrite
+```
+
 ## Spectral parameterization and oscillatory bouts
 
 The standalone workflow in

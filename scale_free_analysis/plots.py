@@ -110,7 +110,17 @@ def plot_spectral_example(example: dict[str, Any], path: Path, dpi: int) -> None
     axes[1].set(xlabel="Frequency (Hz)", ylabel="log₁₀ PSD", title="Periodic power above 1/f")
     axes[1].grid(alpha=0.2)
     axes[1].legend(frameon=False)
-    fig.suptitle(f"{example['subject_id']} — {example['electrode']}")
+    title = f"{example['subject_id']} — {example['electrode']}"
+    if example.get("group"):
+        title += f" — {example['group']}"
+    details = []
+    if np.isfinite(float(example.get("aperiodic_exponent", np.nan))):
+        details.append(f"exponent={float(example['aperiodic_exponent']):.3f}")
+    if np.isfinite(float(example.get("specparam_r_squared", np.nan))):
+        details.append(f"R²={float(example['specparam_r_squared']):.3f}")
+    if details:
+        title += "\n" + ", ".join(details)
+    fig.suptitle(title)
     fig.tight_layout()
     _save(fig, path, dpi)
 

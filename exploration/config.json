@@ -1,0 +1,79 @@
+{
+  "input": {
+    "participants_file": "processed/metadata/subjects.csv",
+    "ordinal_global_file": "ordinal_analysis/processed/metrics/subject_electrode_mean_metrics.csv",
+    "ordinal_band_file": "ordinal_analysis/processed/metrics/band_subject_electrode_mean_metrics.csv",
+    "psd_subject_band_file": "psd_analysis/processed/metrics/subject_band_power.csv",
+    "ordinal_sweep_root": "ordinal_analysis/parameter_sweep"
+  },
+  "output_dir": "exploration/processed",
+  "primary_ordinal_parameters": {
+    "embedding_dimension": 6,
+    "delay_samples": 1
+  },
+  "ordinal_sweep": {
+    "expected_dimensions": [4, 6, 7],
+    "expected_delays": [1, 5, 10]
+  },
+  "ordinal_model_bands": ["theta", "alpha", "beta"],
+  "psd_log_ratio": {
+    "numerator_bands": ["delta", "theta", "alpha", "beta"],
+    "reference_band": "low_gamma",
+    "log_base": 2
+  },
+  "models": {
+    "demographics": {
+      "label": "Demographics",
+      "role": "baseline",
+      "features": ["age_years", "sex_male"]
+    },
+    "ordinal_core": {
+      "label": "Ordinal H/C/F",
+      "role": "primary_unadjusted",
+      "features": ["ordinal_global_entropy", "ordinal_global_complexity", "ordinal_global_fisher_information"]
+    },
+    "ordinal_adjusted": {
+      "label": "Ordinal H/C/F + demographics",
+      "role": "primary",
+      "features": ["age_years", "sex_male", "ordinal_global_entropy", "ordinal_global_complexity", "ordinal_global_fisher_information"]
+    },
+    "psd_adjusted": {
+      "label": "PSD + demographics",
+      "role": "secondary",
+      "features": ["age_years", "sex_male", "psd_log2_delta_vs_low_gamma", "psd_log2_theta_vs_low_gamma", "psd_log2_alpha_vs_low_gamma", "psd_log2_beta_vs_low_gamma"]
+    },
+    "ordinal_psd_adjusted": {
+      "label": "Ordinal + PSD + demographics",
+      "role": "secondary",
+      "features": ["age_years", "sex_male", "ordinal_global_entropy", "ordinal_global_complexity", "ordinal_global_fisher_information", "psd_log2_delta_vs_low_gamma", "psd_log2_theta_vs_low_gamma", "psd_log2_alpha_vs_low_gamma", "psd_log2_beta_vs_low_gamma"]
+    },
+    "ordinal_band_adjusted": {
+      "label": "Band ordinal + demographics",
+      "role": "sensitivity",
+      "features": ["age_years", "sex_male", "ordinal_theta_entropy", "ordinal_theta_complexity", "ordinal_theta_fisher_information", "ordinal_alpha_entropy", "ordinal_alpha_complexity", "ordinal_alpha_fisher_information", "ordinal_beta_entropy", "ordinal_beta_complexity", "ordinal_beta_fisher_information"]
+    },
+    "clinical_extension": {
+      "label": "Ordinal + PSD + demographics + MOCA",
+      "role": "clinical_extension",
+      "features": ["age_years", "sex_male", "moca", "ordinal_global_entropy", "ordinal_global_complexity", "ordinal_global_fisher_information", "psd_log2_delta_vs_low_gamma", "psd_log2_theta_vs_low_gamma", "psd_log2_alpha_vs_low_gamma", "psd_log2_beta_vs_low_gamma"]
+    }
+  },
+  "validation": {
+    "outer_folds": 5,
+    "outer_repeats": 10,
+    "inner_folds": 4,
+    "c_grid": [0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0],
+    "threshold_policy": "inner_youden",
+    "classification_threshold": 0.5,
+    "bootstrap_resamples": 2000,
+    "permutation_resamples": 200,
+    "random_seed": 20260824,
+    "primary_metric": "roc_auc"
+  },
+  "plots": {
+    "dpi": 150,
+    "group_order": ["PD", "Control"],
+    "group_colors": {"PD": "#D55E00", "Control": "#0072B2"},
+    "model_order": ["demographics", "ordinal_core", "ordinal_adjusted", "psd_adjusted", "ordinal_psd_adjusted", "ordinal_band_adjusted", "clinical_extension"]
+  }
+}

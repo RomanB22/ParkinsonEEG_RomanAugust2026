@@ -27,4 +27,4 @@ dataset/
 .DS_Store
 simpler/
 parameter_sweep/
-exploration/
+/exploration/processed/

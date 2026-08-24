@@ -99,6 +99,7 @@ import numpy
 import ordpy
 import pandas
 import scipy
+import sklearn
 import specparam
 import tqdm
 import bycycle
@@ -110,6 +111,8 @@ packages = (
     "numpy",
     "pandas",
     "scipy",
+    "scikit-learn",
+    "joblib",
     "matplotlib",
     "mne-icalabel",
     "onnxruntime",

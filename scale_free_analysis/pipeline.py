@@ -48,6 +48,7 @@ from .plots import (
     plot_group_distributions,
     plot_spectral_example,
 )
+from .specparam_gallery import generate_specparam_gallery
 
 
 SUBJECT_PATTERN = re.compile(r"(sub-\d+)")
@@ -83,6 +84,10 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("ebosc.power_percentile must be between zero and one")
     if float(ebosc["minimum_cycles"]) <= 0.0:
         raise ValueError("ebosc.minimum_cycles must be positive")
+    if int(config["plots"].get("specparam_gallery_workers", 1)) < 1:
+        raise ValueError("plots.specparam_gallery_workers must be at least one")
+    if int(config["plots"].get("specparam_gallery_dpi", 100)) < 50:
+        raise ValueError("plots.specparam_gallery_dpi must be at least 50")
     overlap = float(config["bycycle"]["minimum_bout_overlap_fraction"])
     if not 0.0 <= overlap <= 1.0:
         raise ValueError("bycycle.minimum_bout_overlap_fraction must be between zero and one")
@@ -272,6 +277,7 @@ def run_analysis(
     output_dir_override: str | Path | None = None,
     overwrite: bool = False,
     show_progress: bool = True,
+    skip_specparam_gallery: bool = False,
 ) -> dict[str, Any]:
     config_path = Path(config_path)
     config = load_analysis_config(config_path)
@@ -656,6 +662,31 @@ def run_analysis(
     }
     dpi = int(config["plots"]["dpi"])
     figures_dir = output_dir / "figures"
+    specparam_gallery_index = pd.DataFrame()
+    gallery_enabled = bool(
+        config["plots"].get("specparam_gallery_enabled", True)
+    ) and not skip_specparam_gallery
+    if gallery_enabled:
+        logger.info(
+            "Creating subject/electrode specparam gallery | figures=%d | workers=%d",
+            len(aperiodic_electrodes),
+            int(config["plots"].get("specparam_gallery_workers", 1)),
+        )
+        specparam_gallery_index = generate_specparam_gallery(
+            output_dir / "intermediate" / "spectra",
+            aperiodic_electrodes,
+            figures_dir / "specparam_decomposition",
+            dpi=int(config["plots"].get("specparam_gallery_dpi", 100)),
+            workers=int(config["plots"].get("specparam_gallery_workers", 1)),
+            overwrite=overwrite,
+            logger=logger,
+        )
+        _write_csv(
+            specparam_gallery_index,
+            metrics_dir / "specparam_figure_index.csv",
+        )
+    else:
+        logger.info("Skipping subject/electrode specparam gallery")
     if spectral_example is not None:
         plot_spectral_example(
             spectral_example,
@@ -743,6 +774,13 @@ def run_analysis(
         "group_counts": pd.Series([group_lookup[s] for s in expected_subjects]).value_counts().to_dict(),
         "n_common_electrodes": len(common_channels),
         "n_electrode_union": len(electrode_union),
+        "n_specparam_decomposition_figures": int(len(specparam_gallery_index)),
+        "specparam_gallery_enabled": bool(gallery_enabled),
+        "specparam_gallery_policy": (
+            "One decomposition PNG per analyzed subject/shared-electrode pair, plus "
+            "root and per-subject HTML indexes. Figures reuse saved fitted spectral "
+            "curves and do not refit specparam."
+        ),
         "epoch_boundary_policy": (
             "Only accepted cleaned epochs are analyzed. PSD periodograms are pooled, while "
             "wavelets, bout detection, and bycycle are applied independently within each "
