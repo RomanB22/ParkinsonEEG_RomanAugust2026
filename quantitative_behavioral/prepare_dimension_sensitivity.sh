@@ -70,6 +70,8 @@ import csv
 import sys
 
 required = {
+    "renyi_entropy_alpha_0_1",
+    "renyi_complexity_alpha_0_1",
     "renyi_entropy_alpha_0_5",
     "renyi_complexity_alpha_0_5",
     "renyi_entropy_alpha_5",

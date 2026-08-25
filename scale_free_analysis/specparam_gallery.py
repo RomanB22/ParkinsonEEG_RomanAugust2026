@@ -12,6 +12,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.runtime import configure_runtime
+
+configure_runtime()
+
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch
+
 from .plots import plot_spectral_example
 
 
@@ -22,6 +30,8 @@ CURVE_NAMES = (
     "periodic_psd_uv2_hz",
 )
 
+SUBJECT_OVERVIEW_FILENAME = "all_electrodes.png"
+
 
 def _safe_name(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("._")
@@ -30,12 +40,122 @@ def _safe_name(value: str) -> str:
     return cleaned
 
 
+def _plot_subject_overview(
+    subject_rows: list[dict[str, Any]],
+    electrodes: list[str],
+    electrode_indices: dict[str, int],
+    frequencies: np.ndarray,
+    arrays: dict[str, np.ndarray],
+    output_path: Path,
+    dpi: int,
+) -> None:
+    """Plot all electrode-level spectral fits in one subject overview."""
+    rows = {str(row["electrode"]): row for row in subject_rows}
+    ordered_electrodes = [electrode for electrode in electrodes if electrode in rows]
+    if not ordered_electrodes:
+        raise ValueError("Cannot render a subject overview without electrodes")
+
+    n_columns = 6
+    n_rows = int(np.ceil(len(ordered_electrodes) / n_columns))
+    fig, axes = plt.subplots(
+        n_rows,
+        n_columns,
+        figsize=(21, 2.75 * n_rows + 1.5),
+        squeeze=False,
+    )
+    qc_passes = 0
+    for axis, electrode in zip(axes.flat, ordered_electrodes):
+        row = rows[electrode]
+        index = electrode_indices[electrode]
+        axis.semilogy(
+            frequencies,
+            arrays["observed_psd_uv2_hz"][index],
+            color="0.15",
+            linewidth=0.75,
+        )
+        axis.semilogy(
+            frequencies,
+            arrays["modeled_psd_uv2_hz"][index],
+            color="#0072B2",
+            linewidth=1.25,
+        )
+        axis.semilogy(
+            frequencies,
+            arrays["aperiodic_psd_uv2_hz"][index],
+            color="#D55E00",
+            linewidth=1.05,
+        )
+        axis.fill_between(
+            frequencies,
+            arrays["aperiodic_psd_uv2_hz"][index],
+            arrays["modeled_psd_uv2_hz"][index],
+            color="#009E73",
+            alpha=0.12,
+        )
+        qc_value = row.get("specparam_fit_qc_pass")
+        qc_known = isinstance(qc_value, (bool, np.bool_))
+        qc_pass = bool(qc_value) if qc_known else False
+        qc_passes += int(qc_known and qc_pass)
+        title_color = "#007A3D" if qc_pass else ("#B22222" if qc_known else "0.2")
+        axis.set_title(
+            f"{electrode}  |  R²={float(row['specparam_r_squared']):.2f}  "
+            f"E={float(row['aperiodic_exponent']):.2f}",
+            fontsize=8,
+            color=title_color,
+            fontweight="bold" if qc_known and not qc_pass else "normal",
+        )
+        axis.set_xlim(float(frequencies[0]), float(frequencies[-1]))
+        axis.grid(alpha=0.16, linewidth=0.5)
+        axis.tick_params(labelsize=6)
+    for axis in axes.flat[len(ordered_electrodes) :]:
+        axis.set_axis_off()
+
+    for axis in axes[-1, :]:
+        if axis.axison:
+            axis.set_xlabel("Frequency (Hz)", fontsize=7)
+    for axis in axes[:, 0]:
+        if axis.axison:
+            axis.set_ylabel("PSD (µV²/Hz)", fontsize=7)
+
+    first = rows[ordered_electrodes[0]]
+    group = str(first.get("group", ""))
+    subject_id = str(first["subject_id"])
+    qc_text = (
+        f"{qc_passes}/{len(ordered_electrodes)} fits pass QC"
+        if all(isinstance(rows[name].get("specparam_fit_qc_pass"), (bool, np.bool_)) for name in ordered_electrodes)
+        else "fit QC not available"
+    )
+    fig.suptitle(
+        f"{subject_id} — {group}: all-electrode spectral fits\n{qc_text}; "
+        "judge fit by blue vs black; orange is background only; red labels fail QC",
+        fontsize=14,
+    )
+    fig.legend(
+        handles=[
+            Line2D([0], [0], color="0.15", linewidth=1.0, label="Observed PSD"),
+            Line2D([0], [0], color="#0072B2", linewidth=1.6, label="Full model"),
+            Line2D([0], [0], color="#D55E00", linewidth=1.4, label="Aperiodic component"),
+            Patch(facecolor="#009E73", alpha=0.2, label="Periodic contribution"),
+        ],
+        loc="upper center",
+        bbox_to_anchor=(0.5, 0.965),
+        ncol=4,
+        frameon=False,
+        fontsize=9,
+    )
+    fig.subplots_adjust(top=0.92, bottom=0.04, left=0.045, right=0.99, hspace=0.48, wspace=0.28)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=int(dpi), bbox_inches="tight")
+    plt.close(fig)
+
+
 def _render_subject(
     spectra_path: str,
     subject_rows: list[dict[str, Any]],
     gallery_root: str,
     dpi: int,
     overwrite: bool,
+    overwrite_subject_overview: bool,
 ) -> list[dict[str, Any]]:
     """Worker that renders every electrode for one subject."""
     spectra_path_object = Path(spectra_path)
@@ -58,6 +178,25 @@ def _render_subject(
                 f"{spectra_path_object}/{name} has shape {values.shape}; "
                 f"expected {(len(electrodes), len(frequencies))}"
             )
+
+    first_row = subject_rows[0]
+    subject_directory = (
+        Path(gallery_root)
+        / _safe_name(str(first_row["group"]))
+        / str(first_row["subject_id"])
+    )
+    overview_path = subject_directory / SUBJECT_OVERVIEW_FILENAME
+    overview_rendered = overwrite_subject_overview or not overview_path.exists()
+    if overview_rendered:
+        _plot_subject_overview(
+            subject_rows,
+            electrodes,
+            electrode_indices,
+            frequencies,
+            arrays,
+            overview_path,
+            int(dpi),
+        )
 
     output_rows = []
     used_filenames: set[str] = set()
@@ -97,7 +236,11 @@ def _render_subject(
                 "group": group,
                 "electrode": electrode,
                 "figure_path": relative_path.as_posix(),
+                "subject_figure_path": (
+                    Path(_safe_name(group)) / subject_id / SUBJECT_OVERVIEW_FILENAME
+                ).as_posix(),
                 "rendered_this_run": bool(rendered),
+                "subject_overview_rendered_this_run": bool(overview_rendered),
                 "aperiodic_offset": float(metric_row["aperiodic_offset"]),
                 "aperiodic_exponent": float(metric_row["aperiodic_exponent"]),
                 "specparam_r_squared": float(metric_row["specparam_r_squared"]),
@@ -126,9 +269,13 @@ a { color: #0067a5; }
     for group, group_table in index.groupby("group", sort=False):
         subject_links = []
         for subject_id in group_table["subject_id"].drop_duplicates():
+            selected = group_table.loc[group_table["subject_id"].eq(subject_id)]
+            overview = str(selected["subject_figure_path"].iloc[0])
             subject_links.append(
-                f'<li><a href="{html.escape(str(group))}/{html.escape(subject_id)}/index.html">'
-                f"{html.escape(subject_id)}</a></li>"
+                f'<li><strong>{html.escape(subject_id)}</strong>: '
+                f'<a href="{html.escape(overview)}">all-electrode figure</a> · '
+                f'<a href="{html.escape(str(group))}/{html.escape(subject_id)}/index.html">'
+                "individual fits and residuals</a></li>"
             )
         root_sections.append(
             f"<h2>{html.escape(str(group))}</h2><ul>{''.join(subject_links)}</ul>"
@@ -136,8 +283,9 @@ a { color: #0067a5; }
     root_document = (
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Specparam gallery</title>"
         f"<style>{style}</style></head><body>"
-        "<h1>Subject/electrode specparam decompositions</h1>"
-        f"<p>{index['subject_id'].nunique()} subjects, {len(index)} electrode figures.</p>"
+        "<h1>Subject specparam decompositions</h1>"
+        f"<p>{index['subject_id'].nunique()} all-electrode subject figures; "
+        f"{len(index)} detailed electrode figures.</p>"
         f"{''.join(root_sections)}</body></html>"
     )
     (gallery_root / "index.html").write_text(root_document, encoding="utf-8")
@@ -171,6 +319,10 @@ a { color: #0067a5; }
             "</head><body>"
             '<p><a href="../../index.html">← All subjects</a></p>'
             f"<h1>{html.escape(str(subject_id))} — {html.escape(str(group))}</h1>"
+            f'<p><a href="{SUBJECT_OVERVIEW_FILENAME}">Open the all-electrode figure at full size</a></p>'
+            f'<a href="{SUBJECT_OVERVIEW_FILENAME}"><img src="{SUBJECT_OVERVIEW_FILENAME}" '
+            'alt="All-electrode spectral fits" style="width:100%;height:auto"></a>'
+            "<h2>Individual fits and signed residuals</h2>"
             f'<div class="grid">{"".join(cards)}</div></body></html>'
         )
         (subject_directory / "index.html").write_text(
@@ -186,6 +338,7 @@ def generate_specparam_gallery(
     dpi: int = 100,
     workers: int = 1,
     overwrite: bool = False,
+    overwrite_subject_overviews: bool = False,
     logger: logging.Logger | None = None,
 ) -> pd.DataFrame:
     """Render every subject/electrode fit and write browsable HTML indexes."""
@@ -219,6 +372,7 @@ def generate_specparam_gallery(
                 str(gallery_root),
                 int(dpi),
                 bool(overwrite),
+                bool(overwrite or overwrite_subject_overviews),
             )
         )
     rows: list[dict[str, Any]] = []

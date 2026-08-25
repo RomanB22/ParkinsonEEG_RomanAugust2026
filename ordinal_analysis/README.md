@@ -14,8 +14,8 @@ and uses `ordpy` 1.2.2 to calculate:
 - normalized permutation entropy, **H**;
 - Jensen-Shannon statistical complexity, **C**;
 - discrete Fisher information, **F**;
-- normalized Rényi permutation entropy, **Hα**, for `α = 0.5, 0.9, 1.1, 2, 5`;
-- Rényi statistical complexity, **Cα**, for `α = 0.5, 0.9, 1.1, 2, 5`.
+- normalized Rényi permutation entropy, **Hα**, for `α = 0.1, 0.5, 0.9, 1.1, 2, 5`;
+- Rényi statistical complexity, **Cα**, for `α = 0.1, 0.5, 0.9, 1.1, 2, 5`.
 
 Both Rényi quantities come from one vectorized call to
 `ordpy.renyi_complexity_entropy` for each pooled ordinal distribution. The
@@ -59,9 +59,11 @@ The defaults in [`config.json`](config.json) are:
 | `delay_samples` | `1` | Adjacent elements of a pattern are one 120 Hz sample apart (`1/120 ≈ 8.33 ms`). |
 | `tie_precision` | `null` | Uses the `ordpy` default full-precision policy; samples retain their full float64 decimals and are never rounded. |
 
-Rényi alpha values are fixed at `0.9`, `1.1`, and `2`. Values below and above
-one provide order-sensitive alternatives around the Shannon limit, while
-`α = 2` gives stronger weight to higher-probability ordinal patterns.
+Rényi alpha values are fixed at `0.1`, `0.5`, `0.9`, `1.1`, `2`, and `5`.
+Values below and above one provide order-sensitive alternatives around the
+Shannon limit. The low-alpha values emphasize support and rarer patterns,
+whereas the high-alpha values give progressively greater weight to dominant
+ordinal patterns.
 
 No noise or jitter is added. Exact equalities that remain at full precision use
 `ordpy`'s deterministic `argsort` behavior. Their counts and fractions are
@@ -76,7 +78,7 @@ pattern. Vectorized NumPy ordering implements the same ordinal symbolization as
 `ordpy.complexity_entropy(..., probs=True)` and
 `ordpy.fisher_shannon(..., probs=True)` receive the resulting pooled
 probability distribution in lexicographic permutation order, as does
-`ordpy.renyi_complexity_entropy(..., alpha=[0.5, 0.9, 1.1, 2, 5], probs=True)`.
+`ordpy.renyi_complexity_entropy(..., alpha=[0.1, 0.5, 0.9, 1.1, 2, 5], probs=True)`.
 
 ## Band filtering
 
@@ -190,11 +192,12 @@ ordinal_analysis/processed/
 ### Tables
 
 `electrode_metrics.csv` contains one row per subject/shared-electrode with H, C,
-F, all six Rényi quantities, sample and epoch counts, the number of ordinal
+F, all twelve Rényi quantities, sample and epoch counts, the number of ordinal
 patterns, exact-tie diagnostics, sampling rate, embedding parameters, and tie
 policy. The Rényi columns are:
 
 ```text
+renyi_entropy_alpha_0_1       renyi_complexity_alpha_0_1
 renyi_entropy_alpha_0_9       renyi_complexity_alpha_0_9
 renyi_entropy_alpha_1_1       renyi_complexity_alpha_1_1
 renyi_entropy_alpha_2         renyi_complexity_alpha_2

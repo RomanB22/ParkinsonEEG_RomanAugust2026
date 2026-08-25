@@ -27,6 +27,12 @@ present in every analyzed subject. Its sequence is:
    subject/shared-electrode/band. Electrode metrics are then averaged to one
    value per subject/band for descriptive PD/Control figures and summaries.
 
+After this primary all-electrode analysis, the fit-QC sensitivity stage can
+exclude failed specparam electrodes and re-aggregate H, C, and F. Formal
+QC-qualified summaries require at least 48/60 passing electrodes per subject.
+The repeated exponent and R² are checked against the scale-free pipeline to
+numerical precision before existing passing-electrode results are reused.
+
 The default ordinal parameters are `D=6` and `tau=1` sample, matching the
 prespecified primary configuration in the existing ordinal workflow. The
 state space therefore contains `6! = 720` possible patterns.
@@ -59,6 +65,13 @@ Run the full cohort and all shared electrodes:
 bash bout_analyses/run_bout_analyses.sh --overwrite
 ```
 
+Then generate QC-filtered bout-property and within-bout ordinal sensitivity
+outputs:
+
+```bash
+bash scale_free_analysis/run_fit_qc_sensitivity.sh
+```
+
 Run a development pilot without changing the configured output:
 
 ```bash
@@ -86,6 +99,12 @@ bout_analyses/processed/
 │   ├── subject_electrode_band_metrics.csv
 │   ├── subject_band_metrics.csv
 │   ├── group_band_summary.csv
+│   ├── subject_electrode_band_metrics_fit_qc.csv
+│   ├── subject_band_metrics_fit_qc_all_subjects.csv
+│   ├── subject_band_metrics_fit_qc.csv
+│   ├── group_band_summary_fit_qc.csv
+│   ├── pd_control_comparisons_fit_qc.csv
+│   ├── within_bout_ordinal_fit_qc_sensitivity.csv
 │   ├── bout_duration_records.csv.gz
 │   └── example_bout_ordinal_distribution.csv
 ├── intermediate/
@@ -98,6 +117,7 @@ bout_analyses/processed/
     │   ├── 01_bout_detection.png
     │   └── 02_ordinal_encoding.png
     ├── quality/bout_and_ordinal_diagnostics.png
+    ├── fit_qc_sensitivity/within_bout_ordinal_all_vs_fit_qc.png
     ├── group/
     │   ├── subject_metric_violins.png
     │   └── subject_ordinal_planes.png
@@ -129,4 +149,3 @@ the probability distribution supplied to `ordpy`.
 These are descriptive outputs. The pipeline deliberately does not turn every
 bout into an independent group-statistical observation, which would
 pseudoreplicate participants.
-

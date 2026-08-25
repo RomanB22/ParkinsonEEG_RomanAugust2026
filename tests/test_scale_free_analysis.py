@@ -9,6 +9,7 @@ from ebosc.BOSC import BOSC_tf
 from specparam.sim import sim_power_spectrum
 
 from scale_free_analysis.aperiodic_diagnostics import assess_specparam_fit
+from scale_free_analysis.fit_qc_sensitivity import _fit_coverage
 from scale_free_analysis.metrics import (
     cycles_within_bouts,
     detect_frequency_episodes,
@@ -20,6 +21,10 @@ from scale_free_analysis.metrics import (
 )
 from scale_free_analysis.pipeline import load_analysis_config
 from scale_free_analysis.specparam_gallery import generate_specparam_gallery
+from scale_free_analysis.typical_bouts import (
+    mean_centered_analytic,
+    mean_centered_envelope,
+)
 
 
 class ScaleFreeAnalysisTests(unittest.TestCase):
@@ -89,6 +94,62 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
         self.assertFalse(result["specparam_fit_qc_pass"])
         self.assertIn("r_squared_below_minimum", result["specparam_fit_qc_reasons"])
         self.assertGreater(result["specparam_residual_max_abs_log10"], 0.0)
+
+    def test_fit_qc_coverage_requires_configured_electrode_fraction(self):
+        fits = pd.DataFrame(
+            {
+                "subject_id": ["sub-001"] * 4 + ["sub-002"] * 4,
+                "group": ["PD"] * 4 + ["Control"] * 4,
+                "electrode": ["Fz", "Cz", "Pz", "Oz"] * 2,
+                "specparam_fit_qc_pass": [True, True, True, False]
+                + [True, True, False, False],
+            }
+        )
+        coverage = _fit_coverage(fits, 0.75).set_index("subject_id")
+        self.assertTrue(coverage.loc["sub-001", "subject_fit_qc_pass"])
+        self.assertFalse(coverage.loc["sub-002", "subject_fit_qc_pass"])
+        self.assertEqual(coverage.loc["sub-001", "n_fit_qc_electrodes"], 3)
+        self.assertAlmostEqual(
+            coverage.loc["sub-002", "fit_failure_fraction"], 0.5
+        )
+
+    def test_typical_bout_envelope_is_center_aligned_and_bout_balanced(self):
+        envelope = np.ones((2, 21), dtype=float)
+        envelope[0, 8:13] = np.asarray([2.0, 3.0, 5.0, 3.0, 2.0])
+        envelope[1, 3:8] = np.asarray([4.0, 5.0, 7.0, 5.0, 4.0])
+        episodes = pd.DataFrame(
+            {
+                "epoch_index": [0, 1],
+                "start_sample": [8, 3],
+                "stop_sample_exclusive": [13, 8],
+            }
+        )
+        mean, count = mean_centered_envelope(
+            envelope, episodes, half_window_samples=2
+        )
+        np.testing.assert_allclose(mean, [3.0, 4.0, 6.0, 4.0, 3.0])
+        self.assertEqual(count, 2)
+
+    def test_typical_bout_phase_alignment_prevents_waveform_cancellation(self):
+        analytic = np.ones((2, 21), dtype=np.complex128)
+        amplitude = np.asarray([1.0, 2.0, 3.0, 2.0, 1.0])
+        phase = np.asarray([-np.pi, -np.pi / 2.0, 0.0, np.pi / 2.0, np.pi])
+        analytic[0, 8:13] = amplitude * np.exp(1j * phase)
+        analytic[1, 3:8] = amplitude * np.exp(1j * (phase + 0.7))
+        episodes = pd.DataFrame(
+            {
+                "epoch_index": [0, 1],
+                "start_sample": [8, 3],
+                "stop_sample_exclusive": [13, 8],
+            }
+        )
+        envelope, phasor, shape, count = mean_centered_analytic(
+            analytic, episodes, half_window_samples=2
+        )
+        np.testing.assert_allclose(envelope, amplitude)
+        np.testing.assert_allclose(phasor, np.exp(1j * phase), atol=1e-12)
+        np.testing.assert_allclose(shape, [-1.0, 0.0, 3.0, 0.0, -1.0], atol=1e-12)
+        self.assertEqual(count, 2)
 
     def test_vectorized_wavelets_match_ebosc(self):
         sfreq = 120.0
@@ -196,6 +257,10 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
                 workers=1,
             )
             self.assertEqual(len(index), 2)
+            self.assertTrue(
+                (gallery_root / "PD" / "sub-001" / "all_electrodes.png").exists()
+            )
+            self.assertEqual(index["subject_figure_path"].nunique(), 1)
             self.assertTrue((gallery_root / "PD" / "sub-001" / "Fz.png").exists())
             self.assertTrue((gallery_root / "PD" / "sub-001" / "Cz.png").exists())
             self.assertTrue((gallery_root / "PD" / "sub-001" / "index.html").exists())

@@ -20,6 +20,8 @@ DIMENSION_METRIC_TITLES = {
     "entropy": "Permutation entropy H",
     "complexity": "Statistical complexity C",
     "fisher_information": "Fisher information F",
+    "renyi_entropy_alpha_0_1": "Rényi entropy Hα (α=0.1)",
+    "renyi_complexity_alpha_0_1": "Rényi complexity Cα (α=0.1)",
     "renyi_entropy_alpha_0_5": "Rényi entropy Hα (α=0.5)",
     "renyi_complexity_alpha_0_5": "Rényi complexity Cα (α=0.5)",
     "renyi_entropy_alpha_0_9": "Rényi entropy Hα (α=0.9)",
@@ -443,7 +445,7 @@ def plot_dimension_sensitivity_heatmaps(
         fig.colorbar(image, cax=colorbar_axis, label="Partial Spearman ρ")
     fig.suptitle(
         "MOCA ordinal analyses across embedding dimensions (age/sex adjusted)\n"
-        "* BH-FDR significant within that D's separate 91-feature analysis block"
+        "* BH-FDR significant within that D's separate 105-feature analysis block"
     )
     fig.subplots_adjust(left=0.10, right=0.88, bottom=0.07, top=0.90, hspace=0.28, wspace=0.18)
     _save(fig, path, dpi)

@@ -38,7 +38,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         self.assertEqual(config["dimension_sensitivity"]["delay_samples"], 1)
         self.assertEqual(
             config["dimension_sensitivity"]["fdr_scope"],
-            "within_each_dimension_across_all_91_features_per_method",
+            "within_each_dimension_across_all_105_features_per_method",
         )
 
     def test_partial_spearman_removes_age_confounding(self):
@@ -168,29 +168,29 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             30,
         )
 
-    def test_dimension_blocks_have_91_balanced_regular_and_renyi_features(self):
+    def test_dimension_blocks_have_105_balanced_regular_and_renyi_features(self):
         config = load_analysis_config("quantitative_behavioral/config.json")
         cohort, _, _ = build_subject_features(config)
         features, dictionary, electrode_features, electrode_order = (
             build_dimension_sensitivity_features(config, cohort)
         )
-        self.assertEqual(len(dictionary), 364)
+        self.assertEqual(len(dictionary), 420)
         self.assertEqual(set(dictionary["embedding_dimension"]), {3, 4, 5, 6})
         self.assertEqual(set(dictionary["delay_samples"]), {1})
         self.assertEqual(dictionary.groupby("embedding_dimension").size().to_dict(), {
-            3: 91,
-            4: 91,
-            5: 91,
-            6: 91,
+            3: 105,
+            4: 105,
+            5: 105,
+            6: 105,
         })
         self.assertEqual(
             set(dictionary["family"]),
             {"ordinal_D3", "ordinal_D4", "ordinal_D5", "ordinal_D6"},
         )
-        self.assertEqual(int(dictionary["feature_id"].str.contains("renyi").sum()), 280)
+        self.assertEqual(int(dictionary["feature_id"].str.contains("renyi").sum()), 336)
         self.assertEqual(
             set(dictionary.loc[dictionary["quantity_set"].ne("regular"), "renyi_alpha"]),
-            {0.5, 0.9, 1.1, 2.0, 5.0},
+            {0.1, 0.5, 0.9, 1.1, 2.0, 5.0},
         )
         self.assertEqual(len(electrode_order), 60)
         self.assertFalse(features.duplicated(["subject_id", "feature_id"]).any())
@@ -200,7 +200,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             ).any()
         )
         self.assertEqual(
-            len(features.loc[features["group"].eq("PD")]), 100 * 364
+            len(features.loc[features["group"].eq("PD")]), 100 * 420
         )
 
 

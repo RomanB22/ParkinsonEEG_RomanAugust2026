@@ -5,6 +5,12 @@ eyes-open resting EEG recordings described in [Prompt.md](Prompt.md). It cleans
 continuous EEG, creates 4-second epochs, and provides independent downstream
 PSD, ordinal, and oscillatory-bout analyses.
 
+The downstream workflow includes a formal specparam fit-QC sensitivity. Failed
+1/f fits remain in the provenance outputs but are excluded from parallel bout,
+cycle, and within-bout ordinal summaries, which require at least 48/60 passing
+electrodes per subject. Run it after both bout pipelines with
+`bash scale_free_analysis/run_fit_qc_sensitivity.sh`.
+
 The original files under `dataset/` are read-only inputs. Complex-pipeline
 outputs are placed under `processed/`; minimal-pipeline outputs are isolated
 under `simpler/processed/`.
@@ -229,10 +235,15 @@ The standalone workflow in
 [`ScaleFree.md`](ScaleFree.md). It combines `specparam` periodic/aperiodic
 decomposition, aperiodic-relative eBOSC bout detection, bycycle waveform
 features, subject-balanced PD/Control comparisons, saved intermediate results,
-and example/group/topographic figures.
+and example/group/topographic figures. A separate gallery aligns detected bouts
+at their centers and shows normalized Hilbert envelopes, circular relative
+phase with phase-consistency `R`, and phase-aligned average bout shapes for
+Control versus PD, per band and electrode, alongside detection-coverage and
+fit-QC sensitivity panels.
 
 ```bash
 bash scale_free_analysis/run_scale_free_analysis.sh --overwrite
+bash scale_free_analysis/generate_typical_bouts.sh
 ```
 
 ## Ordinal analysis inside detected bouts
@@ -262,7 +273,7 @@ correlations adjusted for age and sex, deterministic bootstrap intervals,
 prespecified family-specific FDR correction, raw-data scatter grids, forest
 plots, sensitivity heatmaps, and secondary spatial maps. Separate D=3,4,5,6
 (tau=1) ordinal blocks include regular H/C/F and Rényi entropy/complexity at
-alpha=0.5, 0.9, 1.1, 2, and 5. Each D has its own feature matrix and within-D FDR
+alpha=0.1, 0.5, 0.9, 1.1, 2, and 5. Each D has its own feature matrix and within-D FDR
 correction; D=6 is primary and D=3–5 are sensitivity blocks.
 The exact age/sex-adjusted partial Spearman method is documented in
 [`quantitative_behavioral/METHODS.md`](quantitative_behavioral/METHODS.md).

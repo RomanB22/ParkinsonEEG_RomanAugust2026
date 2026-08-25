@@ -26,9 +26,11 @@ Run the complete post-cleaning Parkinson EEG analysis pipeline:
   3. Ordinal D/tau parameter sweep
   4. Scale-free/specparam and bout-property analysis
   5. Within-bout ordinal analysis
-  6. Transparent PD-versus-Control exploration models
-  7. D=3,4,5,6 quantitative-behavioral ordinal inputs
-  8. MOCA quantitative-behavioral analysis
+  6. Specparam fit-QC bout and within-bout sensitivity
+  7. Subject-balanced stereotypical bout gallery and detection QC
+  8. Transparent PD-versus-Control exploration models
+  9. D=3,4,5,6 quantitative-behavioral ordinal inputs
+ 10. MOCA quantitative-behavioral analysis
 
 The default is resumable: a current completed stage is skipped. A stage whose
 outputs predate the requested Rényi columns is automatically rerun.
@@ -121,6 +123,8 @@ header_has_extended_renyi() {
     [[ -f "$filename" ]] || return 1
     local header
     IFS= read -r header < "$filename"
+    [[ "$header" == *"renyi_entropy_alpha_0_1"* ]] || return 1
+    [[ "$header" == *"renyi_complexity_alpha_0_1"* ]] || return 1
     [[ "$header" == *"renyi_entropy_alpha_0_5"* ]] || return 1
     [[ "$header" == *"renyi_complexity_alpha_0_5"* ]] || return 1
     [[ "$header" == *"renyi_entropy_alpha_5"* ]] || return 1
@@ -165,6 +169,26 @@ bout_current() {
     [[ -f bout_analyses/processed/manifest.json ]]
 }
 
+fit_qc_sensitivity_current() {
+    [[ -f scale_free_analysis/processed/fit_qc_sensitivity_manifest.json ]] || return 1
+    [[ -f scale_free_analysis/processed/metrics/subject_band_metrics_fit_qc.csv ]] || return 1
+    [[ -f scale_free_analysis/processed/metrics/specparam_fit_failure_group_comparison.csv ]] || return 1
+    [[ -f bout_analyses/processed/metrics/subject_band_metrics_fit_qc.csv ]] || return 1
+    [[ -f bout_analyses/processed/figures/fit_qc_sensitivity/within_bout_ordinal_all_vs_fit_qc.png ]] || return 1
+    [[ -f quantitative_behavioral/processed/fit_qc_sensitivity_manifest.json ]] || return 1
+    [[ -f quantitative_behavioral/processed/metrics/fit_qc_sensitivity/subject_level_correlations.csv ]] || return 1
+}
+
+typical_bouts_current() {
+    [[ -f scale_free_analysis/processed/typical_bouts_manifest.json ]] || return 1
+    [[ -f scale_free_analysis/processed/metrics/typical_bout_coverage.csv ]] || return 1
+    [[ -f scale_free_analysis/processed/metrics/typical_bout_group_coverage.csv ]] || return 1
+    [[ -f scale_free_analysis/processed/figures/typical_bouts/index.html ]] || return 1
+    [[ -f scale_free_analysis/processed/figures/typical_bouts/grand_average_all_subjects.png ]] || return 1
+    [[ -f scale_free_analysis/processed/figures/typical_bouts/grand_average_fit_qc.png ]] || return 1
+    [[ -f scale_free_analysis/processed/figures/typical_bouts/bout_detection_subject_coverage.png ]] || return 1
+}
+
 exploration_current() {
     [[ -f exploration/processed/manifest.json ]]
 }
@@ -177,6 +201,8 @@ quantitative_current() {
     [[ -f "$dictionary" ]] || return 1
     grep -q 'aperiodic_exponent' "$primary_dictionary" || return 1
     grep -q 'aperiodic_exponent_qc' "$primary_dictionary" || return 1
+    grep -q 'renyi_entropy_alpha_0_1' "$dictionary" || return 1
+    grep -q 'renyi_complexity_alpha_0_1' "$dictionary" || return 1
     grep -q 'renyi_entropy_alpha_0_5' "$dictionary" || return 1
     grep -q 'renyi_complexity_alpha_0_5' "$dictionary" || return 1
     grep -q 'renyi_entropy_alpha_5' "$dictionary" || return 1
@@ -245,6 +271,14 @@ if [[ "$NO_PROGRESS" == true ]]; then
 fi
 run_stage "Within-bout ordinal analysis" bout_current \
     bout_analyses/processed/manifest.json "${bout_command[@]}"
+
+run_stage "Specparam fit-QC bout sensitivity" fit_qc_sensitivity_current \
+    scale_free_analysis/processed/fit_qc_sensitivity_manifest.json \
+    bash scale_free_analysis/run_fit_qc_sensitivity.sh
+
+run_stage "Stereotypical bout gallery and detection QC" typical_bouts_current \
+    scale_free_analysis/processed/typical_bouts_manifest.json \
+    bash scale_free_analysis/generate_typical_bouts.sh
 
 if [[ "$SKIP_EXPLORATION" == false ]]; then
     run_stage "PD-versus-Control model exploration" exploration_current \

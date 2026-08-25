@@ -22,6 +22,8 @@ METRIC_STYLE = {
     "entropy": ("Normalized permutation entropy (H)", "viridis"),
     "complexity": ("Statistical complexity (C)", "magma"),
     "fisher_information": ("Fisher information (F)", "cividis"),
+    "renyi_entropy_alpha_0_1": ("Rényi entropy (Hα, α=0.1)", "viridis"),
+    "renyi_complexity_alpha_0_1": ("Rényi complexity (Cα, α=0.1)", "magma"),
     "renyi_entropy_alpha_0_5": ("Rényi entropy (Hα, α=0.5)", "viridis"),
     "renyi_complexity_alpha_0_5": ("Rényi complexity (Cα, α=0.5)", "magma"),
     "renyi_entropy_alpha_0_9": ("Rényi entropy (Hα, α=0.9)", "viridis"),
@@ -37,6 +39,12 @@ METRIC_STYLE = {
 PLANE_PAIRS = (
     ("entropy", "complexity", "electrode_hxc", "H × C"),
     ("entropy", "fisher_information", "electrode_hxf", "H × F"),
+    (
+        "renyi_entropy_alpha_0_1",
+        "renyi_complexity_alpha_0_1",
+        "electrode_renyi_hxc_alpha_0_1",
+        "Rényi Hα × Cα (α=0.1)",
+    ),
     (
         "renyi_entropy_alpha_0_5",
         "renyi_complexity_alpha_0_5",

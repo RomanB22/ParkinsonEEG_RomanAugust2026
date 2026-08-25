@@ -43,6 +43,12 @@ deleted: all fits remain in the tables and gallery with a pass/fail flag and
 failure reasons. A subject-level QC-qualified exponent is reported separately
 only when at least 80% of that subject's 60 shared electrodes pass.
 
+Fit QC is also propagated into a formal downstream sensitivity analysis after
+the within-bout ordinal pipeline has completed. It retains only passing
+electrodes and requires at least 48/60 passing fits per subject. The original
+all-electrode bout, cycle, and within-bout ordinal outputs are preserved; the
+QC-qualified versions are written alongside them.
+
 Fixed-mode sensitivity fits use identical peak settings over 1–50 Hz (primary),
 1–40 Hz, 2–50 Hz, and 2–40 Hz. This isolates dependence on the fitting range
 without conflating it with a different peak model. The ranges are parallel
@@ -89,7 +95,56 @@ Per subject/electrode/band outputs include occupancy (Pepisode), bouts per
 minute, mean and median duration, cycles per bout, within-epoch inter-bout
 interval, wavelet power and amplitude, and threshold ratio (SNR).
 
-### 3. Cycle-by-cycle characterization
+Bout-detection QC is deliberately visible rather than reduced to a single
+pass/fail label:
+
+- only preprocessing-accepted epochs and the 60 cohort-shared electrodes enter
+  detection;
+- exact edge and minimum-duration rules are tested and every retained interval
+  keeps its epoch, sample bounds, duration, peak frequency, power, and threshold
+  ratio in the compressed episode tables;
+- the detection example overlays the aperiodic-relative threshold and detected
+  time-frequency mask;
+- counts, occupancy, duration, amplitude, threshold ratio, and missing-bout
+  rates are summarized in the quality figures and metrics;
+- primary all-fit outputs are accompanied by a fit-QC sensitivity that removes
+  failed subject/electrode aperiodic models.
+
+The typical-bout gallery adds a coverage check for every group, band, and
+electrode. It reports the eligible and contributing subject counts, total bout
+counts, and mean/median bouts per subject. This makes sparse or unequal support
+visible before interpreting a group-average curve.
+
+### 3. Subject-balanced stereotypical bout representations
+
+For a visually interpretable average bout, each accepted epoch is band-pass
+filtered and converted to its complex Hilbert analytic signal. Each
+subject/electrode/band signal is divided by its median Hilbert amplitude over
+valid epoch interiors, and every detected bout is aligned to its temporal
+midpoint in a ±0.5-second window. Each panel row contains:
+
+- the normalized Hilbert amplitude envelope;
+- circular mean Hilbert phase relative to the bout center, with dotted
+  resultant length `R` showing phase consistency from 0 to 1;
+- the real phase-aligned analytic signal, which provides an average oscillatory
+  bout shape without cancellation from arbitrary absolute phase.
+
+For the latter two quantities, every bout is rotated so its analytic phase is
+zero at its center. Consequently, the phase and shape panels describe relative
+within-bout evolution. They are not evidence of absolute phase locking to an
+external event, and the phase-aligned shape is not an event-related potential.
+
+Aggregation is hierarchical: bouts are averaged within each
+subject/electrode/band first, and subjects are then averaged with equal weight.
+Envelope and phase-aligned-shape shading is a pointwise 95% Student-t confidence
+interval across subject means, not across bouts. Phase is circularly averaged
+and accompanied by `R` rather than a linear confidence band. The grand-average
+figure first averages available electrodes within each subject. A parallel
+gallery retains only fit-QC electrodes from subjects meeting the 48/60 fit
+criterion. These are descriptive waveform summaries; their pointwise intervals
+are not multiplicity-corrected group tests.
+
+### 4. Cycle-by-cycle characterization
 
 `bycycle.compute_shape_features` identifies trough-to-trough cycles inside each
 accepted epoch. A cycle is retained only when at least 50% of its samples
@@ -102,7 +157,7 @@ features and summarizes:
 - rise/decay symmetry;
 - peak/trough symmetry.
 
-### 4. Subject-level PD vs Control comparisons
+### 5. Subject-level PD vs Control comparisons
 
 Electrode values are averaged first, producing one value per subject for every
 broadband or band-resolved feature. Only those subject-level rows enter group
@@ -126,8 +181,9 @@ Run the full cohort and all shared electrodes:
 bash scale_free_analysis/run_scale_free_analysis.sh --overwrite
 ```
 
-If the scale-free analysis already exists, generate or resume only the
-subject/electrode decomposition gallery without rerunning eBOSC or bycycle:
+If the scale-free analysis already exists, generate or resume the primary
+all-electrode subject figures and detailed electrode decomposition gallery
+without rerunning eBOSC or bycycle:
 
 ```bash
 bash scale_free_analysis/generate_specparam_figures.sh
@@ -135,6 +191,8 @@ bash scale_free_analysis/generate_specparam_figures.sh
 
 Use `--overwrite` to regenerate existing images. The defaults use four worker
 processes and 100 DPI; both can be overridden with `--workers` and `--dpi`.
+Use `--overwrite-subject-overviews` to refresh only the combined subject
+figures while retaining the existing detailed electrode images.
 
 Fit QC and all four range-sensitivity analyses can be regenerated from the
 saved spectra without rerunning eBOSC or bycycle:
@@ -142,6 +200,25 @@ saved spectra without rerunning eBOSC or bycycle:
 ```bash
 bash scale_free_analysis/run_aperiodic_diagnostics.sh
 bash scale_free_analysis/generate_specparam_figures.sh --overwrite
+```
+
+After both bout pipelines exist, propagate fit QC without repeating PSD fits,
+wavelets, bout detection, or ordinal encoding:
+
+```bash
+bash scale_free_analysis/run_fit_qc_sensitivity.sh
+```
+
+This stage verifies that the independently repeated exponent and R² agree to
+numerical precision before re-aggregation. The PD/Control comparison of fit
+failure uses one failure fraction per subject and includes an age/sex-adjusted
+HC3-robust model; electrodes are not treated as independent observations.
+
+Generate the subject-balanced Control-versus-PD typical-bout gallery from the
+saved episode intervals (without repeating bout detection):
+
+```bash
+bash scale_free_analysis/generate_typical_bouts.sh
 ```
 
 Run a small development pilot without changing the configured output:
@@ -173,10 +250,17 @@ scale_free_analysis/processed/
 │   ├── subject_aperiodic_range_sensitivity.csv
 │   ├── aperiodic_range_group_comparisons.csv
 │   ├── specparam_fit_qc_summary.csv
+│   ├── subject_specparam_fit_failures.csv
+│   ├── specparam_fit_failure_group_comparison.csv
 │   ├── electrode_band_metrics.csv
+│   ├── electrode_band_metrics_fit_qc.csv
 │   ├── specparam_figure_index.csv
 │   ├── subject_aperiodic_metrics.csv
 │   ├── subject_band_metrics.csv
+│   ├── subject_band_metrics_fit_qc.csv
+│   ├── bout_property_fit_qc_sensitivity.csv
+│   ├── typical_bout_coverage.csv
+│   ├── typical_bout_group_coverage.csv
 │   ├── group_aperiodic_summary.csv
 │   ├── group_band_summary.csv
 │   └── pd_control_comparisons.csv
@@ -194,14 +278,31 @@ scale_free_analysis/processed/
     ├── aperiodic_diagnostics/
     │   ├── fit_qc_dashboard.png
     │   ├── frequency_range_sensitivity.png
-    │   └── group_median_decomposition_and_residuals.png
+    │   ├── group_median_decomposition_and_residuals.png
+    │   └── fit_failures_by_group.png
+    ├── fit_qc_sensitivity/bout_properties_all_vs_fit_qc.png
+    ├── typical_bouts/
+    │   ├── index.html
+    │   ├── grand_average_all_subjects.png
+    │   ├── grand_average_fit_qc.png
+    │   ├── bout_detection_subject_coverage.png
+    │   ├── bout_count_qc.png
+    │   ├── all_subjects/<electrode>.png
+    │   └── fit_qc/<electrode>.png
     ├── topomaps/*.png
     └── specparam_decomposition/
         ├── index.html
         ├── figure_index.csv
-        ├── PD/sub-*/index.html + <electrode>.png
-        └── Control/sub-*/index.html + <electrode>.png
+        ├── PD/sub-*/all_electrodes.png + index.html + <electrode>.png
+        └── Control/sub-*/all_electrodes.png + index.html + <electrode>.png
 ```
+
+The root gallery links first to one overview figure per subject. Each overview
+contains every shared electrode on the same linear-frequency/log-power canvas:
+observed PSD in black, the full specparam model in blue, and the aperiodic
+component in orange. Red electrode labels indicate formal QC failures. The
+per-electrode figures remain available below each overview for signed-residual
+inspection; poor fits are flagged rather than hidden or tuned independently.
 
 The compressed intermediate files preserve individual bout and cycle rows, the
 frequency-specific aperiodic background and threshold, and observed/fitted

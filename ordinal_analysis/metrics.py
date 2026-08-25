@@ -16,6 +16,7 @@ from scipy.signal import butter, sosfiltfilt
 
 CORE_METRICS = ("entropy", "complexity", "fisher_information")
 RENYI_ALPHA_METRICS = (
+    (0.1, "renyi_entropy_alpha_0_1", "renyi_complexity_alpha_0_1"),
     (0.5, "renyi_entropy_alpha_0_5", "renyi_complexity_alpha_0_5"),
     (0.9, "renyi_entropy_alpha_0_9", "renyi_complexity_alpha_0_9"),
     (1.1, "renyi_entropy_alpha_1_1", "renyi_complexity_alpha_1_1"),

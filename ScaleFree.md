@@ -26,6 +26,12 @@ Detect transient oscillatory episodes rather than assuming oscillations are cont
 
 Importantly, define oscillatory power relative to the **aperiodic background estimated with `specparam`**, so differences in 1/f activity between PD and Control are not incorrectly interpreted as differences in oscillatory activity.
 
+Use the 95th-percentile BOSC/eBOSC chi-square power threshold and require at
+least three cycles above threshold at each frequency. Exclude 0.75 seconds at
+both edges of every accepted four-second epoch, never allow a detection to
+cross an epoch boundary, and collapse contiguous qualifying samples from any
+frequency inside a band into a band-level bout.
+
 For each subject/channel/frequency band calculate:
 
 * oscillatory occupancy / Pepisode
@@ -75,5 +81,10 @@ Generate figures for every major analysis step, including:
 * cycle-by-cycle examples
 * scalp topographies
 * PD vs Control group comparisons
+* subject-balanced stereotypical bout envelopes, circular relative Hilbert
+  phase, phase consistency, and phase-aligned average shapes per band and
+  electrode
+* bout-detection coverage and bout-count QC for Control and PD, both before and
+  after aperiodic-fit QC
 
 Keep the implementation **simple, modular, well documented, and easy to validate (KISS/SOLID)**. Save intermediate results so every processing and analysis step can be independently inspected.

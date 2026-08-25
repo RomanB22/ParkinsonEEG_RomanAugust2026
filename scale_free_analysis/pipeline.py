@@ -68,6 +68,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "aperiodic_sensitivity",
         "ebosc",
         "bycycle",
+        "typical_bouts",
         "statistics",
         "plots",
     }
@@ -119,6 +120,15 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     overlap = float(config["bycycle"]["minimum_bout_overlap_fraction"])
     if not 0.0 <= overlap <= 1.0:
         raise ValueError("bycycle.minimum_bout_overlap_fraction must be between zero and one")
+    typical = config["typical_bouts"]
+    if float(typical["center_window_seconds"]) <= 0.0:
+        raise ValueError("typical_bouts.center_window_seconds must be positive")
+    if int(typical["bandpass_filter_order"]) < 1:
+        raise ValueError("typical_bouts.bandpass_filter_order must be positive")
+    if not 0.0 < float(typical["confidence_level"]) < 1.0:
+        raise ValueError("typical_bouts.confidence_level must be between zero and one")
+    if int(typical["workers"]) < 1:
+        raise ValueError("typical_bouts.workers must be positive")
     return config
 
 
@@ -827,6 +837,11 @@ def run_analysis(
         "n_common_electrodes": len(common_channels),
         "n_electrode_union": len(electrode_union),
         "n_specparam_decomposition_figures": int(len(specparam_gallery_index)),
+        "n_specparam_subject_overview_figures": int(
+            specparam_gallery_index["subject_id"].nunique()
+            if not specparam_gallery_index.empty
+            else 0
+        ),
         "specparam_fit_qc": {
             "thresholds": config["aperiodic_fit_qc"],
             "n_fits": int(len(aperiodic_electrodes)),
@@ -844,9 +859,9 @@ def run_analysis(
         },
         "specparam_gallery_enabled": bool(gallery_enabled),
         "specparam_gallery_policy": (
-            "One decomposition PNG per analyzed subject/shared-electrode pair, plus "
-            "root and per-subject HTML indexes. Figures reuse saved fitted spectral "
-            "curves and do not refit specparam."
+            "One primary all-electrode overview per subject, plus detailed "
+            "subject/electrode decomposition PNGs and HTML indexes. Figures reuse "
+            "saved fitted spectral curves and do not refit specparam."
         ),
         "epoch_boundary_policy": (
             "Only accepted cleaned epochs are analyzed. PSD periodograms are pooled, while "

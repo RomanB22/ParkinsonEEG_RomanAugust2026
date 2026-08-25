@@ -205,16 +205,27 @@ BH-FDR is applied within each prespecified feature family:
 | Bout properties | 20 |
 | Within-bout regular ordinal quantities | 12 |
 
+### Fit-QC bout sensitivity
+
+The fit-QC sensitivity is a separate 32-feature analysis restricted to
+subjects with at least 48/60 passing specparam fits. Only passing-electrode
+values contribute to the subject mean. It contains 20 band-resolved bout
+properties and 12 within-bout H/C/F quantities. Partial Spearman correlations
+use the same age/sex rank-residualization and subject bootstrap as the primary
+analysis. BH-FDR is controlled separately within its 20-feature bout-property
+family and 12-feature within-bout ordinal family, and not pooled with the
+primary 55-feature analysis.
+
 ### Separate embedding-dimension analyses
 
-Each embedding dimension is a separate 91-feature analysis block:
+Each embedding dimension is a separate 105-feature analysis block:
 
 ```text
-7 signal scopes × 13 ordinal quantities = 91 tests per D and method
+7 signal scopes × 15 ordinal quantities = 105 tests per D and method
 ```
 
-The thirteen quantities are regular entropy, complexity, and Fisher information,
-plus Rényi entropy and complexity at `alpha=0.5`, `0.9`, `1.1`, `2`, and `5`. BH-FDR is
+The fifteen quantities are regular entropy, complexity, and Fisher information,
+plus Rényi entropy and complexity at `alpha=0.1`, `0.5`, `0.9`, `1.1`, `2`, and `5`. BH-FDR is
 applied separately within `ordinal_D3`, `ordinal_D4`, `ordinal_D5`, and
 `ordinal_D6`.
 

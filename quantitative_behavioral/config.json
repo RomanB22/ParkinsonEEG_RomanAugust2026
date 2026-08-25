@@ -53,6 +53,8 @@
       "entropy",
       "complexity",
       "fisher_information",
+      "renyi_entropy_alpha_0_1",
+      "renyi_complexity_alpha_0_1",
       "renyi_entropy_alpha_0_5",
       "renyi_complexity_alpha_0_5",
       "renyi_entropy_alpha_0_9",
@@ -67,7 +69,7 @@
     "bands": ["delta", "theta", "alpha", "beta", "low_gamma", "broad_5_15"],
     "role": "D6_primary_D3_D4_D5_sensitivity",
     "analysis_block_policy": "one_separate_feature_matrix_per_embedding_dimension",
-    "fdr_scope": "within_each_dimension_across_all_91_features_per_method"
+    "fdr_scope": "within_each_dimension_across_all_105_features_per_method"
   },
   "expected": {
     "embedding_dimension": 6,
