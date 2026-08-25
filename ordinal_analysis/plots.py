@@ -324,10 +324,13 @@ def plot_electrode_plane_pages(
             _save(fig, output_dir / f"{stem}_p{page:02d}.png", dpi)
 
 
-def metric_color_limits(table: pd.DataFrame) -> dict[str, tuple[float, float]]:
+def metric_color_limits(
+    table: pd.DataFrame,
+    metrics: tuple[str, ...] = CORE_METRICS,
+) -> dict[str, tuple[float, float]]:
     """Use identical full-data scales for every subject and group topomap."""
     limits = {}
-    for metric in CORE_METRICS:
+    for metric in metrics:
         values = table[metric].to_numpy(dtype=float)
         low, high = float(np.nanmin(values)), float(np.nanmax(values))
         if np.isclose(low, high):
@@ -341,6 +344,7 @@ def electrode_metric_zscores(
     table: pd.DataFrame,
     *,
     strata: tuple[str, ...] = (),
+    metrics: tuple[str, ...] = CORE_METRICS,
 ) -> pd.DataFrame:
     """Z-score metrics across subjects within each stratum and electrode.
 
@@ -348,39 +352,40 @@ def electrode_metric_zscores(
     group means retain between-group differences. Constant metric/electrode
     combinations are assigned zero.
     """
-    required = {"electrode", *strata, *CORE_METRICS}
+    required = {"electrode", *strata, *metrics}
     missing = sorted(required - set(table.columns))
     if missing:
         raise ValueError(f"Missing z-score columns: {missing}")
 
     keys = [*strata, "electrode"]
-    grouped = table.groupby(keys, sort=False, dropna=False)[list(CORE_METRICS)]
+    grouped = table.groupby(keys, sort=False, dropna=False)[list(metrics)]
     means = grouped.transform("mean")
     standard_deviations = grouped.transform("std", ddof=0)
     valid = standard_deviations.gt(0.0) & np.isfinite(standard_deviations)
-    zscores = (table.loc[:, CORE_METRICS] - means) / standard_deviations
+    zscores = (table.loc[:, metrics] - means) / standard_deviations
     zscores = zscores.where(valid, 0.0)
-    zscores = zscores.where(table.loc[:, CORE_METRICS].notna())
+    zscores = zscores.where(table.loc[:, metrics].notna())
 
     standardized = table.copy()
-    standardized.loc[:, CORE_METRICS] = zscores
+    standardized.loc[:, metrics] = zscores
     return standardized
 
 
 def group_mean_symmetric_color_limits(
     standardized_table: pd.DataFrame,
     common_channels: list[str],
+    metrics: tuple[str, ...] = CORE_METRICS,
 ) -> dict[str, tuple[float, float]]:
     """Return zero-centered limits spanning standardized group means."""
     group_means = (
         standardized_table.loc[
             standardized_table["electrode"].isin(common_channels)
         ]
-        .groupby(["group", "electrode"])[list(CORE_METRICS)]
+        .groupby(["group", "electrode"])[list(metrics)]
         .mean()
     )
     limits = {}
-    for metric in CORE_METRICS:
+    for metric in metrics:
         maximum = float(np.nanmax(np.abs(group_means[metric].to_numpy(dtype=float))))
         if not np.isfinite(maximum) or np.isclose(maximum, 0.0):
             maximum = 1.0
@@ -393,8 +398,9 @@ def _plot_topomap_row(
     values_by_metric: dict[str, np.ndarray],
     info,
     limits: dict[str, tuple[float, float]],
+    metrics: tuple[str, ...] = CORE_METRICS,
 ) -> None:
-    for axis, metric in zip(axes, CORE_METRICS):
+    for axis, metric in zip(axes, metrics):
         label, cmap = METRIC_STYLE[metric]
         image, _ = mne.viz.plot_topomap(
             values_by_metric[metric],
@@ -415,8 +421,9 @@ def _plot_standardized_topomap_row(
     values_by_metric: dict[str, np.ndarray],
     info,
     limits: dict[str, tuple[float, float]],
+    metrics: tuple[str, ...] = CORE_METRICS,
 ) -> None:
-    for axis, metric in zip(axes, CORE_METRICS):
+    for axis, metric in zip(axes, metrics):
         label, _ = METRIC_STYLE[metric]
         image, _ = mne.viz.plot_topomap(
             values_by_metric[metric],
@@ -438,8 +445,12 @@ def plot_subject_topomaps(
     limits: dict[str, tuple[float, float]],
     output_dir: Path,
     dpi: int,
+    *,
+    metrics: tuple[str, ...] = CORE_METRICS,
+    metric_set_label: str = "ordinal metrics",
+    filename_suffix: str = "ordinal_topomaps",
 ) -> None:
-    """Create one comparable three-metric scalp map per participant."""
+    """Create one comparable metric-set scalp map per participant."""
     for subject_id, info in subject_infos.items():
         selected = table.loc[table["subject_id"].eq(subject_id)].set_index("electrode")
         missing = [channel for channel in info.ch_names if channel not in selected.index]
@@ -447,14 +458,14 @@ def plot_subject_topomaps(
             raise ValueError(f"{subject_id}: metrics missing for channels {missing}")
         values = {
             metric: selected.loc[info.ch_names, metric].to_numpy(dtype=float)
-            for metric in CORE_METRICS
+            for metric in metrics
         }
-        fig, axes = plt.subplots(1, 3, figsize=(12, 4))
-        _plot_topomap_row(axes, values, info, limits)
+        fig, axes = plt.subplots(1, len(metrics), figsize=(4 * len(metrics), 4), squeeze=False)
+        _plot_topomap_row(axes[0], values, info, limits, metrics)
         group = str(selected["group"].iloc[0])
-        fig.suptitle(f"{subject_id} ({group}) — ordinal metrics by electrode")
+        fig.suptitle(f"{subject_id} ({group}) — {metric_set_label} by electrode")
         fig.tight_layout()
-        _save(fig, output_dir / f"{subject_id}_ordinal_topomaps.png", dpi)
+        _save(fig, output_dir / f"{subject_id}_{filename_suffix}.png", dpi)
 
 
 def plot_group_topomaps(
@@ -464,22 +475,28 @@ def plot_group_topomaps(
     limits: dict[str, tuple[float, float]],
     path: Path,
     dpi: int,
+    *,
+    metrics: tuple[str, ...] = CORE_METRICS,
+    metric_set_label: str = "ordinal",
 ) -> None:
     """Plot group means on the electrode set shared by every participant."""
-    fig, axes = plt.subplots(len(group_order), 3, figsize=(12, 4 * len(group_order)), squeeze=False)
+    fig, axes = plt.subplots(
+        len(group_order), len(metrics),
+        figsize=(4 * len(metrics), 4 * len(group_order)), squeeze=False
+    )
     for row, group in enumerate(group_order):
         selected = (
             table.loc[
                 table["group"].eq(group) & table["electrode"].isin(common_info.ch_names)
             ]
-            .groupby("electrode")[list(CORE_METRICS)]
+            .groupby("electrode")[list(metrics)]
             .mean()
         )
         values = {
             metric: selected.loc[common_info.ch_names, metric].to_numpy(dtype=float)
-            for metric in CORE_METRICS
+            for metric in metrics
         }
-        _plot_topomap_row(axes[row], values, common_info, limits)
+        _plot_topomap_row(axes[row], values, common_info, limits, metrics)
         axes[row, 0].text(
             -0.22,
             0.5,
@@ -492,7 +509,7 @@ def plot_group_topomaps(
             fontweight="bold",
         )
     fig.suptitle(
-        "Group-mean ordinal topographies — "
+        f"Group-mean {metric_set_label} topographies — "
         f"{len(common_info.ch_names)} electrodes shared by all analyzed subjects"
     )
     fig.tight_layout()
@@ -507,10 +524,14 @@ def plot_group_standardized_topomaps(
     path: Path,
     dpi: int,
     analysis_label: str,
+    *,
+    metrics: tuple[str, ...] = CORE_METRICS,
+    metric_set_label: str = "ordinal",
 ) -> None:
     """Plot pooled-cohort, electrode-wise z-score means for each group."""
     fig, axes = plt.subplots(
-        len(group_order), 3, figsize=(12, 4 * len(group_order)), squeeze=False
+        len(group_order), len(metrics),
+        figsize=(4 * len(metrics), 4 * len(group_order)), squeeze=False
     )
     for row, group in enumerate(group_order):
         selected = (
@@ -518,14 +539,14 @@ def plot_group_standardized_topomaps(
                 standardized_table["group"].eq(group)
                 & standardized_table["electrode"].isin(common_info.ch_names)
             ]
-            .groupby("electrode")[list(CORE_METRICS)]
+            .groupby("electrode")[list(metrics)]
             .mean()
         )
         values = {
             metric: selected.loc[common_info.ch_names, metric].to_numpy(dtype=float)
-            for metric in CORE_METRICS
+            for metric in metrics
         }
-        _plot_standardized_topomap_row(axes[row], values, common_info, limits)
+        _plot_standardized_topomap_row(axes[row], values, common_info, limits, metrics)
         axes[row, 0].text(
             -0.22,
             0.5,
@@ -538,7 +559,7 @@ def plot_group_standardized_topomaps(
             fontweight="bold",
         )
     fig.suptitle(
-        f"{analysis_label} — group-mean electrode-wise z-scores "
+        f"{analysis_label} — group-mean {metric_set_label} electrode-wise z-scores "
         f"({len(common_info.ch_names)} shared electrodes)"
     )
     fig.tight_layout()
@@ -548,10 +569,11 @@ def plot_group_standardized_topomaps(
 def band_metric_color_limits(
     table: pd.DataFrame,
     band_order: list[str],
+    metrics: tuple[str, ...] = CORE_METRICS,
 ) -> dict[str, dict[str, tuple[float, float]]]:
     """Return full-cohort subject-map limits separately for every band/metric."""
     return {
-        band: metric_color_limits(table.loc[table["band"].eq(band)])
+        band: metric_color_limits(table.loc[table["band"].eq(band)], metrics)
         for band in band_order
     }
 
@@ -564,14 +586,18 @@ def plot_subject_band_topomaps(
     limits: dict[str, dict[str, tuple[float, float]]],
     output_dir: Path,
     dpi: int,
+    *,
+    metrics: tuple[str, ...] = CORE_METRICS,
+    metric_set_label: str = "ordinal",
+    filename_suffix: str = "band_ordinal_topomaps",
 ) -> None:
     """Create one six-band by three-metric scalp-map figure per participant."""
     for subject_id, info in subject_infos.items():
         subject_table = table.loc[table["subject_id"].eq(subject_id)]
         fig, axes = plt.subplots(
             len(band_order),
-            len(CORE_METRICS),
-            figsize=(12, 3.6 * len(band_order)),
+            len(metrics),
+            figsize=(4 * len(metrics), 3.6 * len(band_order)),
             squeeze=False,
         )
         for row, band in enumerate(band_order):
@@ -585,9 +611,9 @@ def plot_subject_band_topomaps(
                 )
             values = {
                 metric: selected.loc[info.ch_names, metric].to_numpy(dtype=float)
-                for metric in CORE_METRICS
+                for metric in metrics
             }
-            _plot_topomap_row(axes[row], values, info, limits[band])
+            _plot_topomap_row(axes[row], values, info, limits[band], metrics)
             axes[row, 0].text(
                 -0.23,
                 0.5,
@@ -600,9 +626,11 @@ def plot_subject_band_topomaps(
                 fontweight="bold",
             )
         group = str(subject_table["group"].iloc[0])
-        fig.suptitle(f"{subject_id} ({group}) — band-resolved ordinal topographies")
+        fig.suptitle(
+            f"{subject_id} ({group}) — band-resolved {metric_set_label} topographies"
+        )
         fig.tight_layout()
-        _save(fig, output_dir / f"{subject_id}_band_ordinal_topomaps.png", dpi)
+        _save(fig, output_dir / f"{subject_id}_{filename_suffix}.png", dpi)
 
 
 def plot_group_band_topomaps(
@@ -614,12 +642,17 @@ def plot_group_band_topomaps(
     limits: dict[str, dict[str, tuple[float, float]]],
     output_dir: Path,
     dpi: int,
+    *,
+    metrics: tuple[str, ...] = CORE_METRICS,
+    metric_set_label: str = "ordinal",
+    filename_suffix: str = "group_mean_topomaps",
 ) -> None:
     """Create one PD/Control three-metric group topomap figure per band."""
     for band in band_order:
         band_table = table.loc[table["band"].eq(band)]
         fig, axes = plt.subplots(
-            len(group_order), 3, figsize=(12, 4 * len(group_order)), squeeze=False
+            len(group_order), len(metrics),
+            figsize=(4 * len(metrics), 4 * len(group_order)), squeeze=False
         )
         for row, group in enumerate(group_order):
             selected = (
@@ -627,14 +660,14 @@ def plot_group_band_topomaps(
                     band_table["group"].eq(group)
                     & band_table["electrode"].isin(common_info.ch_names)
                 ]
-                .groupby("electrode")[list(CORE_METRICS)]
+                .groupby("electrode")[list(metrics)]
                 .mean()
             )
             values = {
                 metric: selected.loc[common_info.ch_names, metric].to_numpy(dtype=float)
-                for metric in CORE_METRICS
+                for metric in metrics
             }
-            _plot_topomap_row(axes[row], values, common_info, limits[band])
+            _plot_topomap_row(axes[row], values, common_info, limits[band], metrics)
             axes[row, 0].text(
                 -0.22,
                 0.5,
@@ -647,8 +680,8 @@ def plot_group_band_topomaps(
                 fontweight="bold",
             )
         fig.suptitle(
-            f"{band_labels[band]} — group-mean ordinal topographies "
+            f"{band_labels[band]} — group-mean {metric_set_label} topographies "
             f"({len(common_info.ch_names)} shared electrodes)"
         )
         fig.tight_layout()
-        _save(fig, output_dir / f"{band}_group_mean_topomaps.png", dpi)
+        _save(fig, output_dir / f"{band}_{filename_suffix}.png", dpi)

@@ -16,6 +16,8 @@ delays=(1 5 10)
 total_runs=$(( ${#embedding_dimensions[@]} * ${#delays[@]} ))
 run_number=0
 overwrite=false
+with_figures=false
+forwarded_arguments=()
 
 for argument in "$@"; do
     case "$argument" in
@@ -28,6 +30,8 @@ ANALYSIS_OPTIONS are forwarded to run_ordinal_analysis.sh; for example:
   --subjects sub-001 sub-101
   --overwrite
   --no-progress
+By default sensitivity runs save metric tables without duplicating the full
+figure battery. Pass --with-figures to render figures for every D/tau setting.
 
 Environment overrides:
   ORDINAL_BASE_CONFIG       Base JSON configuration
@@ -43,6 +47,13 @@ EOF
             ;;
         --overwrite)
             overwrite=true
+            forwarded_arguments+=("$argument")
+            ;;
+        --with-figures)
+            with_figures=true
+            ;;
+        *)
+            forwarded_arguments+=("$argument")
             ;;
     esac
 done
@@ -80,8 +91,15 @@ Path(config_path).write_text(
 
         printf '\n[%d/%d] Running ordinal analysis with D=%d, tau=%d\n' \
             "$run_number" "$total_runs" "$dimension" "$delay"
-        bash "${SCRIPT_DIR}/run_ordinal_analysis.sh" \
-            --config "$config_path" "$@"
+        analysis_command=(
+            bash "${SCRIPT_DIR}/run_ordinal_analysis.sh"
+            --config "$config_path"
+            "${forwarded_arguments[@]}"
+        )
+        if [[ "$with_figures" == false ]]; then
+            analysis_command+=(--skip-figures)
+        fi
+        "${analysis_command[@]}"
     done
 done
 

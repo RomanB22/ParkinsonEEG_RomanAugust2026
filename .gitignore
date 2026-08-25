@@ -29,5 +29,11 @@ simpler/
 parameter_sweep/
 /exploration/processed/
 /exploration/processed_matched/
+/psd_analysis/processed_matched/
+/ordinal_analysis/processed_matched/
+/ordinal_analysis/parameter_sweep_matched/
+/scale_free_analysis/processed_matched/
+/bout_analyses/processed_matched/
+/quantitative_behavioral/processed_matched/
 ds002778-1.0.5
 exploration/revision_quick

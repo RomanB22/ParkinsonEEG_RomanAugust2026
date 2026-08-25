@@ -28,6 +28,19 @@ def main() -> None:
     parser.add_argument(
         "--participants", default="processed/metadata/subjects.csv"
     )
+    parser.add_argument(
+        "--behavioral-config",
+        default="quantitative_behavioral/config.json",
+        help="Quantitative-behavioral config receiving the fit-QC MOCA sensitivity",
+    )
+    parser.add_argument(
+        "--behavioral-scale-free-qc-subject-file",
+        help="Override the fit-QC bout-property subject table for MOCA analysis",
+    )
+    parser.add_argument(
+        "--behavioral-bout-ordinal-qc-subject-file",
+        help="Override the fit-QC within-bout ordinal subject table for MOCA analysis",
+    )
     parser.add_argument("--minimum-subject-qc-fraction", type=float, default=0.8)
     parser.add_argument("--fdr-alpha", type=float, default=0.05)
     parser.add_argument("--dpi", type=int, default=150)
@@ -45,7 +58,16 @@ def main() -> None:
         fdr_alpha=args.fdr_alpha,
         dpi=args.dpi,
     )
-    behavioral = run_behavioral_fit_qc_sensitivity()
+    behavioral_arguments = {"config_path": args.behavioral_config}
+    if args.behavioral_scale_free_qc_subject_file:
+        behavioral_arguments["scale_free_qc_subject_file"] = (
+            args.behavioral_scale_free_qc_subject_file
+        )
+    if args.behavioral_bout_ordinal_qc_subject_file:
+        behavioral_arguments["bout_ordinal_qc_subject_file"] = (
+            args.behavioral_bout_ordinal_qc_subject_file
+        )
+    behavioral = run_behavioral_fit_qc_sensitivity(**behavioral_arguments)
     print(
         "Fit-QC sensitivity complete: "
         f"{result['n_qualified_subjects']}/{result['n_subjects']} subjects qualified; "

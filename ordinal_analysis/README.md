@@ -139,6 +139,10 @@ bash ordinal_analysis/run_ordinal_parameter_sweep.sh --overwrite
 ```
 
 Arguments such as `--subjects` and `--no-progress` are forwarded to every run.
+The sweep saves complete metric tables but skips duplicated figure batteries by
+default; the primary ordinal analysis supplies the detailed planes and violins,
+and exploration supplies the cross-setting sensitivity figure. Pass
+`--with-figures` only when figures for every D/tau combination are needed.
 Results and the exact generated configuration for each combination are kept in
 `ordinal_analysis/parameter_sweep/D<dimension>_tau<delay>/`. The sweep runs
 sequentially and stops immediately if any combination fails. Its base config,
@@ -178,7 +182,11 @@ ordinal_analysis/processed/
     ├── topomaps/
     │   ├── group_mean_topomaps.png
     │   ├── group_mean_zscored_topomaps.png
-    │   └── subjects/sub-*_ordinal_topomaps.png
+    │   ├── subjects/sub-*_ordinal_topomaps.png
+    │   └── renyi_alpha_<alpha>/
+    │       ├── group_mean_topomaps.png
+    │       ├── group_mean_zscored_topomaps.png
+    │       └── subjects/sub-*_renyi_alpha_<alpha>_topomaps.png
     └── bands/
         ├── delta|theta|alpha|beta|low_gamma|broad_5_15/
         │   ├── violins/*.png
@@ -186,7 +194,11 @@ ordinal_analysis/processed/
         └── topomaps/
             ├── group_means/<band>_group_mean_topomaps.png
             ├── group_means_zscored/<band>_group_mean_zscored_topomaps.png
-            └── subjects/sub-*_band_ordinal_topomaps.png
+            ├── subjects/sub-*_band_ordinal_topomaps.png
+            └── renyi_alpha_<alpha>/
+                ├── group_means/<band>_group_mean_topomaps.png
+                ├── group_means_zscored/<band>_group_mean_zscored_topomaps.png
+                └── subjects/sub-*_band_renyi_alpha_<alpha>_topomaps.png
 ```
 
 ### Tables
@@ -237,8 +249,12 @@ and medians for PD and Control without inferential testing.
 - The group figure averages values at the common electrodes. All subject and
   group topomaps use the same full-dataset color limits for a given metric.
 - Each band receives the same violin and H×C/H×F products as broadband.
-- Rényi quantities are included in the broadband and band-resolved violins and
-  entropy-complexity planes. H/C/F topomaps remain the original three metrics.
+- Rényi quantities are included in the broadband and band-resolved violins,
+  entropy-complexity planes, and topomaps. Each configured alpha gets a separate
+  two-panel Hα/Cα topomap family, avoiding invalid comparisons between alphas.
+- Rényi topomaps use the same policies as H/C/F maps: raw maps share full-cohort
+  limits within a metric, while standardized group maps use pooled-cohort,
+  electrode-wise z-scores and symmetric zero-centered limits.
 - Each participant also receives one 6-band × 3-metric topomap figure. Scales
   are fixed across participants and groups within each band/metric pair.
 - Six group band figures compare PD and Control on the shared electrode set.

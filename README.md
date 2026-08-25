@@ -301,6 +301,13 @@ default and detects ordinal tables missing the configured Rényi alpha columns.
 bash run_all_analyses.sh
 ```
 
+By default the runner now executes the complete analysis twice: first on the
+full cohort and then on one canonical 49-Control/49-PD exact-sex, optimal-age
+matched cohort. Full outputs remain under `processed/`; matched outputs use
+`processed_matched/`, with the cohort manifest and generated configs documented
+in [`matched_analysis/README.md`](matched_analysis/README.md). Pass
+`--skip-matched` only when the matched sensitivity battery is not required.
+
 Useful controls include `--overwrite`, `--dry-run`, `--no-progress`,
 `--skip-sweep`, and `--skip-exploration`. Cleaning is deliberately not invoked:
 manual ICA confirmation remains an explicit prerequisite through

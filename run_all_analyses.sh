@@ -15,6 +15,7 @@ NO_PROGRESS=false
 SKIP_TESTS=false
 SKIP_SWEEP=false
 SKIP_EXPLORATION=false
+SKIP_MATCHED=false
 
 usage() {
     cat <<'EOF'
@@ -29,9 +30,9 @@ Run the complete post-cleaning Parkinson EEG analysis pipeline:
   6. Specparam fit-QC bout and within-bout sensitivity
   7. Subject-balanced stereotypical bout gallery and detection QC
   8. Transparent full-cohort PD-versus-Control exploration models
-  9. Exact-sex/optimal-age matched exploration sensitivity
- 10. D=3,4,5,6 quantitative-behavioral ordinal inputs
- 11. MOCA quantitative-behavioral analysis
+  9. D=3,4,5,6 quantitative-behavioral ordinal inputs
+ 10. MOCA quantitative-behavioral analysis
+ 11. The same complete battery on one canonical age/sex-matched cohort
 
 The default is resumable: a current completed stage is skipped. A stage whose
 outputs predate the requested Rényi columns is automatically rerun.
@@ -43,6 +44,7 @@ Options:
   --skip-tests         Do not run repository validation tests first
   --skip-sweep         Skip the nine-run D/tau ordinal parameter sweep
   --skip-exploration   Skip the PD-versus-Control model exploration
+  --skip-matched       Skip the complete matched-cohort sensitivity pipeline
   -h, --help           Show this help
 
 Prerequisite:
@@ -75,6 +77,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --skip-exploration)
             SKIP_EXPLORATION=true
+            shift
+            ;;
+        --skip-matched)
+            SKIP_MATCHED=true
             shift
             ;;
         -h|--help)
@@ -144,6 +150,9 @@ ordinal_primary_current() {
         ordinal_analysis/processed/metrics/subject_electrode_mean_metrics.csv
     header_has_extended_renyi \
         ordinal_analysis/processed/metrics/band_subject_electrode_mean_metrics.csv
+    [[ -f ordinal_analysis/processed/figures/topomaps/renyi_alpha_0_1/group_mean_topomaps.png ]] || return 1
+    [[ -f ordinal_analysis/processed/figures/topomaps/renyi_alpha_10/group_mean_zscored_topomaps.png ]] || return 1
+    [[ -f ordinal_analysis/processed/figures/bands/topomaps/renyi_alpha_10/group_means/alpha_group_mean_topomaps.png ]] || return 1
 }
 
 ordinal_sweep_current() {
@@ -202,17 +211,6 @@ exploration_current() {
         exploration/processed/features/subject_modeling_table.csv || return 1
     grep -q 'ordinal_global_renyi_entropy_alpha_10' \
         exploration/processed/features/subject_modeling_table.csv || return 1
-}
-
-exploration_matched_current() {
-    [[ -f exploration/processed_matched/manifest.json ]] || return 1
-    [[ -f exploration/processed_matched/MODEL_REVISION.md ]] || return 1
-    [[ -f exploration/processed_matched/features/demographic_match_pairs.csv ]] || return 1
-    [[ -f exploration/processed_matched/features/demographic_balance.csv ]] || return 1
-    [[ -f exploration/processed_matched/figures/features/demographic_matching.png ]] || return 1
-    [[ -f exploration/processed_matched/figures/features/versus_age/age_scatter_page_001.png ]] || return 1
-    grep -q '"cohort_mode": "demographically_matched"' \
-        exploration/processed_matched/manifest.json || return 1
 }
 
 quantitative_current() {
@@ -308,9 +306,6 @@ if [[ "$SKIP_EXPLORATION" == false ]]; then
     run_stage "PD-versus-Control model exploration" exploration_current \
         exploration/processed/manifest.json \
         bash exploration/run_exploration.sh
-    run_stage "Demographically matched model sensitivity" exploration_matched_current \
-        exploration/processed_matched/manifest.json \
-        bash exploration/run_exploration.sh --matched-demographics
 else
     printf '\n=== PD-versus-Control model exploration ===\n  skipped by request\n'
 fi
@@ -325,5 +320,20 @@ execute "${dimension_input_command[@]}"
 run_stage "MOCA quantitative-behavioral analysis" quantitative_current \
     quantitative_behavioral/processed/manifest.json \
     bash quantitative_behavioral/run_quantitative_behavioral.sh
+
+if [[ "$SKIP_MATCHED" == false ]]; then
+    printf '\n=== Complete matched-cohort sensitivity pipeline ===\n'
+    matched_command=(bash matched_analysis/run_matched_analyses.sh)
+    if [[ "$OVERWRITE" == true ]]; then matched_command+=(--overwrite); fi
+    if [[ "$DRY_RUN" == true ]]; then matched_command+=(--dry-run); fi
+    if [[ "$NO_PROGRESS" == true ]]; then matched_command+=(--no-progress); fi
+    if [[ "$SKIP_SWEEP" == true ]]; then matched_command+=(--skip-sweep); fi
+    if [[ "$SKIP_EXPLORATION" == true ]]; then
+        matched_command+=(--skip-exploration)
+    fi
+    execute "${matched_command[@]}"
+else
+    printf '\n=== Complete matched-cohort sensitivity pipeline ===\n  skipped by request\n'
+fi
 
 printf '\nAll requested analysis stages completed successfully.\n'

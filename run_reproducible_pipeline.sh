@@ -19,6 +19,7 @@ NO_PROGRESS=false
 SKIP_TESTS=false
 SKIP_SWEEP=false
 SKIP_EXPLORATION=false
+SKIP_MATCHED=false
 SKIP_MANUAL_ICA_REVIEW=false
 
 usage() {
@@ -38,6 +39,7 @@ Options:
   --skip-tests               Skip the downstream repository-test stage
   --skip-sweep               Skip the D/tau ordinal sweep
   --skip-exploration         Skip full and demographically matched prediction models
+  --skip-matched             Skip the complete matched-cohort sensitivity pipeline
   --skip-manual-ica-review   Explicitly use automatic ICLabel proposals during cleaning
   -h, --help                 Show this help
 
@@ -58,6 +60,7 @@ while [[ $# -gt 0 ]]; do
         --skip-tests) SKIP_TESTS=true ;;
         --skip-sweep) SKIP_SWEEP=true ;;
         --skip-exploration) SKIP_EXPLORATION=true ;;
+        --skip-matched) SKIP_MATCHED=true ;;
         --skip-manual-ica-review) SKIP_MANUAL_ICA_REVIEW=true ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'ERROR: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
@@ -143,6 +146,9 @@ if [[ "$SKIP_SWEEP" == true ]]; then
 fi
 if [[ "$SKIP_EXPLORATION" == true ]]; then
     analysis_command+=(--skip-exploration)
+fi
+if [[ "$SKIP_MATCHED" == true ]]; then
+    analysis_command+=(--skip-matched)
 fi
 
 "${analysis_command[@]}"

@@ -172,7 +172,9 @@ def remove_demographic_predictors(
     """Return matched-cohort models without age, sex, or the demographic baseline."""
     result: dict[str, dict[str, object]] = {}
     for model_name, specification in models.items():
-        if model_name == "demographics":
+        # After age/sex removal ordinal_core and ordinal_adjusted are identical;
+        # retain the prespecified adjusted model name and avoid duplicate testing.
+        if model_name in {"demographics", "ordinal_core"}:
             continue
         copied = dict(specification)
         copied["features"] = [

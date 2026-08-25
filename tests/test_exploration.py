@@ -1,5 +1,7 @@
 import json
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -17,6 +19,7 @@ from exploration.modeling import (
 )
 from exploration.matching import match_control_pd_pairs, remove_demographic_predictors
 from exploration.pipeline import load_exploration_config
+from matched_analysis.prepare_matched_cohort import prepare_matched_cohort
 
 
 class ExplorationTests(unittest.TestCase):
@@ -146,6 +149,7 @@ class ExplorationTests(unittest.TestCase):
         )
         models = remove_demographic_predictors(self.config["models"])
         self.assertNotIn("demographics", models)
+        self.assertNotIn("ordinal_core", models)
         self.assertFalse(
             any(
                 feature in {"age_years", "sex_male"}
@@ -153,6 +157,17 @@ class ExplorationTests(unittest.TestCase):
                 for feature in specification["features"]
             )
         )
+
+    def test_canonical_matched_manifest_drives_every_pipeline_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = prepare_matched_cohort(output_root=directory)
+            self.assertEqual(manifest["n_pairs"], 49)
+            self.assertEqual(manifest["n_subjects"], 98)
+            matched_path = str(Path(directory) / "matched_subjects.csv")
+            for config_path in manifest["generated_configs"].values():
+                config = json.loads(Path(config_path).read_text(encoding="utf-8"))
+                self.assertEqual(config["input"]["participants_file"], matched_path)
+                self.assertTrue(config["output_dir"].endswith("processed_matched"))
 
     def test_matched_nested_validation_keeps_pairs_together(self):
         rng = np.random.default_rng(19)

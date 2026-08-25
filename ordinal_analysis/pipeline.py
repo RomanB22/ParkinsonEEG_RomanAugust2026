@@ -6,6 +6,7 @@ import json
 import logging
 import platform
 import re
+import shutil
 from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
@@ -187,6 +188,8 @@ def run_analysis(
         raise FileExistsError(
             f"Ordinal outputs already exist at {result_path}; rerun with --overwrite"
         )
+    if overwrite and not generate_figures:
+        shutil.rmtree(output_dir / "figures", ignore_errors=True)
     logger = _configure_logger(output_dir, overwrite)
 
     participant_table = _participants(Path(input_config["participants_file"]))
@@ -469,36 +472,81 @@ def run_analysis(
         dpi,
     )
 
-    limits = metric_color_limits(electrode_metrics)
-    logger.info("Creating %d subject topomap figures", len(subject_infos))
-    plot_subject_topomaps(
-        electrode_metrics,
-        subject_infos,
-        limits,
-        figures_dir / "topomaps" / "subjects",
-        dpi,
+    topomap_metric_sets = [
+        {
+            "key": "shannon",
+            "label": "Shannon H/C/F",
+            "metrics": CORE_METRICS,
+            "directory": figures_dir / "topomaps",
+            "subject_suffix": "ordinal_topomaps",
+        }
+    ]
+    for alpha, entropy_metric, complexity_metric in RENYI_ALPHA_METRICS:
+        alpha_token = entropy_metric.removeprefix("renyi_entropy_")
+        topomap_metric_sets.append(
+            {
+                "key": alpha_token,
+                "label": f"Rényi Hα/Cα (α={alpha:g})",
+                "metrics": (entropy_metric, complexity_metric),
+                "directory": figures_dir / "topomaps" / f"renyi_{alpha_token}",
+                "subject_suffix": f"renyi_{alpha_token}_topomaps",
+            }
+        )
+
+    topomap_limits: dict[str, dict[str, tuple[float, float]]] = {}
+    standardized_topomap_limits: dict[str, dict[str, tuple[float, float]]] = {}
+    logger.info(
+        "Creating broadband topomaps for %d metric sets and %d subjects",
+        len(topomap_metric_sets),
+        len(subject_infos),
     )
-    plot_group_topomaps(
-        electrode_metrics,
-        common_info,
-        group_order,
-        limits,
-        figures_dir / "topomaps" / "group_mean_topomaps.png",
-        dpi,
-    )
-    standardized_metrics = electrode_metric_zscores(electrode_metrics)
-    standardized_limits = group_mean_symmetric_color_limits(
-        standardized_metrics, common_channels
-    )
-    plot_group_standardized_topomaps(
-        standardized_metrics,
-        common_info,
-        group_order,
-        standardized_limits,
-        figures_dir / "topomaps" / "group_mean_zscored_topomaps.png",
-        dpi,
-        "Broadband",
-    )
+    for metric_set in topomap_metric_sets:
+        metric_set_metrics = metric_set["metrics"]
+        metric_set_dir = metric_set["directory"]
+        metric_set_limits = metric_color_limits(
+            electrode_metrics, metric_set_metrics
+        )
+        topomap_limits[metric_set["key"]] = metric_set_limits
+        plot_subject_topomaps(
+            electrode_metrics,
+            subject_infos,
+            metric_set_limits,
+            metric_set_dir / "subjects",
+            dpi,
+            metrics=metric_set_metrics,
+            metric_set_label=metric_set["label"],
+            filename_suffix=metric_set["subject_suffix"],
+        )
+        plot_group_topomaps(
+            electrode_metrics,
+            common_info,
+            group_order,
+            metric_set_limits,
+            metric_set_dir / "group_mean_topomaps.png",
+            dpi,
+            metrics=metric_set_metrics,
+            metric_set_label=metric_set["label"],
+        )
+        standardized_metrics = electrode_metric_zscores(
+            electrode_metrics, metrics=metric_set_metrics
+        )
+        standardized_limits = group_mean_symmetric_color_limits(
+            standardized_metrics,
+            common_channels,
+            metrics=metric_set_metrics,
+        )
+        standardized_topomap_limits[metric_set["key"]] = standardized_limits
+        plot_group_standardized_topomaps(
+            standardized_metrics,
+            common_info,
+            group_order,
+            standardized_limits,
+            metric_set_dir / "group_mean_zscored_topomaps.png",
+            dpi,
+            "Broadband",
+            metrics=metric_set_metrics,
+            metric_set_label=metric_set["label"],
+        )
 
     band_order = list(bands)
     configured_band_labels = config["plots"].get("band_display_names", {})
@@ -550,61 +598,98 @@ def run_analysis(
             analysis_label=label,
         )
 
-    band_limits = band_metric_color_limits(band_electrode_metrics, band_order)
-    logger.info("Creating %d band-resolved subject topomap figures", len(subject_infos))
-    plot_subject_band_topomaps(
-        band_electrode_metrics,
-        subject_infos,
-        band_order,
-        band_labels,
-        band_limits,
-        figures_dir / "bands" / "topomaps" / "subjects",
-        dpi,
+    band_topomap_limits: dict[
+        str, dict[str, dict[str, tuple[float, float]]]
+    ] = {}
+    standardized_band_topomap_limits: dict[
+        str, dict[str, dict[str, tuple[float, float]]]
+    ] = {}
+    logger.info(
+        "Creating band-resolved topomaps for %d metric sets and %d subjects",
+        len(topomap_metric_sets),
+        len(subject_infos),
     )
-    plot_group_band_topomaps(
-        band_electrode_metrics,
-        common_info,
-        group_order,
-        band_order,
-        band_labels,
-        band_limits,
-        figures_dir / "bands" / "topomaps" / "group_means",
-        dpi,
-    )
-    standardized_band_metrics = electrode_metric_zscores(
-        band_electrode_metrics, strata=("band",)
-    )
-    standardized_band_limits = {
-        band: group_mean_symmetric_color_limits(
-            standardized_band_metrics.loc[
-                standardized_band_metrics["band"].eq(band)
-            ],
-            common_channels,
-        )
-        for band in band_order
-    }
-    logger.info("Creating electrode-wise z-scored group band topomaps")
-    for band in band_order:
-        standardized_label = band_labels[band]
-        if "hz" not in standardized_label.lower():
-            standardized_label = (
-                f"{standardized_label} ({bands[band][0]:g}–{bands[band][1]:g} Hz)"
+    for metric_set in topomap_metric_sets:
+        metric_set_metrics = metric_set["metrics"]
+        if metric_set["key"] == "shannon":
+            band_topomap_dir = figures_dir / "bands" / "topomaps"
+            subject_suffix = "band_ordinal_topomaps"
+        else:
+            band_topomap_dir = (
+                figures_dir
+                / "bands"
+                / "topomaps"
+                / f"renyi_{metric_set['key']}"
             )
-        plot_group_standardized_topomaps(
-            standardized_band_metrics.loc[
-                standardized_band_metrics["band"].eq(band)
-            ],
+            subject_suffix = f"band_renyi_{metric_set['key']}_topomaps"
+        metric_set_band_limits = band_metric_color_limits(
+            band_electrode_metrics, band_order, metric_set_metrics
+        )
+        band_topomap_limits[metric_set["key"]] = metric_set_band_limits
+        plot_subject_band_topomaps(
+            band_electrode_metrics,
+            subject_infos,
+            band_order,
+            band_labels,
+            metric_set_band_limits,
+            band_topomap_dir / "subjects",
+            dpi,
+            metrics=metric_set_metrics,
+            metric_set_label=metric_set["label"],
+            filename_suffix=subject_suffix,
+        )
+        plot_group_band_topomaps(
+            band_electrode_metrics,
             common_info,
             group_order,
-            standardized_band_limits[band],
-            figures_dir
-            / "bands"
-            / "topomaps"
-            / "group_means_zscored"
-            / f"{band}_group_mean_zscored_topomaps.png",
+            band_order,
+            band_labels,
+            metric_set_band_limits,
+            band_topomap_dir / "group_means",
             dpi,
-            standardized_label,
+            metrics=metric_set_metrics,
+            metric_set_label=metric_set["label"],
         )
+        standardized_band_metrics = electrode_metric_zscores(
+            band_electrode_metrics,
+            strata=("band",),
+            metrics=metric_set_metrics,
+        )
+        standardized_band_limits = {
+            band: group_mean_symmetric_color_limits(
+                standardized_band_metrics.loc[
+                    standardized_band_metrics["band"].eq(band)
+                ],
+                common_channels,
+                metrics=metric_set_metrics,
+            )
+            for band in band_order
+        }
+        standardized_band_topomap_limits[metric_set["key"]] = (
+            standardized_band_limits
+        )
+        for band in band_order:
+            standardized_label = band_labels[band]
+            if "hz" not in standardized_label.lower():
+                standardized_label = (
+                    f"{standardized_label} "
+                    f"({bands[band][0]:g}–{bands[band][1]:g} Hz)"
+                )
+            plot_group_standardized_topomaps(
+                standardized_band_metrics.loc[
+                    standardized_band_metrics["band"].eq(band)
+                ],
+                common_info,
+                group_order,
+                standardized_band_limits[band],
+                band_topomap_dir
+                / "group_means_zscored"
+                / f"{band}_group_mean_zscored_topomaps.png",
+                dpi,
+                standardized_label,
+                metrics=metric_set_metrics,
+                metric_set_label=metric_set["label"],
+            )
 
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -664,9 +749,23 @@ def run_analysis(
             "quantities across the electrodes shared by every analyzed subject; the average-"
             "referenced EEG waveform is not averaged across channels."
         ),
-        "topomap_scale_limits": {
-            metric: [float(value) for value in limits[metric]]
-            for metric in CORE_METRICS
+        "topomap_metric_sets": {
+            metric_set["key"]: {
+                "label": metric_set["label"],
+                "metrics": list(metric_set["metrics"]),
+                "scale_limits": {
+                    metric: [float(value) for value in topomap_limits[metric_set["key"]][metric]]
+                    for metric in metric_set["metrics"]
+                },
+                "zscore_scale_limits": {
+                    metric: [
+                        float(value)
+                        for value in standardized_topomap_limits[metric_set["key"]][metric]
+                    ]
+                    for metric in metric_set["metrics"]
+                },
+            }
+            for metric_set in topomap_metric_sets
         },
         "electrode_zscore_topomap_policy": (
             "For each metric, values are z-scored across all subjects pooled across groups "
@@ -674,23 +773,30 @@ def run_analysis(
             "population standard deviation (ddof=0). Constant combinations map to zero. "
             "Group means are plotted on shared symmetric zero-centered limits."
         ),
-        "topomap_zscore_scale_limits": {
-            metric: [float(value) for value in standardized_limits[metric]]
-            for metric in CORE_METRICS
-        },
-        "band_topomap_scale_limits": {
-            band: {
-                metric: [float(value) for value in band_limits[band][metric]]
-                for metric in CORE_METRICS
+        "band_topomap_metric_sets": {
+            metric_set["key"]: {
+                "scale_limits": {
+                    band: {
+                        metric: [
+                            float(value)
+                            for value in band_topomap_limits[metric_set["key"]][band][metric]
+                        ]
+                        for metric in metric_set["metrics"]
+                    }
+                    for band in band_order
+                },
+                "zscore_scale_limits": {
+                    band: {
+                        metric: [
+                            float(value)
+                            for value in standardized_band_topomap_limits[metric_set["key"]][band][metric]
+                        ]
+                        for metric in metric_set["metrics"]
+                    }
+                    for band in band_order
+                },
             }
-            for band in band_order
-        },
-        "band_topomap_zscore_scale_limits": {
-            band: {
-                metric: [float(value) for value in standardized_band_limits[band][metric]]
-                for metric in CORE_METRICS
-            }
-            for band in band_order
+            for metric_set in topomap_metric_sets
         },
     }
     (output_dir / "manifest.json").write_text(

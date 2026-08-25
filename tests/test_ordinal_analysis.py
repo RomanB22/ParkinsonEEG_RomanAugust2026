@@ -53,6 +53,24 @@ class OrdinalMetricTests(unittest.TestCase):
             delta.loc[delta["group"].eq("Control"), "entropy"].mean(), 0.0
         )
 
+    def test_electrode_zscores_accept_one_renyi_alpha_pair(self):
+        entropy_metric = "renyi_entropy_alpha_10"
+        complexity_metric = "renyi_complexity_alpha_10"
+        table = pd.DataFrame(
+            {
+                "electrode": ["Fz"] * 4,
+                entropy_metric: [0.1, 0.2, 0.3, 0.4],
+                complexity_metric: [0.4, 0.3, 0.2, 0.1],
+            }
+        )
+        standardized = electrode_metric_zscores(
+            table, metrics=(entropy_metric, complexity_metric)
+        )
+        self.assertAlmostEqual(standardized[entropy_metric].mean(), 0.0)
+        self.assertAlmostEqual(standardized[entropy_metric].std(ddof=0), 1.0)
+        self.assertAlmostEqual(standardized[complexity_metric].mean(), 0.0)
+        self.assertAlmostEqual(standardized[complexity_metric].std(ddof=0), 1.0)
+
     def test_single_epoch_probabilities_match_ordpy(self):
         data = np.asarray([[4.0, 7.0, 9.0, 10.0, 6.0, 11.0, 3.0]])
         _, expected = ordpy.ordinal_distribution(

@@ -30,7 +30,8 @@ disease-related information.
 
 ## Demographically matched sensitivity
 
-The source paper describes the recruited controls as demographically matched,
+The [source paper](https://www.nature.com/articles/s41531-023-00602-0)
+describes the recruited controls as demographically matched,
 but the observed 100:49 cohort is not individually paired. A separate,
 reproducible sensitivity layer therefore retains all 49 Controls and assigns
 one unique PD participant to each Control using optimal linear-sum assignment:
