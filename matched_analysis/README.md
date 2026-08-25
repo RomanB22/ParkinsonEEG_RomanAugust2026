@@ -47,3 +47,8 @@ including PSD, ordinal metrics/planes/topomaps, scale-free fits and bouts,
 within-bout ordinal analyses, prediction exploration, and behavioral analyses.
 The matched ordinal sensitivity grid is stored in
 `ordinal_analysis/parameter_sweep_matched/`.
+
+The final matched sensitivity requires at least 60 accepted EEG seconds. A
+complete demographic pair is retained only when both members pass; outputs are
+written to `duration_qc_analysis/processed_matched/`. This preserves pairing
+while leaving the primary matched cohort unchanged.

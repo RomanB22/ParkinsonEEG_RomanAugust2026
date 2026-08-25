@@ -35,5 +35,7 @@ parameter_sweep/
 /scale_free_analysis/processed_matched/
 /bout_analyses/processed_matched/
 /quantitative_behavioral/processed_matched/
+/duration_qc_analysis/processed/
+/duration_qc_analysis/processed_matched/
 ds002778-1.0.5
 exploration/revision_quick

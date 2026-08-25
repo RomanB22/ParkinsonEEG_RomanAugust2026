@@ -223,6 +223,14 @@ absolute power, so that change is visible rather than hidden.
 baseline correction is used. Four seconds gives approximately 0.25 Hz nominal
 Fourier-bin spacing. Epochs that overlap a `BAD_*` annotation are omitted.
 
+The primary cohort is not selected by retained duration. After all primary
+subject-level quantities are calculated, `duration_qc_analysis/` reports a
+prespecified sensitivity analysis requiring at least 60 seconds, equivalent to
+15 retained epochs. It reuses the same subject-level quantities so the check
+isolates duration-based subject exclusion rather than changing the shared
+electrode set or feature definitions. In the demographic-matched cohort, both
+members of a pair are removed if either member fails this threshold.
+
 ## 14. Reject residual contaminated epochs
 
 For each remaining epoch, the pipeline calculates maximum channel peak-to-peak

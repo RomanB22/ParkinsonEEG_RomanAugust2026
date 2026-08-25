@@ -95,10 +95,13 @@ conda run -n MNE_August2026 python scripts/preprocess_subject.py sub-001 \
   --no-ica-downsampling --overwrite
 ```
 
-## Reproduce the verified two-subject pilot
+## Historical verified two-subject pilot
 
-The configuration contains reviewed IC000 ocular-artifact decisions for one PD
-participant (`sub-001`) and one Control (`sub-101`):
+An earlier verified pilot removed IC000 as an ocular artifact for one PD
+participant (`sub-001`) and one Control (`sub-101`). The manual ICA maps are
+currently reset to empty, so review mode must repopulate and a reviewer must
+confirm the decisions before this command can be used without the automatic
+ICLabel override:
 
 ```bash
 conda run -n MNE_August2026 python scripts/preprocess_test_set.py \
@@ -288,14 +291,25 @@ bash quantitative_behavioral/prepare_dimension_sensitivity.sh
 bash quantitative_behavioral/run_quantitative_behavioral.sh --overwrite
 ```
 
+## Accepted-duration sensitivity
+
+[`duration_qc_analysis/`](duration_qc_analysis/README.md) retains the primary
+four-second epoch definition but recomputes group comparisons, MOCA
+associations, and transparent prediction validation after requiring at least
+60 seconds of accepted EEG. It uses complete retained pairs in the matched
+cohort and generates separate reports and figures without changing primary
+results.
+
 ## Combined post-cleaning analysis runner
 
 [`run_all_analyses.sh`](run_all_analyses.sh) combines all post-cleaning
 analyses in dependency order: PSD, primary ordinal quantities, the D={3,4,5,6}
 sweep at tau=1, scale-free bout properties, within-bout ordinal quantities,
 PD-versus-Control exploration models, D-specific MOCA inputs, and the final
-quantitative-behavioral analysis. It resumes from valid completed outputs by
-default and detects ordinal tables missing the configured Rényi alpha columns.
+quantitative-behavioral analysis. It then reports a sensitivity layer requiring
+at least 60 seconds (15 retained four-second epochs) without changing the
+primary feature definitions. It resumes from valid completed outputs by default
+and detects ordinal tables missing the configured Rényi alpha columns.
 
 ```bash
 bash run_all_analyses.sh

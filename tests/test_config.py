@@ -1,3 +1,4 @@
+import copy
 from pathlib import Path
 import json
 import tempfile
@@ -30,11 +31,11 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(target, 120.0)
         self.assertGreater(target / 2.0, high)
 
-    def test_reviewed_ica_has_reason(self):
+    def test_manual_ica_review_state_starts_empty(self):
         components, reasons = subject_manual_ica(self.config, "sub-001")
-        self.assertEqual(components, [0])
-        self.assertIn(0, reasons)
-        self.assertTrue(is_ica_review_confirmed(self.config, "sub-001"))
+        self.assertEqual(components, [])
+        self.assertEqual(reasons, {})
+        self.assertFalse(is_ica_review_confirmed(self.config, "sub-001"))
 
     def test_review_proposal_prefills_but_remains_unconfirmed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -52,9 +53,15 @@ class ConfigTests(unittest.TestCase):
         self.assertFalse(is_ica_review_confirmed(updated, "sub-002"))
 
     def test_review_proposal_never_overwrites_confirmed_decision(self):
+        config = copy.deepcopy(self.config)
+        config["ica"]["manual_exclude_components"]["sub-001"] = [0]
+        config["ica"]["manual_exclude_reasons"]["sub-001"] = {
+            "0": "reviewed ocular artifact"
+        }
+        config["ica"]["manual_review_confirmed"]["sub-001"] = True
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "preprocessing.yaml"
-            path.write_text(json.dumps(self.config), encoding="utf-8")
+            path.write_text(json.dumps(config), encoding="utf-8")
             written = write_ica_review_proposal(
                 path,
                 "sub-001",
@@ -78,7 +85,7 @@ class ConfigTests(unittest.TestCase):
             )
             updated = load_config(path)
         self.assertTrue(written)
-        self.assertEqual(updated["ica"]["manual_exclude_components"]["sub-001"], [0])
+        self.assertNotIn("sub-001", updated["ica"]["manual_exclude_components"])
         self.assertEqual(updated["ica"]["automatic_exclude_components"]["sub-001"], [4, 5])
 
 

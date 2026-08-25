@@ -20,8 +20,9 @@ usage() {
 Usage: bash matched_analysis/run_matched_analyses.sh [options]
 
 Prepare one canonical exact-sex/optimal-age matched cohort, then run matched:
-PSD, ordinal quantities/planes/topomaps, ordinal D={3,4,5,6} inputs at tau=1, scale-free,
-bouts, fit-QC sensitivity, typical bouts, prediction models, and MOCA analyses.
+PSD, ordinal quantities/planes/topomaps, ordinal D={3,4,5,6} inputs at tau=1,
+scale-free, bouts, fit-QC sensitivity, typical bouts, prediction models, MOCA,
+and the at-least-60-second accepted-duration sensitivity.
 
 Options:
   --overwrite          Regenerate every matched result
@@ -114,6 +115,12 @@ stage_current() {
                 quantitative_behavioral/processed_matched/metrics/feature_dictionary.csv \
                 && ! grep -q 'broad_5_15' \
                     quantitative_behavioral/processed_matched/metrics/feature_dictionary.csv
+            ;;
+        duration_qc_analysis/processed_matched/manifest.json)
+            grep -q '"minimum_accepted_duration_seconds": 60' "$sentinel" \
+                && [[ -f duration_qc_analysis/processed_matched/REPORT.md ]] \
+                && [[ -f duration_qc_analysis/processed_matched/metrics/group_comparisons.csv ]] \
+                && [[ -f duration_qc_analysis/processed_matched/metrics/moca_correlations.csv ]]
             ;;
         *) return 0 ;;
     esac
@@ -247,6 +254,15 @@ if [[ "$SKIP_SWEEP" == false ]]; then
         quantitative_behavioral/processed_matched/manifest.json \
         bash quantitative_behavioral/run_quantitative_behavioral.sh \
         --config "$CONFIG_ROOT/quantitative_behavioral.json"
+fi
+
+if [[ "$SKIP_SWEEP" == false && "$SKIP_EXPLORATION" == false ]]; then
+    run_stage "accepted-duration QC sensitivity (at least 60 seconds)" \
+        duration_qc_analysis/processed_matched/manifest.json \
+        bash duration_qc_analysis/run_duration_qc_sensitivity.sh --matched
+else
+    printf '\n=== Matched: accepted-duration QC sensitivity ===\n'
+    printf '  skipped because exploration or quantitative-behavioral analysis was skipped\n'
 fi
 
 printf '\nAll matched-cohort analysis stages completed successfully.\n'

@@ -56,39 +56,9 @@
     "iclabel_backend": "onnx",
     "iclabel_artifact_probability_threshold": 0.6,
     "iclabel_minimum_class_probability": 0.3,
-    "manual_exclude_components": {
-      "sub-001": [
-        0
-      ],
-      "sub-101": [
-        0
-      ],
-      "sub-002": [
-        21,
-        14,
-        3,
-        28
-      ]
-    },
-    "manual_exclude_reasons": {
-      "sub-001": {
-        "0": "reviewed ocular artifact"
-      },
-      "sub-101": {
-        "0": "reviewed ocular artifact"
-      },
-      "sub-002": {
-        "21": "ICLabel proposal: eye blink p=0.920; known-artifact total p=0.963. Visual confirmation required.",
-        "14": "ICLabel proposal: eye blink p=0.465; known-artifact total p=0.944. Visual confirmation required.",
-        "3": "ICLabel proposal: eye blink p=0.931; known-artifact total p=0.935. Visual confirmation required.",
-        "28": "ICLabel proposal: channel noise p=0.846; known-artifact total p=0.890. Visual confirmation required."
-      }
-    },
-    "manual_review_confirmed": {
-      "sub-001": true,
-      "sub-101": true,
-      "sub-002": false
-    },
+    "manual_exclude_components": {},
+    "manual_exclude_reasons": {},
+    "manual_review_confirmed": {},
     "automatic_exclude_components": {
       "sub-002": [
         21,

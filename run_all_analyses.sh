@@ -33,7 +33,8 @@ Run the complete post-cleaning Parkinson EEG analysis pipeline:
   8. Transparent full-cohort PD-versus-Control exploration models
   9. D=3,4,5,6 quantitative-behavioral ordinal inputs
  10. MOCA quantitative-behavioral analysis
- 11. The same complete battery on one canonical age/sex-matched cohort
+ 11. Accepted-duration sensitivity requiring at least 60 seconds
+ 12. The same complete battery on one canonical age/sex-matched cohort
 
 The default is resumable: a current completed stage is skipped. A stage whose
 outputs predate the requested Rényi columns is automatically rerun.
@@ -248,6 +249,15 @@ quantitative_current() {
     ! grep -q 'broad_5_15' "$dictionary" || return 1
 }
 
+duration_qc_current() {
+    [[ -f duration_qc_analysis/processed/manifest.json ]] || return 1
+    grep -q '"minimum_accepted_duration_seconds": 60' \
+        duration_qc_analysis/processed/manifest.json || return 1
+    [[ -f duration_qc_analysis/processed/REPORT.md ]] || return 1
+    [[ -f duration_qc_analysis/processed/metrics/group_comparisons.csv ]] || return 1
+    [[ -f duration_qc_analysis/processed/metrics/moca_correlations.csv ]] || return 1
+}
+
 run_stage() {
     local label="$1"
     local validator="$2"
@@ -344,6 +354,14 @@ execute "${dimension_input_command[@]}"
 run_stage "MOCA quantitative-behavioral analysis" quantitative_current \
     quantitative_behavioral/processed/manifest.json \
     bash quantitative_behavioral/run_quantitative_behavioral.sh
+
+if [[ "$SKIP_EXPLORATION" == false ]]; then
+    run_stage "accepted-duration QC sensitivity (at least 60 seconds)" \
+        duration_qc_current duration_qc_analysis/processed/manifest.json \
+        bash duration_qc_analysis/run_duration_qc_sensitivity.sh
+else
+    printf '\n=== Accepted-duration QC sensitivity ===\n  skipped because exploration was skipped\n'
+fi
 
 if [[ "$SKIP_MATCHED" == false ]]; then
     printf '\n=== Complete matched-cohort sensitivity pipeline ===\n'

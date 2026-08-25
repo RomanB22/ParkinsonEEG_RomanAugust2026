@@ -39,6 +39,8 @@ The `run` command includes:
 - typical-bout and other diagnostic figures;
 - PD-versus-Control exploration models;
 - MOCA quantitative-behavioral analyses;
+- an accepted-duration sensitivity requiring at least 60 seconds (15 retained
+  four-second epochs), including group, MOCA, and prediction-model checks;
 - the complete downstream battery for both the full cohort and the canonical
   age/sex-matched cohort;
 - repository validation tests.
