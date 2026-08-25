@@ -30,6 +30,24 @@ Saved broadband parameters are:
 - model R² and mean absolute error;
 - number of fitted peaks.
 
+The broad 5–15 Hz elevation and overlapping higher-frequency shoulder are
+represented by the fitted periodic Gaussians. A benchmark allowing peak widths
+up to 20 Hz did not materially improve fit quality or exponent stability, so
+the primary peak settings remain unchanged rather than being selected after
+inspection.
+
+Every primary fit receives formal, configurable QC. A fit passes when R² is at
+least 0.90, log-power MAE is at most 0.15, its largest absolute signed residual
+is at most 0.75 log10 units, and its exponent lies in 0–3. No fit is silently
+deleted: all fits remain in the tables and gallery with a pass/fail flag and
+failure reasons. A subject-level QC-qualified exponent is reported separately
+only when at least 80% of that subject's 60 shared electrodes pass.
+
+Fixed-mode sensitivity fits use identical peak settings over 1–50 Hz (primary),
+1–40 Hz, 2–50 Hz, and 2–40 Hz. This isolates dependence on the fitting range
+without conflating it with a different peak model. The ranges are parallel
+sensitivity analyses; the pipeline does not choose the most favorable result.
+
 The highest fitted peak in each theta (4–7 Hz), alpha (8–13 Hz), low-beta
 (13–20 Hz), and high-beta (20–30 Hz) band supplies center frequency, power, and
 bandwidth. A `peak_present` indicator distinguishes a missing peak from a
@@ -38,8 +56,12 @@ numerical value.
 For visual inspection, the pipeline also writes one decomposition PNG for
 every analyzed subject and shared electrode. The files are organized by group
 and subject, and HTML indexes allow navigation without manually opening 8,940
-filenames in a file browser. Each title includes group, aperiodic exponent, and
-model R². These plots reuse the saved fitted curves and never refit specparam.
+filenames in a file browser. Each title includes group, exponent, R², MAE, and
+QC status. Every figure shows the observed spectrum, full model, aperiodic and
+fitted periodic components, and the signed observed-minus-full-model residual.
+Observed power may lie below the aperiodic curve because that curve is a fitted
+baseline, not a pointwise lower bound; negative residuals are shown explicitly.
+These plots reuse the saved fitted curves and never refit specparam.
 
 ### 2. Aperiodic-relative eBOSC bouts
 
@@ -114,6 +136,14 @@ bash scale_free_analysis/generate_specparam_figures.sh
 Use `--overwrite` to regenerate existing images. The defaults use four worker
 processes and 100 DPI; both can be overridden with `--workers` and `--dpi`.
 
+Fit QC and all four range-sensitivity analyses can be regenerated from the
+saved spectra without rerunning eBOSC or bycycle:
+
+```bash
+bash scale_free_analysis/run_aperiodic_diagnostics.sh
+bash scale_free_analysis/generate_specparam_figures.sh --overwrite
+```
+
 Run a small development pilot without changing the configured output:
 
 ```bash
@@ -138,6 +168,11 @@ scale_free_analysis/processed/
 │   ├── analyzed_inputs.csv
 │   ├── electrode_sets.json
 │   ├── electrode_aperiodic_metrics.csv
+│   ├── electrode_aperiodic_range_sensitivity.csv.gz
+│   ├── subject_aperiodic_qc_metrics.csv
+│   ├── subject_aperiodic_range_sensitivity.csv
+│   ├── aperiodic_range_group_comparisons.csv
+│   ├── specparam_fit_qc_summary.csv
 │   ├── electrode_band_metrics.csv
 │   ├── specparam_figure_index.csv
 │   ├── subject_aperiodic_metrics.csv
@@ -156,6 +191,10 @@ scale_free_analysis/processed/
     │   ├── detected_bout_and_time_frequency.png
     │   └── bycycle_waveform_landmarks.png
     ├── group_comparisons/*.png
+    ├── aperiodic_diagnostics/
+    │   ├── fit_qc_dashboard.png
+    │   ├── frequency_range_sensitivity.png
+    │   └── group_median_decomposition_and_residuals.png
     ├── topomaps/*.png
     └── specparam_decomposition/
         ├── index.html

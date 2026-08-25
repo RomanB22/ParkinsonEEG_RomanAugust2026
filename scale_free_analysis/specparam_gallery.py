@@ -83,6 +83,11 @@ def _render_subject(
                 "frequencies_hz": frequencies,
                 "aperiodic_exponent": float(metric_row["aperiodic_exponent"]),
                 "specparam_r_squared": float(metric_row["specparam_r_squared"]),
+                "specparam_error_mae": float(metric_row["specparam_error_mae"]),
+                "specparam_fit_qc_pass": metric_row.get("specparam_fit_qc_pass"),
+                "specparam_fit_qc_reasons": metric_row.get(
+                    "specparam_fit_qc_reasons", "not_assessed"
+                ),
                 **{name: values[index] for name, values in arrays.items()},
             }
             plot_spectral_example(example, output_path, int(dpi))
@@ -97,6 +102,10 @@ def _render_subject(
                 "aperiodic_exponent": float(metric_row["aperiodic_exponent"]),
                 "specparam_r_squared": float(metric_row["specparam_r_squared"]),
                 "specparam_error_mae": float(metric_row["specparam_error_mae"]),
+                "specparam_fit_qc_pass": metric_row.get("specparam_fit_qc_pass"),
+                "specparam_fit_qc_reasons": str(
+                    metric_row.get("specparam_fit_qc_reasons", "not_assessed")
+                ),
             }
         )
     return output_rows
@@ -110,6 +119,8 @@ a { color: #0067a5; }
 .card { border: 1px solid #ddd; border-radius: 6px; padding: .6rem; }
 .card img { width: 100%; height: auto; display: block; }
 .meta { font-size: .85rem; color: #444; margin-top: .35rem; }
+.pass { color: #007A3D; font-weight: 700; }
+.fail { color: #B22222; font-weight: 700; }
 """.strip()
     root_sections = []
     for group, group_table in index.groupby("group", sort=False):
@@ -137,12 +148,20 @@ a { color: #0067a5; }
         cards = []
         for _, row in selected.iterrows():
             filename = Path(row["figure_path"]).name
+            qc_value = row.get("specparam_fit_qc_pass")
+            if isinstance(qc_value, (bool, np.bool_)):
+                qc_class = "pass" if bool(qc_value) else "fail"
+                qc_text = "QC PASS" if bool(qc_value) else "QC FAIL"
+                qc_html = f' — <span class="{qc_class}">{qc_text}</span>'
+            else:
+                qc_html = ""
             cards.append(
                 '<div class="card">'
                 f'<a href="{html.escape(filename)}"><img loading="lazy" '
                 f'src="{html.escape(filename)}" alt="{html.escape(str(row["electrode"]))}"></a>'
                 f'<div class="meta"><strong>{html.escape(str(row["electrode"]))}</strong> — '
-                f'exponent={row["aperiodic_exponent"]:.3f}, R²={row["specparam_r_squared"]:.3f}'
+                f'exponent={row["aperiodic_exponent"]:.3f}, R²={row["specparam_r_squared"]:.3f}, '
+                f'MAE={row["specparam_error_mae"]:.3f}{qc_html}'
                 "</div></div>"
             )
         subject_directory = gallery_root / _safe_name(str(group)) / str(subject_id)
@@ -214,15 +233,35 @@ def generate_specparam_gallery(
                     Path(task[0]).stem.removesuffix("_specparam_spectra"),
                 )
     else:
-        with ProcessPoolExecutor(max_workers=int(workers)) as executor:
-            futures = {executor.submit(_render_subject, *task): task for task in tasks}
-            for completed_index, future in enumerate(as_completed(futures), start=1):
-                task = futures[future]
-                rows.extend(future.result())
+        try:
+            with ProcessPoolExecutor(max_workers=int(workers)) as executor:
+                futures = {executor.submit(_render_subject, *task): task for task in tasks}
+                for completed_index, future in enumerate(
+                    as_completed(futures), start=1
+                ):
+                    task = futures[future]
+                    rows.extend(future.result())
+                    if logger is not None:
+                        logger.info(
+                            "Specparam gallery [%d/%d] | %s",
+                            completed_index,
+                            len(tasks),
+                            Path(task[0]).stem.removesuffix(
+                                "_specparam_spectra"
+                            ),
+                        )
+        except PermissionError:
+            if logger is not None:
+                logger.warning(
+                    "Process workers are unavailable; rendering gallery serially"
+                )
+            rows.clear()
+            for task_index, task in enumerate(tasks, start=1):
+                rows.extend(_render_subject(*task))
                 if logger is not None:
                     logger.info(
                         "Specparam gallery [%d/%d] | %s",
-                        completed_index,
+                        task_index,
                         len(tasks),
                         Path(task[0]).stem.removesuffix("_specparam_spectra"),
                     )

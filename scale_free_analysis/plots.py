@@ -57,9 +57,9 @@ def _plot_topomap(
 
 
 def plot_spectral_example(example: dict[str, Any], path: Path, dpi: int) -> None:
-    """Plot observed PSD and specparam components for one electrode."""
+    """Plot components and signed residuals for one electrode's specparam fit."""
     frequencies = example["frequencies_hz"]
-    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    fig, axes = plt.subplots(1, 3, figsize=(18, 5))
     axes[0].loglog(
         frequencies,
         example["observed_psd_uv2_hz"],
@@ -107,9 +107,44 @@ def plot_spectral_example(example: dict[str, Any], path: Path, dpi: int) -> None
         alpha=0.3,
         label="Periodic component",
     )
-    axes[1].set(xlabel="Frequency (Hz)", ylabel="log₁₀ PSD", title="Periodic power above 1/f")
+    axes[1].set(
+        xlabel="Frequency (Hz)",
+        ylabel="log₁₀ PSD",
+        title="Fitted periodic component (not the residual)",
+    )
     axes[1].grid(alpha=0.2)
     axes[1].legend(frameon=False)
+
+    observed_log = np.log10(example["observed_psd_uv2_hz"])
+    modeled_log = np.log10(example["modeled_psd_uv2_hz"])
+    residual = observed_log - modeled_log
+    axes[2].axhline(0.0, color="black", linewidth=0.8)
+    axes[2].plot(frequencies, residual, color="0.25", linewidth=1.2)
+    axes[2].fill_between(
+        frequencies,
+        0.0,
+        residual,
+        where=residual >= 0.0,
+        color="#009E73",
+        alpha=0.35,
+        label="Observed above model",
+    )
+    axes[2].fill_between(
+        frequencies,
+        0.0,
+        residual,
+        where=residual < 0.0,
+        color="#CC79A7",
+        alpha=0.35,
+        label="Observed below model",
+    )
+    axes[2].set(
+        xlabel="Frequency (Hz)",
+        ylabel="Observed − full model (log₁₀ PSD)",
+        title="Signed model residual",
+    )
+    axes[2].grid(alpha=0.2)
+    axes[2].legend(frameon=False, fontsize=8)
     title = f"{example['subject_id']} — {example['electrode']}"
     if example.get("group"):
         title += f" — {example['group']}"
@@ -118,6 +153,13 @@ def plot_spectral_example(example: dict[str, Any], path: Path, dpi: int) -> None
         details.append(f"exponent={float(example['aperiodic_exponent']):.3f}")
     if np.isfinite(float(example.get("specparam_r_squared", np.nan))):
         details.append(f"R²={float(example['specparam_r_squared']):.3f}")
+    if np.isfinite(float(example.get("specparam_error_mae", np.nan))):
+        details.append(f"MAE={float(example['specparam_error_mae']):.3f}")
+    qc_pass = example.get("specparam_fit_qc_pass")
+    if isinstance(qc_pass, (bool, np.bool_)):
+        qc_label = "QC PASS" if bool(qc_pass) else "QC FAIL"
+        reasons = str(example.get("specparam_fit_qc_reasons", ""))
+        details.append(qc_label if bool(qc_pass) else f"{qc_label}: {reasons}")
     if details:
         title += "\n" + ", ".join(details)
     fig.suptitle(title)

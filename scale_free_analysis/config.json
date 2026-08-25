@@ -26,6 +26,20 @@
     "min_peak_height": 0.0,
     "peak_threshold": 2.0
   },
+  "aperiodic_fit_qc": {
+    "minimum_r_squared": 0.9,
+    "maximum_error_mae_log10": 0.15,
+    "maximum_absolute_residual_log10": 0.75,
+    "exponent_range": [0.0, 3.0],
+    "minimum_subject_qc_fraction": 0.8,
+    "policy": "Flag every fit; retain all fits for visualization and primary provenance; report QC-qualified summaries separately"
+  },
+  "aperiodic_sensitivity": {
+    "frequency_ranges_hz": [[1.0, 50.0], [1.0, 40.0], [2.0, 50.0], [2.0, 40.0]],
+    "workers": 4,
+    "aperiodic_mode": "fixed",
+    "purpose": "Range sensitivity only; peak settings remain identical to the primary model"
+  },
   "ebosc": {
     "frequency_min_hz": 4.0,
     "frequency_max_hz": 30.0,

@@ -254,7 +254,9 @@ The cross-sectional workflow in
 [`quantitative_behavioral/`](quantitative_behavioral/README.md) relates MOCA to
 regular broadband/band ordinal H/C/F, eBOSC bout properties, and within-bout
 ordinal H/C/F among PD participants. It also tests the fixed-mode 1–50 Hz
-aperiodic exponent between Control and PD and its association with MOCA. It
+aperiodic exponent between Control and PD and its association with MOCA, with
+formal electrode-fit QC and fixed-mode 1–40, 2–50, and 2–40 Hz sensitivity
+analyses. It
 uses subject-level partial Spearman
 correlations adjusted for age and sex, deterministic bootstrap intervals,
 prespecified family-specific FDR correction, raw-data scatter grids, forest

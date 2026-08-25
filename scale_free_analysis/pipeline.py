@@ -26,6 +26,7 @@ from tqdm.auto import tqdm
 from psd_analysis.metrics import compute_subject_electrode_psd
 from src.dataset import ordered_channel_inventory
 
+from .aperiodic_diagnostics import run_aperiodic_diagnostics
 from .metrics import (
     APERIODIC_FEATURES,
     BAND_FEATURES,
@@ -63,6 +64,8 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "bands",
         "psd",
         "specparam",
+        "aperiodic_fit_qc",
+        "aperiodic_sensitivity",
         "ebosc",
         "bycycle",
         "statistics",
@@ -73,6 +76,31 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError(f"Missing scale-free analysis config sections: {missing}")
     if str(config["specparam"]["aperiodic_mode"]) != "fixed":
         raise ValueError("This pipeline requires specparam.aperiodic_mode='fixed'")
+    qc = config["aperiodic_fit_qc"]
+    if not 0.0 <= float(qc["minimum_r_squared"]) <= 1.0:
+        raise ValueError("aperiodic_fit_qc.minimum_r_squared must be in [0, 1]")
+    if float(qc["maximum_error_mae_log10"]) <= 0.0:
+        raise ValueError("aperiodic_fit_qc.maximum_error_mae_log10 must be positive")
+    if float(qc["maximum_absolute_residual_log10"]) <= 0.0:
+        raise ValueError(
+            "aperiodic_fit_qc.maximum_absolute_residual_log10 must be positive"
+        )
+    if not 0.0 < float(qc["minimum_subject_qc_fraction"]) <= 1.0:
+        raise ValueError(
+            "aperiodic_fit_qc.minimum_subject_qc_fraction must be in (0, 1]"
+        )
+    exponent_range = [float(value) for value in qc["exponent_range"]]
+    if len(exponent_range) != 2 or exponent_range[0] >= exponent_range[1]:
+        raise ValueError("aperiodic_fit_qc.exponent_range must increase")
+    sensitivity = config["aperiodic_sensitivity"]
+    if int(sensitivity["workers"]) < 1:
+        raise ValueError("aperiodic_sensitivity.workers must be positive")
+    ranges = [
+        [float(value) for value in limits]
+        for limits in sensitivity["frequency_ranges_hz"]
+    ]
+    if [float(value) for value in config["specparam"]["frequency_range_hz"]] not in ranges:
+        raise ValueError("Aperiodic sensitivity must contain the primary frequency range")
     bands = config["bands"]
     if list(bands) != ["theta", "alpha", "low_beta", "high_beta"]:
         raise ValueError("bands must be theta, alpha, low_beta, and high_beta in order")
@@ -611,6 +639,14 @@ def run_analysis(
 
     aperiodic_electrodes = pd.DataFrame.from_records(aperiodic_rows)
     band_electrodes = pd.DataFrame.from_records(band_rows)
+    logger.info("Running specparam fit QC and fixed-mode frequency-range sensitivity")
+    aperiodic_diagnostics = run_aperiodic_diagnostics(
+        output_dir,
+        aperiodic_electrodes,
+        config,
+        logger=logger,
+    )
+    aperiodic_electrodes = aperiodic_diagnostics["electrode_metrics"]
     aperiodic_subjects = _subject_means(
         aperiodic_electrodes,
         ["subject_id", "group"],
@@ -688,6 +724,22 @@ def run_analysis(
     else:
         logger.info("Skipping subject/electrode specparam gallery")
     if spectral_example is not None:
+        example_metrics = aperiodic_electrodes.loc[
+            aperiodic_electrodes["subject_id"].eq(spectral_example["subject_id"])
+            & aperiodic_electrodes["electrode"].eq(spectral_example["electrode"])
+        ].iloc[0]
+        spectral_example.update(
+            {
+                "group": example_metrics["group"],
+                "aperiodic_exponent": example_metrics["aperiodic_exponent"],
+                "specparam_r_squared": example_metrics["specparam_r_squared"],
+                "specparam_error_mae": example_metrics["specparam_error_mae"],
+                "specparam_fit_qc_pass": example_metrics["specparam_fit_qc_pass"],
+                "specparam_fit_qc_reasons": example_metrics[
+                    "specparam_fit_qc_reasons"
+                ],
+            }
+        )
         plot_spectral_example(
             spectral_example,
             figures_dir / "examples" / "specparam_decomposition.png",
@@ -775,6 +827,21 @@ def run_analysis(
         "n_common_electrodes": len(common_channels),
         "n_electrode_union": len(electrode_union),
         "n_specparam_decomposition_figures": int(len(specparam_gallery_index)),
+        "specparam_fit_qc": {
+            "thresholds": config["aperiodic_fit_qc"],
+            "n_fits": int(len(aperiodic_electrodes)),
+            "n_qc_pass": int(aperiodic_electrodes["specparam_fit_qc_pass"].sum()),
+            "qc_pass_fraction": float(
+                aperiodic_electrodes["specparam_fit_qc_pass"].mean()
+            ),
+            "frequency_ranges_hz": config["aperiodic_sensitivity"][
+                "frequency_ranges_hz"
+            ],
+            "n_range_sensitivity_fits": int(
+                len(aperiodic_diagnostics["electrode_sensitivity"])
+            ),
+            "policy": config["aperiodic_fit_qc"]["policy"],
+        },
         "specparam_gallery_enabled": bool(gallery_enabled),
         "specparam_gallery_policy": (
             "One decomposition PNG per analyzed subject/shared-electrode pair, plus "

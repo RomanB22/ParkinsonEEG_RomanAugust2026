@@ -30,6 +30,7 @@ METRIC_LABELS = {
     "bout_cycles_mean": "Mean cycles per bout",
     "bout_snr_mean": "Mean bout threshold ratio",
     "aperiodic_exponent": "Aperiodic exponent",
+    "aperiodic_exponent_qc": "QC-qualified aperiodic exponent",
 }
 
 METRIC_UNITS = {
@@ -52,6 +53,7 @@ METRIC_UNITS = {
     "bout_cycles_mean": "cycles",
     "bout_snr_mean": "ratio",
     "aperiodic_exponent": "dimensionless",
+    "aperiodic_exponent_qc": "dimensionless",
 }
 
 BAND_LABELS = {
@@ -215,7 +217,18 @@ def build_subject_features(
 
     aperiodic_subject = _read_csv(
         inputs["aperiodic_subject_file"],
-        {"subject_id", "group", "n_electrodes", *aperiodic_metrics},
+        {"subject_id", "group", "n_electrodes", "aperiodic_exponent"},
+    )
+    aperiodic_qc_subject = _read_csv(
+        inputs["aperiodic_qc_subject_file"],
+        {
+            "subject_id",
+            "group",
+            "n_electrodes",
+            "aperiodic_exponent_qc_qualified",
+        },
+    ).rename(
+        columns={"aperiodic_exponent_qc_qualified": "aperiodic_exponent_qc"}
     )
     ordinal_subject = _read_csv(inputs["ordinal_subject_file"], required_ordinal)
     ordinal_band = _read_csv(
@@ -231,6 +244,7 @@ def build_subject_features(
     )
     for name, table in (
         ("aperiodic exponent", aperiodic_subject),
+        ("QC-qualified aperiodic exponent", aperiodic_qc_subject),
         ("ordinal broadband", ordinal_subject),
         ("ordinal bands", ordinal_band),
         ("bout properties", bout_subject),
@@ -266,7 +280,17 @@ def build_subject_features(
         source_file=inputs["aperiodic_subject_file"],
         family="aperiodic",
         domain="aperiodic",
-        metrics=aperiodic_metrics,
+        metrics=["aperiodic_exponent"],
+        bands=None,
+    )
+    _append_subject_features(
+        feature_rows,
+        dictionary_rows,
+        aperiodic_qc_subject,
+        source_file=inputs["aperiodic_qc_subject_file"],
+        family="aperiodic",
+        domain="aperiodic",
+        metrics=["aperiodic_exponent_qc"],
         bands=None,
     )
     _append_subject_features(

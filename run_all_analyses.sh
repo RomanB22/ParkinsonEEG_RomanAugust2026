@@ -154,7 +154,11 @@ ordinal_sweep_current() {
 }
 
 scale_free_current() {
-    [[ -f scale_free_analysis/processed/manifest.json ]]
+    [[ -f scale_free_analysis/processed/manifest.json ]] || return 1
+    [[ -f scale_free_analysis/processed/metrics/specparam_fit_qc_summary.csv ]] || return 1
+    [[ -f scale_free_analysis/processed/metrics/subject_aperiodic_range_sensitivity.csv ]] || return 1
+    [[ -f scale_free_analysis/processed/figures/aperiodic_diagnostics/group_median_decomposition_and_residuals.png ]] || return 1
+    grep -q 'specparam_fit_qc' scale_free_analysis/processed/manifest.json || return 1
 }
 
 bout_current() {
@@ -172,6 +176,7 @@ quantitative_current() {
     [[ -f "$primary_dictionary" ]] || return 1
     [[ -f "$dictionary" ]] || return 1
     grep -q 'aperiodic_exponent' "$primary_dictionary" || return 1
+    grep -q 'aperiodic_exponent_qc' "$primary_dictionary" || return 1
     grep -q 'renyi_entropy_alpha_0_5' "$dictionary" || return 1
     grep -q 'renyi_complexity_alpha_0_5' "$dictionary" || return 1
     grep -q 'renyi_entropy_alpha_5' "$dictionary" || return 1

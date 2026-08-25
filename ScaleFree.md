@@ -8,6 +8,10 @@ For each subject and channel:
 
 * Compute PSD from the cleaned continuous EEG.
 * Use `specparam` to separate **aperiodic (1/f)** and **periodic** components.
+* Audit every fit with R², log-error, exponent-range, and signed-residual QC;
+  retain failed fits for inspection and report QC-qualified summaries separately.
+* Repeat fixed-mode fits over prespecified alternative frequency ranges to test
+  exponent stability without changing peak settings.
 * Extract:
 
   * aperiodic exponent and offset
@@ -62,6 +66,9 @@ Preserve channel information to allow electrode-level and topographic comparison
 Generate figures for every major analysis step, including:
 
 * PSD and `specparam` decomposition
+* Signed observed-minus-full-model residual and fit-QC status for every subject
+  and electrode
+* Cohort-level fit-QC and fitting-range sensitivity figures
 * example EEG segments with detected bouts highlighted
 * time-frequency representation with bout detection
 * bout duration and occupancy distributions

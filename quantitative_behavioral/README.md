@@ -32,17 +32,17 @@ are never treated as independent patients.
 
 ## Prespecified feature families
 
-The defaults produce 54 transparent features:
+The defaults produce 55 transparent features:
 
 | Family | Features | Count |
 |---|---|---:|
-| Aperiodic | Fixed-mode specparam exponent over 1–50 Hz | 1 |
+| Aperiodic | All-fit and QC-qualified fixed-mode specparam exponents over 1–50 Hz | 2 |
 | Broadband ordinal | H, C, F from `D=6`, `tau=1` | 3 |
 | Band ordinal | H, C, F in delta, theta, alpha, beta, low gamma, and broad 5–15 Hz | 18 |
 | Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in four eBOSC bands | 20 |
 | Within-bout ordinal | H, C, F pooled within detected theta, alpha, low-beta, and high-beta bouts | 12 |
 
-The 54-feature primary table retains regular permutation entropy,
+The 55-feature primary table retains regular permutation entropy,
 statistical complexity, and Fisher information. Rényi quantities are added in
 the separate embedding-dimension analysis blocks described below. Within-bout
 ordinal quantities remain regular H/C/F only.
@@ -50,7 +50,9 @@ ordinal quantities remain regular H/C/F only.
 The primary ordinal source is the completed 60-electrode `D6_tau1` parameter
 sweep. The aperiodic exponent and bout properties come from the 1–50 Hz
 scale-free analysis. The exponent is estimated in fixed mode at each shared
-electrode and averaged across those 60 electrodes within each subject. Within-bout
+electrode and averaged across those 60 electrodes within each subject. A
+separate QC sensitivity retains only subjects with at least 80% QC-passing
+electrodes and averages their passing electrodes. Within-bout
 ordinal features come from `bout_analyses/`. All upstream manifests are checked
 for the expected 60 shared electrodes and analysis parameters before any
 correlation is calculated.
@@ -182,8 +184,10 @@ The aperiodic group comparison uses one mean exponent per subject. Its primary
 effect is the PD-minus-Control coefficient from `exponent ~ PD + age + sex`,
 with an HC3 robust standard error and confidence interval. Welch's t test,
 Mann–Whitney U, and Hedges' g are included as unadjusted sensitivity and effect
-size summaries. The PD-only exponent–MOCA relationship is the
-`aperiodic_exponent` row in `subject_level_correlations.csv`; its raw scatter,
+size summaries. A parallel `aperiodic_exponent_qc` row reports the formal
+fit-QC sensitivity, with BH correction across the two aperiodic analyses. The
+PD-only exponent–MOCA relationships are the two aperiodic rows in
+`subject_level_correlations.csv`; their raw scatter,
 partial Spearman estimate, and electrode-level localization are generated with
 the other feature-family figures.
 

@@ -29,7 +29,8 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         )
         self.assertEqual(config["expected"]["shared_electrodes"], 60)
         self.assertEqual(
-            config["features"]["aperiodic_metrics"], ["aperiodic_exponent"]
+            config["features"]["aperiodic_metrics"],
+            ["aperiodic_exponent", "aperiodic_exponent_qc"],
         )
         self.assertEqual(
             config["dimension_sensitivity"]["embedding_dimensions"], [3, 4, 5, 6]
@@ -128,7 +129,16 @@ class QuantitativeBehavioralTests(unittest.TestCase):
                 "sex_male": sex,
             }
         )
-        result = compare_aperiodic_exponent_groups(table).iloc[0]
+        table = pd.concat(
+            [
+                table,
+                table.assign(feature_id="aperiodic_exponent_qc"),
+            ],
+            ignore_index=True,
+        )
+        result = compare_aperiodic_exponent_groups(table)
+        self.assertEqual(len(result), 2)
+        result = result.loc[result["feature_id"].eq("aperiodic_exponent")].iloc[0]
         self.assertEqual(result["n_pd"], n_per_group)
         self.assertEqual(result["n_control"], n_per_group)
         self.assertAlmostEqual(result["adjusted_pd_coefficient"], 0.2, delta=0.04)
@@ -139,13 +149,24 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         cohort, features, dictionary = build_subject_features(config)
         self.assertEqual(len(cohort), 149)
         self.assertEqual(int(cohort["group"].eq("PD").sum()), 100)
-        self.assertEqual(len(dictionary), 54)
+        self.assertEqual(len(dictionary), 55)
         self.assertIn("aperiodic_exponent", set(dictionary["feature_id"]))
+        self.assertIn("aperiodic_exponent_qc", set(dictionary["feature_id"]))
         self.assertFalse(dictionary["feature_id"].str.contains("renyi").any())
         self.assertFalse(features.duplicated(["subject_id", "feature_id"]).any())
         pd_features = features.loc[features["group"].eq("PD")]
-        self.assertEqual(len(pd_features), 100 * 54)
-        self.assertTrue(pd_features["value"].notna().all())
+        self.assertEqual(len(pd_features), 100 * 55)
+        self.assertTrue(
+            pd_features.loc[
+                pd_features["feature_id"].ne("aperiodic_exponent_qc"), "value"
+            ].notna().all()
+        )
+        self.assertGreaterEqual(
+            pd_features.loc[
+                pd_features["feature_id"].eq("aperiodic_exponent_qc"), "value"
+            ].notna().sum(),
+            30,
+        )
 
     def test_dimension_blocks_have_91_balanced_regular_and_renyi_features(self):
         config = load_analysis_config("quantitative_behavioral/config.json")

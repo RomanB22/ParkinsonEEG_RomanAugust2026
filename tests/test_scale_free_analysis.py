@@ -8,6 +8,7 @@ import pandas as pd
 from ebosc.BOSC import BOSC_tf
 from specparam.sim import sim_power_spectrum
 
+from scale_free_analysis.aperiodic_diagnostics import assess_specparam_fit
 from scale_free_analysis.metrics import (
     cycles_within_bouts,
     detect_frequency_episodes,
@@ -44,6 +45,11 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
         self.assertEqual(config["psd"]["fmin_hz"], 1.0)
         self.assertEqual(config["psd"]["fmax_hz"], 50.0)
         self.assertEqual(config["specparam"]["frequency_range_hz"], [1.0, 50.0])
+        self.assertEqual(config["aperiodic_fit_qc"]["minimum_r_squared"], 0.9)
+        self.assertEqual(
+            config["aperiodic_sensitivity"]["frequency_ranges_hz"],
+            [[1.0, 50.0], [1.0, 40.0], [2.0, 50.0], [2.0, 40.0]],
+        )
 
     def test_specparam_recovers_aperiodic_and_alpha_peak(self):
         np.random.seed(0)
@@ -65,6 +71,24 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
         self.assertEqual(alpha["peak_present"], 1)
         self.assertAlmostEqual(alpha["peak_frequency_hz"], 10.0, delta=0.5)
         self.assertTrue(np.all(curves["aperiodic_psd_uv2_hz"] > 0.0))
+
+    def test_fit_qc_uses_signed_residuals_and_flags_low_r_squared(self):
+        observed = np.asarray([10.0, 5.0, 2.0, 1.0])
+        modeled = np.asarray([8.0, 5.0, 2.5, 1.0])
+        metrics = {
+            "aperiodic_exponent": 1.2,
+            "specparam_r_squared": 0.85,
+            "specparam_error_mae": 0.05,
+        }
+        result = assess_specparam_fit(
+            metrics,
+            observed,
+            modeled,
+            self.config["aperiodic_fit_qc"],
+        )
+        self.assertFalse(result["specparam_fit_qc_pass"])
+        self.assertIn("r_squared_below_minimum", result["specparam_fit_qc_reasons"])
+        self.assertGreater(result["specparam_residual_max_abs_log10"], 0.0)
 
     def test_vectorized_wavelets_match_ebosc(self):
         sfreq = 120.0

@@ -22,6 +22,14 @@ participant it exports the aperiodic exponent at every one of the 60 electrodes
 shared by all participants. The primary exponent is the arithmetic mean across
 those electrodes, giving one value per participant.
 
+Every electrode fit is audited against four configurable criteria: R² at least
+0.90, log10-power MAE at most 0.15, maximum absolute signed residual at most
+0.75 log10 units, and exponent within 0–3. All 8,940 fits remain visible. The
+QC sensitivity averages only passing electrodes and includes a participant
+only when at least 80% (48/60) electrodes pass. Fixed-mode 1–40, 2–50, and
+2–40 Hz fits retain identical peak settings and assess fitting-range stability;
+1–50 Hz remains primary.
+
 The Control-versus-PD analysis uses all 149 participants. Its primary model is:
 
 ```text
@@ -33,14 +41,14 @@ Inference uses an HC3 heteroskedasticity-robust standard error, two-sided
 p-value, and 95% confidence interval. The table also reports group means,
 standard deviations and medians, the raw mean difference, Welch's unequal-
 variance t test, Mann–Whitney U test, and Hedges' g. These latter quantities are
-unadjusted sensitivity/descriptive summaries. Because this is one targeted
-aperiodic-exponent group comparison, no multiple-comparison correction is
-applied to its adjusted-model p-value.
+unadjusted sensitivity/descriptive summaries. The primary all-fit group
+comparison and QC-qualified sensitivity are jointly BH-corrected as a
+two-analysis aperiodic family.
 
 The exponent–MOCA question is separate: it uses PD participants only and the
-same partial Spearman procedure described below. The single exponent test is
-its own feature family, so its within-family BH-FDR value equals its raw
-p-value. Electrode-level exponent–MOCA maps are secondary localization results.
+same partial Spearman procedure described below. The all-fit and QC-qualified
+exponent tests form a two-feature family for BH-FDR. Electrode-level
+exponent–MOCA maps are secondary localization results.
 
 ## Cohort, outcome, and covariates
 
@@ -185,13 +193,13 @@ itself adjusted for all tested features.
 Benjamini-Hochberg false-discovery-rate (BH-FDR) correction is applied at
 `alpha=0.05`. Adjusted and unadjusted methods are corrected separately.
 
-### Primary 54-feature analysis
+### Primary 55-feature analysis
 
 BH-FDR is applied within each prespecified feature family:
 
 | Family | Tests per method |
 |---|---:|
-| Aperiodic exponent | 1 |
+| All-fit and QC-qualified aperiodic exponent | 2 |
 | Broadband regular ordinal quantities | 3 |
 | Band-resolved regular ordinal quantities | 18 |
 | Bout properties | 20 |

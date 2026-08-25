@@ -21,6 +21,7 @@ def compare_aperiodic_exponent_groups(
     features: pd.DataFrame,
     *,
     confidence_level: float = 0.95,
+    fdr_alpha: float = 0.05,
 ) -> pd.DataFrame:
     """Compare subject-mean aperiodic exponent between PD and Control.
 
@@ -40,55 +41,72 @@ def compare_aperiodic_exponent_groups(
     missing = sorted(required - set(features.columns))
     if missing:
         raise ValueError(f"Aperiodic comparison input is missing columns: {missing}")
-    table = features.loc[
-        features["feature_id"].eq("aperiodic_exponent")
-    ].dropna(subset=["value", "age_years", "sex_male", "group"])
-    if table["subject_id"].duplicated().any():
-        raise ValueError("Aperiodic exponent comparison must have one row per subject")
-    if set(table["group"]) != {"PD", "Control"}:
-        raise ValueError("Aperiodic exponent comparison requires PD and Control groups")
-
-    pd_values = table.loc[table["group"].eq("PD"), "value"].to_numpy(dtype=float)
-    control_values = table.loc[
-        table["group"].eq("Control"), "value"
-    ].to_numpy(dtype=float)
-    if min(len(pd_values), len(control_values)) < 3:
-        raise ValueError("Aperiodic exponent comparison requires at least 3 subjects per group")
-
-    welch = ttest_ind(pd_values, control_values, equal_var=False)
-    mann_whitney = mannwhitneyu(pd_values, control_values, alternative="two-sided")
-    pooled_degrees = len(pd_values) + len(control_values) - 2
-    pooled_sd = np.sqrt(
+    specifications = (
         (
-            (len(pd_values) - 1) * np.var(pd_values, ddof=1)
-            + (len(control_values) - 1) * np.var(control_values, ddof=1)
+            "aperiodic_exponent",
+            "Aperiodic exponent (1–50 Hz; all 60 electrode fits)",
+            "all shared-electrode fits",
+        ),
+        (
+            "aperiodic_exponent_qc",
+            "QC-qualified aperiodic exponent (1–50 Hz)",
+            "QC-passing electrodes in subjects with at least 80% coverage",
+        ),
+    )
+    rows = []
+    for feature_id, feature_label, aggregation_policy in specifications:
+        table = features.loc[features["feature_id"].eq(feature_id)].dropna(
+            subset=["value", "age_years", "sex_male", "group"]
         )
-        / pooled_degrees
-    )
-    cohen_d = (np.mean(pd_values) - np.mean(control_values)) / pooled_sd
-    hedges_correction = 1.0 - 3.0 / (4.0 * pooled_degrees - 1.0)
-    hedges_g = hedges_correction * cohen_d
-
-    design = pd.DataFrame(
-        {
-            "pd_indicator": table["group"].eq("PD").astype(float),
-            "age_years": table["age_years"].astype(float),
-            "sex_male": table["sex_male"].astype(float),
-        },
-        index=table.index,
-    )
-    fitted = sm.OLS(
-        table["value"].to_numpy(dtype=float),
-        sm.add_constant(design, has_constant="add"),
-    ).fit(cov_type="HC3")
-    alpha = 1.0 - float(confidence_level)
-    interval = fitted.conf_int(alpha=alpha).loc["pd_indicator"]
-    return pd.DataFrame.from_records(
-        [
+        if table["subject_id"].duplicated().any():
+            raise ValueError(
+                f"{feature_id} comparison must have one row per subject"
+            )
+        if set(table["group"]) != {"PD", "Control"}:
+            raise ValueError(f"{feature_id} comparison requires PD and Control groups")
+        pd_values = table.loc[
+            table["group"].eq("PD"), "value"
+        ].to_numpy(dtype=float)
+        control_values = table.loc[
+            table["group"].eq("Control"), "value"
+        ].to_numpy(dtype=float)
+        if min(len(pd_values), len(control_values)) < 3:
+            raise ValueError(f"{feature_id} requires at least 3 subjects per group")
+        welch = ttest_ind(pd_values, control_values, equal_var=False)
+        mann_whitney = mannwhitneyu(
+            pd_values, control_values, alternative="two-sided"
+        )
+        pooled_degrees = len(pd_values) + len(control_values) - 2
+        pooled_sd = np.sqrt(
+            (
+                (len(pd_values) - 1) * np.var(pd_values, ddof=1)
+                + (len(control_values) - 1) * np.var(control_values, ddof=1)
+            )
+            / pooled_degrees
+        )
+        cohen_d = (np.mean(pd_values) - np.mean(control_values)) / pooled_sd
+        hedges_correction = 1.0 - 3.0 / (4.0 * pooled_degrees - 1.0)
+        hedges_g = hedges_correction * cohen_d
+        design = pd.DataFrame(
             {
-                "feature_id": "aperiodic_exponent",
-                "feature_label": "Aperiodic exponent (1–50 Hz)",
+                "pd_indicator": table["group"].eq("PD").astype(float),
+                "age_years": table["age_years"].astype(float),
+                "sex_male": table["sex_male"].astype(float),
+            },
+            index=table.index,
+        )
+        fitted = sm.OLS(
+            table["value"].to_numpy(dtype=float),
+            sm.add_constant(design, has_constant="add"),
+        ).fit(cov_type="HC3")
+        alpha = 1.0 - float(confidence_level)
+        interval = fitted.conf_int(alpha=alpha).loc["pd_indicator"]
+        rows.append(
+            {
+                "feature_id": feature_id,
+                "feature_label": feature_label,
                 "unit_of_analysis": "subject mean across shared electrodes",
+                "aggregation_policy": aggregation_policy,
                 "n_pd": int(len(pd_values)),
                 "n_control": int(len(control_values)),
                 "pd_mean": float(np.mean(pd_values)),
@@ -112,10 +130,19 @@ def compare_aperiodic_exponent_groups(
                 "adjusted_pd_ci_upper": float(interval.iloc[1]),
                 "adjusted_pd_p_value": float(fitted.pvalues["pd_indicator"]),
                 "confidence_level": float(confidence_level),
-                "multiplicity_scope": "single targeted aperiodic-exponent group comparison",
+                "multiplicity_scope": (
+                    "primary all-fit estimate plus one formal QC sensitivity"
+                ),
             }
-        ]
+        )
+    result = pd.DataFrame.from_records(rows)
+    adjusted, rejected = fdr_bh(
+        result["adjusted_pd_p_value"].to_numpy(dtype=float), alpha=float(fdr_alpha)
     )
+    result["adjusted_pd_p_fdr_bh"] = adjusted
+    result["adjusted_pd_fdr_reject"] = rejected
+    result["fdr_alpha"] = float(fdr_alpha)
+    return result
 
 
 def fdr_bh(p_values: np.ndarray, alpha: float) -> tuple[np.ndarray, np.ndarray]:

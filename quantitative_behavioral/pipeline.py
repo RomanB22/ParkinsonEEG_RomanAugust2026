@@ -97,8 +97,13 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("FDR scope must remain within prespecified feature families")
     requested = config["features"]
     regular_metrics = ["entropy", "complexity", "fisher_information"]
-    if requested.get("aperiodic_metrics") != ["aperiodic_exponent"]:
-        raise ValueError("The aperiodic feature must be the fixed-mode exponent")
+    if requested.get("aperiodic_metrics") != [
+        "aperiodic_exponent",
+        "aperiodic_exponent_qc",
+    ]:
+        raise ValueError(
+            "Aperiodic features must include the all-fit and QC-qualified exponents"
+        )
     if requested.get("ordinal_metrics") != regular_metrics:
         raise ValueError("Only regular ordinal H, C, and F are supported")
     if requested.get("bout_ordinal_metrics") != regular_metrics:
@@ -195,6 +200,15 @@ def _validate_upstream_manifests(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("Aperiodic exponent source must use fixed-mode specparam")
     if [float(value) for value in specparam["frequency_range_hz"]] != actual_range:
         raise ValueError("Aperiodic exponent and PSD frequency ranges disagree")
+    fit_qc = manifests["scale_free"].get("specparam_fit_qc")
+    if not isinstance(fit_qc, dict):
+        raise ValueError(
+            "Scale-free source is missing formal specparam fit-QC provenance"
+        )
+    if fit_qc.get("frequency_ranges_hz") != config["expected"].get(
+        "aperiodic_sensitivity_ranges_hz"
+    ):
+        raise ValueError("Scale-free source has the wrong aperiodic sensitivity ranges")
     provenance = {
         name: {
             "manifest_file": str(path.resolve()),
@@ -268,7 +282,15 @@ def _write_report(
     exponent_moca = primary.loc[
         primary["feature_id"].eq("aperiodic_exponent")
     ].iloc[0]
-    exponent_group = aperiodic_group_comparison.iloc[0]
+    exponent_moca_qc = primary.loc[
+        primary["feature_id"].eq("aperiodic_exponent_qc")
+    ].iloc[0]
+    exponent_group = aperiodic_group_comparison.loc[
+        aperiodic_group_comparison["feature_id"].eq("aperiodic_exponent")
+    ].iloc[0]
+    exponent_group_qc = aperiodic_group_comparison.loc[
+        aperiodic_group_comparison["feature_id"].eq("aperiodic_exponent_qc")
+    ].iloc[0]
     top = primary.reindex(primary["estimate"].abs().sort_values(ascending=False).index).head(12)
     lines = [
         "# Quantitative-behavioral MOCA association report",
@@ -314,7 +336,18 @@ def _write_report(
             f"{exponent_group['adjusted_pd_coefficient']:.3f} "
             f"(95% CI [{exponent_group['adjusted_pd_ci_lower']:.3f}, "
             f"{exponent_group['adjusted_pd_ci_upper']:.3f}], HC3 p="
-            f"{exponent_group['adjusted_pd_p_value']:.4g})."
+            f"{exponent_group['adjusted_pd_p_value']:.4g}, two-analysis BH q="
+            f"{exponent_group['adjusted_pd_p_fdr_bh']:.4g})."
+        ),
+        (
+            "After requiring at least 80% QC-passing electrodes per subject, the "
+            f"sensitivity estimate used {int(exponent_group_qc['n_pd'])} PD and "
+            f"{int(exponent_group_qc['n_control'])} Control participants: adjusted "
+            f"difference={exponent_group_qc['adjusted_pd_coefficient']:.3f} "
+            f"(95% CI [{exponent_group_qc['adjusted_pd_ci_lower']:.3f}, "
+            f"{exponent_group_qc['adjusted_pd_ci_upper']:.3f}], HC3 p="
+            f"{exponent_group_qc['adjusted_pd_p_value']:.4g}, two-analysis BH q="
+            f"{exponent_group_qc['adjusted_pd_p_fdr_bh']:.4g})."
         ),
         (
             f"Unadjusted sensitivity results: Hedges g="
@@ -328,6 +361,15 @@ def _write_report(
             f"(95% bootstrap CI [{exponent_moca['ci_lower']:.3f}, "
             f"{exponent_moca['ci_upper']:.3f}], raw p={exponent_moca['p_value']:.4g}, "
             f"family FDR p={exponent_moca['p_fdr_bh']:.4g})."
+        ),
+        (
+            "The QC-qualified PD-only MOCA sensitivity was "
+            f"rho={exponent_moca_qc['estimate']:.3f} "
+            f"(n={int(exponent_moca_qc['n_subjects'])}, 95% bootstrap CI "
+            f"[{exponent_moca_qc['ci_lower']:.3f}, "
+            f"{exponent_moca_qc['ci_upper']:.3f}], raw p="
+            f"{exponent_moca_qc['p_value']:.4g}, aperiodic-family FDR p="
+            f"{exponent_moca_qc['p_fdr_bh']:.4g})."
         ),
         (
             "The diagnostic-group comparison and the PD-only MOCA association answer "
@@ -439,6 +481,7 @@ def run_analysis(
     aperiodic_group_comparison = compare_aperiodic_exponent_groups(
         subject_features,
         confidence_level=float(config["analysis"]["bootstrap_confidence_level"]),
+        fdr_alpha=float(config["analysis"]["fdr_alpha"]),
     )
     electrode_features, electrode_order = build_electrode_features(
         config, cohort, dictionary
@@ -744,6 +787,32 @@ def run_analysis(
                     "p_value",
                 ].iloc[0]
             ),
+            "qc_sensitivity": {
+                "adjusted_pd_minus_control": float(
+                    aperiodic_group_comparison.loc[
+                        aperiodic_group_comparison["feature_id"].eq(
+                            "aperiodic_exponent_qc"
+                        ),
+                        "adjusted_pd_coefficient",
+                    ].iloc[0]
+                ),
+                "adjusted_pd_p_value": float(
+                    aperiodic_group_comparison.loc[
+                        aperiodic_group_comparison["feature_id"].eq(
+                            "aperiodic_exponent_qc"
+                        ),
+                        "adjusted_pd_p_value",
+                    ].iloc[0]
+                ),
+                "moca_partial_spearman": float(
+                    primary_results.loc[
+                        primary_results["feature_id"].eq(
+                            "aperiodic_exponent_qc"
+                        ),
+                        "estimate",
+                    ].iloc[0]
+                ),
+            },
         },
         "dimension_sensitivity": {
             "embedding_dimensions": config["dimension_sensitivity"]["embedding_dimensions"],

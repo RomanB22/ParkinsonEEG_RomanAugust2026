@@ -9,6 +9,7 @@
     "bout_subject_file": "scale_free_analysis/processed/metrics/subject_band_metrics.csv",
     "bout_electrode_file": "scale_free_analysis/processed/metrics/electrode_band_metrics.csv",
     "aperiodic_subject_file": "scale_free_analysis/processed/metrics/subject_aperiodic_metrics.csv",
+    "aperiodic_qc_subject_file": "scale_free_analysis/processed/metrics/subject_aperiodic_qc_metrics.csv",
     "aperiodic_electrode_file": "scale_free_analysis/processed/metrics/electrode_aperiodic_metrics.csv",
     "bout_ordinal_subject_file": "bout_analyses/processed/metrics/subject_band_metrics.csv",
     "bout_ordinal_electrode_file": "bout_analyses/processed/metrics/subject_electrode_band_metrics.csv",
@@ -30,7 +31,7 @@
     "fdr_scope": "within_feature_family_and_correlation_method"
   },
   "features": {
-    "aperiodic_metrics": ["aperiodic_exponent"],
+    "aperiodic_metrics": ["aperiodic_exponent", "aperiodic_exponent_qc"],
     "ordinal_metrics": ["entropy", "complexity", "fisher_information"],
     "ordinal_bands": ["delta", "theta", "alpha", "beta", "low_gamma", "broad_5_15"],
     "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],
@@ -72,7 +73,8 @@
     "embedding_dimension": 6,
     "delay_samples": 1,
     "shared_electrodes": 60,
-    "scale_free_psd_range_hz": [1.0, 50.0]
+    "scale_free_psd_range_hz": [1.0, 50.0],
+    "aperiodic_sensitivity_ranges_hz": [[1.0, 50.0], [1.0, 40.0], [2.0, 50.0], [2.0, 40.0]]
   },
   "plots": {
     "dpi": 150,

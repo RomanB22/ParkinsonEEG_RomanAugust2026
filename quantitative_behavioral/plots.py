@@ -39,72 +39,80 @@ def plot_aperiodic_exponent_group_comparison(
     path: Path,
     dpi: int,
 ) -> None:
-    """Show all subject means and the age/sex-adjusted group estimate."""
-    table = features.loc[
-        features["feature_id"].eq("aperiodic_exponent")
-    ].dropna(subset=["value", "group"])
-    result = comparison.iloc[0]
+    """Show all-fit and QC-qualified subject means with adjusted estimates."""
     groups = ["Control", "PD"]
-    values = [
-        table.loc[table["group"].eq(group), "value"].to_numpy(dtype=float)
-        for group in groups
-    ]
-    fig, axis = plt.subplots(figsize=(8.2, 6.2))
-    violin = axis.violinplot(values, positions=[0, 1], widths=0.8, showextrema=False)
-    for body, color in zip(violin["bodies"], ["#0072B2", "#D55E00"]):
-        body.set_facecolor(color)
-        body.set_edgecolor(color)
-        body.set_alpha(0.22)
-    box = axis.boxplot(
-        values,
-        positions=[0, 1],
-        widths=0.25,
-        patch_artist=True,
-        showfliers=False,
-        medianprops={"color": "black", "linewidth": 1.5},
+    fig, axes = plt.subplots(
+        1, len(comparison), figsize=(7.0 * len(comparison), 6.2), squeeze=False
     )
-    for patch, color in zip(box["boxes"], ["#0072B2", "#D55E00"]):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.45)
     rng = np.random.default_rng(20260824)
-    for position, (group, group_values, color) in enumerate(
-        zip(groups, values, ["#0072B2", "#D55E00"])
-    ):
-        axis.scatter(
-            position + rng.uniform(-0.13, 0.13, len(group_values)),
-            group_values,
-            color=color,
-            alpha=0.62,
-            s=24,
-            edgecolors="white",
-            linewidths=0.3,
-            label=f"{group} (n={len(group_values)})",
+    for axis, (_, result) in zip(axes.flat, comparison.iterrows()):
+        table = features.loc[
+            features["feature_id"].eq(result["feature_id"])
+        ].dropna(subset=["value", "group"])
+        values = [
+            table.loc[table["group"].eq(group), "value"].to_numpy(dtype=float)
+            for group in groups
+        ]
+        violin = axis.violinplot(
+            values, positions=[0, 1], widths=0.8, showextrema=False
         )
-    axis.set_xticks([0, 1], groups)
-    axis.set(
-        ylabel="Subject-mean aperiodic exponent",
-        title="Aperiodic exponent by diagnostic group (specparam, 1–50 Hz)",
-    )
-    axis.grid(axis="y", alpha=0.2)
-    axis.legend(frameon=False, loc="upper left")
-    axis.text(
-        0.98,
-        0.98,
-        (
-            "Age/sex-adjusted PD − Control\n"
-            f"Δ={result['adjusted_pd_coefficient']:.3f} "
-            f"[{result['adjusted_pd_ci_lower']:.3f}, "
-            f"{result['adjusted_pd_ci_upper']:.3f}]\n"
-            f"HC3 p={result['adjusted_pd_p_value']:.4g}\n"
-            f"Hedges g={result['hedges_g_pd_minus_control']:.3f}; "
-            f"Welch p={result['welch_p_value']:.4g}"
-        ),
-        transform=axis.transAxes,
-        ha="right",
-        va="top",
-        fontsize=9,
-        bbox={"facecolor": "white", "edgecolor": "0.75", "alpha": 0.9},
-    )
+        for body, color in zip(violin["bodies"], ["#0072B2", "#D55E00"]):
+            body.set_facecolor(color)
+            body.set_edgecolor(color)
+            body.set_alpha(0.22)
+        box = axis.boxplot(
+            values,
+            positions=[0, 1],
+            widths=0.25,
+            patch_artist=True,
+            showfliers=False,
+            medianprops={"color": "black", "linewidth": 1.5},
+        )
+        for patch, color in zip(box["boxes"], ["#0072B2", "#D55E00"]):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.45)
+        for position, (group, group_values, color) in enumerate(
+            zip(groups, values, ["#0072B2", "#D55E00"])
+        ):
+            axis.scatter(
+                position + rng.uniform(-0.13, 0.13, len(group_values)),
+                group_values,
+                color=color,
+                alpha=0.62,
+                s=24,
+                edgecolors="white",
+                linewidths=0.3,
+                label=f"{group} (n={len(group_values)})",
+            )
+        axis.set_xticks([0, 1], groups)
+        title = (
+            "All 60 electrode fits"
+            if result["feature_id"] == "aperiodic_exponent"
+            else "QC-qualified sensitivity"
+        )
+        axis.set(ylabel="Subject-mean aperiodic exponent", title=title)
+        axis.grid(axis="y", alpha=0.2)
+        axis.legend(frameon=False, loc="upper left")
+        axis.text(
+            0.98,
+            0.98,
+            (
+                "Age/sex-adjusted PD − Control\n"
+                f"Δ={result['adjusted_pd_coefficient']:.3f} "
+                f"[{result['adjusted_pd_ci_lower']:.3f}, "
+                f"{result['adjusted_pd_ci_upper']:.3f}]\n"
+                f"HC3 p={result['adjusted_pd_p_value']:.4g}; "
+                f"BH q={result['adjusted_pd_p_fdr_bh']:.4g}\n"
+                f"Hedges g={result['hedges_g_pd_minus_control']:.3f}; "
+                f"Welch p={result['welch_p_value']:.4g}"
+            ),
+            transform=axis.transAxes,
+            ha="right",
+            va="top",
+            fontsize=9,
+            bbox={"facecolor": "white", "edgecolor": "0.75", "alpha": 0.9},
+        )
+    fig.suptitle("Aperiodic exponent by diagnostic group (specparam, 1–50 Hz)")
     fig.tight_layout()
     _save(fig, path, dpi)
 
