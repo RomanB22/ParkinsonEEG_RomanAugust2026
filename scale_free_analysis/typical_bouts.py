@@ -421,6 +421,18 @@ def _plot_representations(
         )
 
 
+def _representation_figure(n_bands: int) -> tuple[plt.Figure, np.ndarray]:
+    """Allocate one envelope/phase/shape row for every configured band."""
+    if n_bands < 1:
+        raise ValueError("At least one bout band is required for the gallery")
+    return plt.subplots(
+        n_bands,
+        3,
+        figsize=(18, 4.25 * n_bands),
+        squeeze=False,
+    )
+
+
 def _plot_electrode(
     waveforms: np.ndarray,
     phase_phasors: np.ndarray,
@@ -436,7 +448,7 @@ def _plot_electrode(
     output_path: Path,
     dpi: int,
 ) -> None:
-    fig, axes = plt.subplots(4, 3, figsize=(18, 17), squeeze=False)
+    fig, axes = _representation_figure(len(bands))
     _plot_representations(
         axes,
         waveforms,
@@ -775,7 +787,7 @@ def generate_typical_bout_gallery(
         ("all", "grand_average_all_subjects.png"),
         ("fit_qc", "grand_average_fit_qc.png"),
     ):
-        fig, axes = plt.subplots(4, 3, figsize=(18, 17), squeeze=False)
+        fig, axes = _representation_figure(len(bands))
         _plot_representations(
             axes,
             waveforms,

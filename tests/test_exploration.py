@@ -17,7 +17,11 @@ from exploration.modeling import (
     bootstrap_performance,
     run_nested_validation,
 )
-from exploration.matching import match_control_pd_pairs, remove_demographic_predictors
+from exploration.matching import (
+    apply_precomputed_control_pd_pairs,
+    match_control_pd_pairs,
+    remove_demographic_predictors,
+)
 from exploration.pipeline import load_exploration_config
 from matched_analysis.prepare_matched_cohort import prepare_matched_cohort
 
@@ -47,18 +51,20 @@ class ExplorationTests(unittest.TestCase):
             {"participant_id", "ID", "EEG", "TYPE", "UPDRS", "GROUP"},
         )
 
-    def test_no_model_contains_forbidden_or_overlapping_psd_features(self):
+    def test_no_model_contains_forbidden_or_overlapping_broad_band_features(self):
         table, _ = build_feature_table(self.config)
         validate_model_features(table, self.config["models"])
         for specification in self.config["models"].values():
             features = set(specification["features"])
             self.assertFalse(features & FORBIDDEN_MODEL_COLUMNS)
-            self.assertFalse(
-                any(
-                    "psd" in feature and "broad_5_15" in feature
-                    for feature in features
-                )
-            )
+            self.assertFalse(any("broad_5_15" in feature for feature in features))
+        self.assertEqual(
+            self.config["candidate_features"]["descriptive_only_bout_bands"],
+            ["broad_5_15"],
+        )
+        self.assertNotIn(
+            "broad_5_15", self.config["candidate_features"]["bout_bands"]
+        )
 
     def test_nested_validation_returns_repeated_out_of_fold_predictions(self):
         rng = np.random.default_rng(7)
@@ -173,6 +179,32 @@ class ExplorationTests(unittest.TestCase):
                 config = json.loads(Path(config_path).read_text(encoding="utf-8"))
                 self.assertEqual(config["input"]["participants_file"], matched_path)
                 self.assertTrue(config["output_dir"].endswith("processed_matched"))
+                if Path(config_path).name == "exploration.json":
+                    self.assertEqual(
+                        config["demographic_matching"]["precomputed_pairs_file"],
+                        str(Path(directory) / "demographic_match_pairs.csv"),
+                    )
+
+    def test_precomputed_pairs_are_validated_without_double_matching(self):
+        table, _ = build_feature_table(self.config)
+        matched, pairs, balance = match_control_pd_pairs(
+            table,
+            maximum_age_difference_years=5.0,
+        )
+        reapplied, reused_pairs, reused_balance = apply_precomputed_control_pd_pairs(
+            matched,
+            pairs,
+            balance,
+            maximum_age_difference_years=5.0,
+        )
+        self.assertEqual(len(reapplied), 98)
+        self.assertTrue(reapplied["cv_group"].eq(reapplied["match_pair_id"]).all())
+        pd.testing.assert_frame_equal(
+            reused_pairs.reset_index(drop=True), pairs.reset_index(drop=True)
+        )
+        pd.testing.assert_frame_equal(
+            reused_balance.reset_index(drop=True), balance.reset_index(drop=True)
+        )
 
     def test_matched_nested_validation_keeps_pairs_together(self):
         rng = np.random.default_rng(19)

@@ -22,6 +22,7 @@ from scale_free_analysis.metrics import (
 from scale_free_analysis.pipeline import load_analysis_config
 from scale_free_analysis.specparam_gallery import generate_specparam_gallery
 from scale_free_analysis.typical_bouts import (
+    _representation_figure,
     mean_centered_analytic,
     mean_centered_envelope,
 )
@@ -45,6 +46,15 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
                 "broad_5_15": [5.0, 15.0],
             },
         )
+
+    def test_typical_bout_gallery_allocates_one_row_per_band(self):
+        figure, axes = _representation_figure(len(self.config["bands"]))
+        try:
+            self.assertEqual(axes.shape, (5, 3))
+        finally:
+            import matplotlib.pyplot as plt
+
+            plt.close(figure)
 
     def test_config_covers_full_cleaned_frequency_range(self):
         config = load_analysis_config("scale_free_analysis/config.json")

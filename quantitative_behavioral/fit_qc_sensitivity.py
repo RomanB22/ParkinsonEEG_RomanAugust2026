@@ -94,6 +94,10 @@ def run_behavioral_fit_qc_sensitivity(
     scale = pd.read_csv(scale_path)
     ordinal = pd.read_csv(ordinal_path)
     bands = [str(value) for value in config["features"]["bout_bands"]]
+    descriptive_only_bands = [
+        str(value) for value in config["features"]["descriptive_only_bands"]
+    ]
+    expected_source_bands = set(bands) | set(descriptive_only_bands)
     bout_metrics = [str(value) for value in config["features"]["bout_properties"]]
     ordinal_metrics = [
         str(value) for value in config["features"]["bout_ordinal_metrics"]
@@ -115,8 +119,10 @@ def run_behavioral_fit_qc_sensitivity(
             raise ValueError(f"{name} table is missing columns: {missing}")
         if not table["subject_fit_qc_pass"].all():
             raise ValueError(f"{name} includes nonqualified subjects")
-        if set(table["band"].astype(str)) != set(bands):
-            raise ValueError(f"{name} does not contain the requested bands")
+        if set(table["band"].astype(str)) != expected_source_bands:
+            raise ValueError(
+                f"{name} must contain the inferential and descriptive-only bands"
+            )
     scale_subjects = set(scale["subject_id"].astype(str))
     ordinal_subjects = set(ordinal["subject_id"].astype(str))
     if scale_subjects != ordinal_subjects:
@@ -229,7 +235,8 @@ def run_behavioral_fit_qc_sensitivity(
             "They do not replace the all-electrode provenance analysis. Partial "
             "Spearman correlations adjust for age and sex, with BH FDR controlled "
             "separately within the fit-QC bout-property and fit-QC within-bout "
-            "ordinal families.",
+            "ordinal families. The overlapping broad 5–15 Hz band is retained "
+            "upstream for plots but excluded from these associations.",
             "",
             f"FDR-significant adjusted associations: {len(significant)}/{len(adjusted)}.",
             *result_lines,
@@ -246,7 +253,8 @@ def run_behavioral_fit_qc_sensitivity(
         "families": dictionary["family"].value_counts().to_dict(),
         "policy": (
             "PD-only MOCA fit-QC sensitivity; partial Spearman adjusted for age "
-            "and sex; BH FDR within each fit-QC feature family."
+            "and sex; BH FDR within each fit-QC feature family; broad_5_15 is "
+            "descriptive-only and excluded."
         ),
     }
     (output_root / "fit_qc_sensitivity_manifest.json").write_text(

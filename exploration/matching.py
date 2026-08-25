@@ -166,6 +166,120 @@ def match_control_pd_pairs(
     return matched, pair_table, balance
 
 
+def apply_precomputed_control_pd_pairs(
+    table: pd.DataFrame,
+    pair_table: pd.DataFrame,
+    balance_table: pd.DataFrame,
+    *,
+    maximum_age_difference_years: float,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Validate and apply canonical pairs that were created upstream once."""
+    required_table = {
+        "subject_id",
+        "group",
+        "age_years",
+        "sex_male",
+        "target_pd",
+    }
+    missing = sorted(required_table - set(table))
+    if missing:
+        raise ValueError(f"Pre-matched feature table is missing columns: {missing}")
+    required_pairs = {
+        "match_pair_id",
+        "control_subject_id",
+        "pd_subject_id",
+        "sex_male",
+        "control_age_years",
+        "pd_age_years",
+        "absolute_age_difference_years",
+    }
+    missing = sorted(required_pairs - set(pair_table))
+    if missing:
+        raise ValueError(f"Precomputed pair table is missing columns: {missing}")
+    required_balance = {
+        "cohort",
+        "variable",
+        "standardized_mean_difference_pd_minus_control",
+    }
+    missing = sorted(required_balance - set(balance_table))
+    if missing:
+        raise ValueError(f"Precomputed balance table is missing columns: {missing}")
+    if pair_table["match_pair_id"].duplicated().any():
+        raise ValueError("Precomputed match pair IDs must be unique")
+    subject_columns = ["control_subject_id", "pd_subject_id"]
+    paired_subjects = pair_table[subject_columns].astype(str).to_numpy().ravel()
+    if len(set(paired_subjects)) != len(paired_subjects):
+        raise ValueError("A precomputed matched subject appears in multiple pairs")
+    table_subjects = set(table["subject_id"].astype(str))
+    if set(paired_subjects) != table_subjects:
+        raise ValueError(
+            "Precomputed pairs and the matched feature table do not contain "
+            "the same subjects"
+        )
+    if (
+        pair_table["absolute_age_difference_years"].to_numpy(dtype=float)
+        > float(maximum_age_difference_years)
+    ).any():
+        raise ValueError("A precomputed pair exceeds the configured age caliper")
+
+    lookup = pd.concat(
+        [
+            pair_table[["match_pair_id", "control_subject_id"]]
+            .rename(columns={"control_subject_id": "subject_id"})
+            .assign(expected_group="Control", expected_target=0),
+            pair_table[["match_pair_id", "pd_subject_id"]]
+            .rename(columns={"pd_subject_id": "subject_id"})
+            .assign(expected_group="PD", expected_target=1),
+        ],
+        ignore_index=True,
+    )
+    lookup["subject_id"] = lookup["subject_id"].astype(str)
+    matched = table.copy()
+    matched["subject_id"] = matched["subject_id"].astype(str)
+    if "match_pair_id" in matched:
+        recorded = matched.set_index("subject_id")["match_pair_id"].astype(str)
+        expected = lookup.set_index("subject_id")["match_pair_id"].astype(str)
+        if not recorded.sort_index().equals(expected.sort_index()):
+            raise ValueError(
+                "Participant metadata match_pair_id values disagree with the "
+                "canonical pair table"
+            )
+        matched = matched.drop(columns=["match_pair_id"])
+    matched = matched.merge(lookup, on="subject_id", how="left", validate="one_to_one")
+    if not matched["group"].eq(matched["expected_group"]).all():
+        raise ValueError("Precomputed pair group labels disagree with feature metadata")
+    if not matched["target_pd"].eq(matched["expected_target"]).all():
+        raise ValueError("Precomputed pair targets disagree with feature metadata")
+    matched = matched.drop(columns=["expected_group", "expected_target"])
+    matched["cv_group"] = matched["match_pair_id"]
+    matched = matched.sort_values(["match_pair_id", "target_pd"]).reset_index(drop=True)
+
+    pair_sex = matched.groupby("match_pair_id")["sex_male"].nunique()
+    if not pair_sex.eq(1).all():
+        raise ValueError("Precomputed pairs do not match sex exactly")
+    observed = matched.pivot(
+        index="match_pair_id", columns="group", values="age_years"
+    )
+    observed_gap = (observed["PD"] - observed["Control"]).abs().sort_index()
+    recorded_gap = pair_table.set_index("match_pair_id")[
+        "absolute_age_difference_years"
+    ].astype(float).sort_index()
+    if not np.allclose(observed_gap, recorded_gap, rtol=0.0, atol=1e-12):
+        raise ValueError("Precomputed pair age differences disagree with feature metadata")
+    expected_balance_rows = {
+        ("full", "age_years"),
+        ("full", "sex_male"),
+        ("matched", "age_years"),
+        ("matched", "sex_male"),
+    }
+    found_balance_rows = set(
+        balance_table[["cohort", "variable"]].itertuples(index=False, name=None)
+    )
+    if not expected_balance_rows.issubset(found_balance_rows):
+        raise ValueError("Precomputed balance table lacks full/matched age/sex rows")
+    return matched, pair_table.copy(), balance_table.copy()
+
+
 def remove_demographic_predictors(
     models: dict[str, dict[str, object]],
 ) -> dict[str, dict[str, object]]:

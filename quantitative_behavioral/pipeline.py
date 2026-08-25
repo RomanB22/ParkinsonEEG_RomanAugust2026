@@ -112,6 +112,27 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("Only regular ordinal H, C, and F are supported")
     if requested.get("bout_ordinal_metrics") != regular_metrics:
         raise ValueError("Within-bout ordinal features must be regular H, C, and F")
+    if requested.get("ordinal_bands") != [
+        "delta",
+        "theta",
+        "alpha",
+        "beta",
+        "low_gamma",
+    ]:
+        raise ValueError(
+            "Behavioral ordinal associations must exclude overlapping broad_5_15"
+        )
+    if requested.get("bout_bands") != [
+        "theta",
+        "alpha",
+        "low_beta",
+        "high_beta",
+    ]:
+        raise ValueError(
+            "Behavioral bout associations must exclude overlapping broad_5_15"
+        )
+    if requested.get("descriptive_only_bands") != ["broad_5_15"]:
+        raise ValueError("broad_5_15 must remain explicitly descriptive-only")
     sensitivity = config.get("dimension_sensitivity")
     if not isinstance(sensitivity, dict) or not sensitivity.get("enabled"):
         raise ValueError("The ordinal embedding-dimension sensitivity must be enabled")
@@ -124,6 +145,16 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
             "Dimension analysis must include regular H/C/F plus Rényi Hα/Cα at "
             "alpha=0.1, 0.5, 0.9, 1.1, 2, 5, and 10"
         )
+    if sensitivity.get("bands") != [
+        "delta",
+        "theta",
+        "alpha",
+        "beta",
+        "low_gamma",
+    ]:
+        raise ValueError(
+            "Dimension-sensitivity associations must exclude overlapping broad_5_15"
+        )
     if (
         sensitivity.get("analysis_block_policy")
         != "one_separate_feature_matrix_per_embedding_dimension"
@@ -131,7 +162,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("Each embedding dimension must use a separate feature matrix")
     if (
         sensitivity.get("fdr_scope")
-        != "within_each_dimension_across_all_119_features_per_method"
+        != "within_each_dimension_across_all_102_features_per_method"
     ):
         raise ValueError("Dimension-analysis FDR must be controlled separately within D")
     if int(config["expected"]["shared_electrodes"]) < 1:
@@ -411,12 +442,13 @@ def _write_report(
             (
                 "Regular ordinal H, C, and F and Rényi entropy/complexity at alpha=0.1, "
                 "0.5, 0.9, 1.1, 2, 5, and 10 were tested at D=3, 4, 5, and 6 with tau=1 for "
-                "broadband and all six ordinal bands."
+                "broadband and the five non-overlapping ordinal bands. The broad 5–15 Hz "
+                "band is retained only in descriptive plots."
             ),
             (
-                "Each embedding dimension is a separate 119-feature analysis block and has "
+                "Each embedding dimension is a separate 102-feature analysis block and has "
                 "its own one-row-per-subject feature matrix. BH-FDR is controlled within "
-                "each D across its 119 features and separately by correlation method."
+                "each D across its 102 features and separately by correlation method."
             ),
             (
                 "D=6 is the primary ordinal block; D=3, D=4, and D=5 are sensitivity "
@@ -428,7 +460,7 @@ def _write_report(
             "Adjusted FDR rejections by separate D block:",
             "",
             *[
-                f"- D={dimension}: {rejection_counts[dimension]} of 119"
+                f"- D={dimension}: {rejection_counts[dimension]} of 102"
                 for dimension in dimensions
             ],
             "",
@@ -879,7 +911,7 @@ def run_analysis(
             },
             "n_electrode_tests": len(dimension_electrode_correlations),
             "feature_matrix_policy": (
-                "One separate 119-feature, one-row-per-subject matrix for each D; "
+                "One separate 102-feature, one-row-per-subject matrix for each D; "
                 "embedding dimensions are never concatenated into one model matrix."
             ),
         },

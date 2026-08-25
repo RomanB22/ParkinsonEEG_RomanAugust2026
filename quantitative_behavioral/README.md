@@ -32,20 +32,22 @@ are never treated as independent patients.
 
 ## Prespecified feature families
 
-The defaults produce 63 transparent features:
+The defaults produce 52 transparent inferential features:
 
 | Family | Features | Count |
 |---|---|---:|
 | Aperiodic | All-fit and QC-qualified fixed-mode specparam exponents over 1–50 Hz | 2 |
 | Broadband ordinal | H, C, F from `D=6`, `tau=1` | 3 |
-| Band ordinal | H, C, F in delta, theta, alpha, beta, low gamma, and broad 5–15 Hz | 18 |
-| Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in five eBOSC bands | 25 |
-| Within-bout ordinal | H, C, F pooled within the five configured bout bands | 15 |
+| Band ordinal | H, C, F in delta, theta, alpha, beta, and low gamma | 15 |
+| Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in four canonical eBOSC bands | 20 |
+| Within-bout ordinal | H, C, F pooled within the four canonical bout bands | 12 |
 
-The 63-feature primary table retains regular permutation entropy,
+The 52-feature primary table retains regular permutation entropy,
 statistical complexity, and Fisher information. Rényi quantities are added in
 the separate embedding-dimension analysis blocks described below. Within-bout
-ordinal quantities remain regular H/C/F only.
+ordinal quantities remain regular H/C/F only. The overlapping broad 5–15 Hz
+band remains available in upstream bout metrics and diagnostic galleries, but
+is deliberately excluded from every MOCA association and FDR family.
 
 The primary ordinal source is the completed 60-electrode `D6_tau1` parameter
 sweep. The aperiodic exponent and bout properties come from the 1–50 Hz
@@ -57,10 +59,10 @@ ordinal features come from `bout_analyses/`. All upstream manifests are checked
 for the expected 60 shared electrodes and analysis parameters before any
 correlation is calculated.
 
-A separate fit-QC sensitivity repeats the 25 bout-property and 15 within-bout
+A separate fit-QC sensitivity repeats the 20 bout-property and 12 within-bout
 ordinal MOCA associations using only passing electrodes in subjects with at
 least 48/60 passing fits. It currently contains 70 PD participants. This
-40-feature sensitivity is kept out of the primary 63-feature table and receives
+32-feature sensitivity is kept out of the primary 52-feature table and receives
 its own family-specific BH corrections.
 
 ## Separate embedding-dimension analyses
@@ -71,11 +73,12 @@ entropy and complexity at **alpha=0.1, 0.5, 0.9, 1.1, 2, 5, and 10**. The Rényi
 `ordpy.renyi_complexity_entropy`; no separate `renyi_entropy` calculation is
 used.
 
-Each D is a separate 119-feature analysis block: seven signal scopes
-(broadband plus six bands) × fifteen quantities. The pipeline writes a distinct
+Each D is a separate 102-feature analysis block: six signal scopes
+(broadband plus five non-overlapping bands) × seventeen quantities. The pipeline writes a distinct
 one-row-per-subject matrix for each D and never concatenates the four D blocks
 into one model feature vector. BH-FDR is controlled separately within each D
-across its 119 features and within each correlation method.
+across its 102 features and within each correlation method. Broad 5–15 Hz
+ordinal quantities remain descriptive and do not enter these blocks.
 
 The D blocks are separate analyses, but they are **not statistically
 independent**: all four reuse the same participants and EEG recordings and
@@ -217,7 +220,7 @@ For the D=3,4,5,6 robustness analysis, use
 statistically significant only when the primary adjusted row has both
 `fdr_reject == True` and `p_fdr_bh < 0.05`. The raw `p_value` is provided for
 transparency, but `p_value < 0.05` by itself is not the decision rule after
-testing 119 features within that D. The `family` column identifies the relevant
+testing 102 features within that D. The `family` column identifies the relevant
 FDR block (`ordinal_D3` through `ordinal_D6`). Bootstrap intervals quantify
 effect uncertainty; a stable direction and magnitude across D strengthens the
 robustness interpretation without making the D blocks statistically

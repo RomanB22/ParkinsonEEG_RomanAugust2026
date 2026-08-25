@@ -33,7 +33,11 @@ from .modeling import (
     fit_final_models,
     run_nested_validation,
 )
-from .matching import match_control_pd_pairs, remove_demographic_predictors
+from .matching import (
+    apply_precomputed_control_pd_pairs,
+    match_control_pd_pairs,
+    remove_demographic_predictors,
+)
 from .plots import (
     plot_calibration,
     plot_coefficient_stability,
@@ -96,9 +100,19 @@ def load_exploration_config(path: str | Path) -> dict[str, Any]:
         "alpha",
         "low_beta",
         "high_beta",
-        "broad_5_15",
     ]:
-        raise ValueError("Exploration bout bands must match the bout pipeline")
+        raise ValueError(
+            "Exploration predictors must exclude overlapping broad_5_15 bout features"
+        )
+    if candidate.get("descriptive_only_bout_bands") != ["broad_5_15"]:
+        raise ValueError("broad_5_15 must remain explicitly descriptive-only")
+    modeled_features = {
+        str(feature)
+        for specification in config["models"].values()
+        for feature in specification["features"]
+    }
+    if any("broad_5_15" in feature for feature in modeled_features):
+        raise ValueError("broad_5_15 must not enter any exploration model")
     matching = config["demographic_matching"]
     if matching.get("exact_variables") != ["sex_male"]:
         raise ValueError("Demographic matching must require exact sex")
@@ -477,12 +491,32 @@ def run_analysis(
     feature_table, provenance = build_feature_table(config)
     pair_table = balance_table = pd.DataFrame()
     if matched_demographics:
-        feature_table, pair_table, balance_table = match_control_pd_pairs(
-            feature_table,
-            maximum_age_difference_years=float(
-                config["demographic_matching"]["maximum_age_difference_years"]
-            ),
-        )
+        matching_config = config["demographic_matching"]
+        precomputed_pairs = matching_config.get("precomputed_pairs_file")
+        precomputed_balance = matching_config.get("precomputed_balance_file")
+        if bool(precomputed_pairs) != bool(precomputed_balance):
+            raise ValueError(
+                "Both precomputed_pairs_file and precomputed_balance_file are required"
+            )
+        if precomputed_pairs:
+            feature_table, pair_table, balance_table = (
+                apply_precomputed_control_pd_pairs(
+                    feature_table,
+                    pd.read_csv(precomputed_pairs),
+                    pd.read_csv(precomputed_balance),
+                    maximum_age_difference_years=float(
+                        matching_config["maximum_age_difference_years"]
+                    ),
+                )
+            )
+            logger.info("Using validated canonical precomputed demographic pairs")
+        else:
+            feature_table, pair_table, balance_table = match_control_pd_pairs(
+                feature_table,
+                maximum_age_difference_years=float(
+                    matching_config["maximum_age_difference_years"]
+                ),
+            )
         models = remove_demographic_predictors(config["models"])
         logger.info(
             "Matched sensitivity cohort | pairs=%d | maximum_age_gap=%.1f years",
@@ -772,7 +806,8 @@ def run_analysis(
         "feature_policy": (
             "Every model uses one row per subject. Electrode and bout observations are "
             "aggregated within subject before modeling. PSD predictors are prespecified "
-            "log2 ratios against low gamma; overlapping broad_5_15 is excluded. Rényi "
+            "log2 ratios against low gamma; overlapping broad_5_15 PSD, bout, and ordinal "
+            "features are descriptive-only and excluded from models. Rényi "
             "models retain only the prespecified low/high Rényi endpoints because intermediate "
             "alphas are extremely redundant. Typical-bout curves are reduced to peak, "
             "half-height width, temporal asymmetry, and relative-phase consistency."

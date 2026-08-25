@@ -33,8 +33,9 @@
   "features": {
     "aperiodic_metrics": ["aperiodic_exponent", "aperiodic_exponent_qc"],
     "ordinal_metrics": ["entropy", "complexity", "fisher_information"],
-    "ordinal_bands": ["delta", "theta", "alpha", "beta", "low_gamma", "broad_5_15"],
-    "bout_bands": ["theta", "alpha", "low_beta", "high_beta", "broad_5_15"],
+    "ordinal_bands": ["delta", "theta", "alpha", "beta", "low_gamma"],
+    "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],
+    "descriptive_only_bands": ["broad_5_15"],
     "bout_properties": [
       "oscillatory_occupancy",
       "bouts_per_minute",
@@ -68,10 +69,10 @@
       "renyi_entropy_alpha_10",
       "renyi_complexity_alpha_10"
     ],
-    "bands": ["delta", "theta", "alpha", "beta", "low_gamma", "broad_5_15"],
+    "bands": ["delta", "theta", "alpha", "beta", "low_gamma"],
     "role": "D6_primary_D3_D4_D5_sensitivity",
     "analysis_block_policy": "one_separate_feature_matrix_per_embedding_dimension",
-    "fdr_scope": "within_each_dimension_across_all_119_features_per_method"
+    "fdr_scope": "within_each_dimension_across_all_102_features_per_method"
   },
   "expected": {
     "embedding_dimension": 6,

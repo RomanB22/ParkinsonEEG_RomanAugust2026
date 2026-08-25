@@ -92,12 +92,16 @@ stage_current() {
                 && grep -q 'broad_5_15' bout_analyses/processed_matched/metrics/subject_band_metrics_fit_qc.csv
             ;;
         exploration/processed_matched/manifest.json)
-            grep -q 'bout_broad_5_15_oscillatory_occupancy' \
-                exploration/processed_matched/features/subject_modeling_table.csv
+            grep -q 'bout_alpha_oscillatory_occupancy' \
+                exploration/processed_matched/features/subject_modeling_table.csv \
+                && ! grep -q 'broad_5_15' \
+                    exploration/processed_matched/features/subject_modeling_table.csv
             ;;
         quantitative_behavioral/processed_matched/manifest.json)
-            grep -q 'bout_broad_5_15_oscillatory_occupancy' \
-                quantitative_behavioral/processed_matched/metrics/feature_dictionary.csv
+            grep -q 'bout_alpha_bouts_per_minute' \
+                quantitative_behavioral/processed_matched/metrics/feature_dictionary.csv \
+                && ! grep -q 'broad_5_15' \
+                    quantitative_behavioral/processed_matched/metrics/feature_dictionary.csv
             ;;
         *) return 0 ;;
     esac

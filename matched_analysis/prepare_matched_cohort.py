@@ -129,6 +129,12 @@ def prepare_matched_cohort(
                 }
             )
             config["demographic_matching"]["output_dir"] = analysis_output
+            config["demographic_matching"]["precomputed_pairs_file"] = str(
+                pairs_path
+            )
+            config["demographic_matching"]["precomputed_balance_file"] = str(
+                balance_path
+            )
         elif name == "quantitative_behavioral":
             config["input"].update(
                 {
