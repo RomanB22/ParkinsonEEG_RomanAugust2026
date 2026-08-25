@@ -152,8 +152,17 @@ echo "STEP 1/3 — Inspect dataset and preserve metadata"
 run_python scripts/inspect_dataset.py --config "$CONFIG_PATH"
 
 echo
-echo "STEP 2/3 — Run validation tests"
-run_python -m unittest discover -s tests -v
+echo "STEP 2/3 — Run preprocessing validation tests"
+# Tests that read downstream analysis products cannot run during a clean
+# bootstrap because those products are intentionally created only after this
+# stage. The complete repository suite is run by run_all_analyses.sh after all
+# downstream outputs exist.
+run_python -m unittest -v \
+    tests.test_cleaning \
+    tests.test_config \
+    tests.test_dataset \
+    tests.test_ica \
+    tests.test_simple_pipeline
 
 echo
 case "$MODE" in

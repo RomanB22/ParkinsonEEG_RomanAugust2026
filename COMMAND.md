@@ -38,7 +38,9 @@ cohorts are required.
 The runner is bootstrappable from the source `dataset/`: if the root
 `processed/` directory is absent, dataset inspection first creates
 `processed/metadata/` and `processed/qc/dataset_inspection/` before signal
-cleaning begins.
+cleaning begins. Preprocessing-only tests run before cleaning; integration
+tests that require generated analysis files run at the end of the complete
+pipeline.
 
 ## Automatic ICA fallback
 
