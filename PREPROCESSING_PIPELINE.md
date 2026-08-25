@@ -275,15 +275,15 @@ final and temporary ICA sampling rates.
 Inspect and test:
 
 ```bash
-conda run -n MNE_Roman python -m pip install -r requirements-icalabel.txt
-conda run -n MNE_Roman python scripts/inspect_dataset.py
-conda run -n MNE_Roman python -m unittest discover -s tests -v
+conda run -n MNE_August2026 python -m pip install -r requirements-icalabel.txt
+conda run -n MNE_August2026 python scripts/inspect_dataset.py
+conda run -n MNE_August2026 python -m unittest discover -s tests -v
 ```
 
 Review every subject with ICA kept at the final 120 Hz rate:
 
 ```bash
-conda run -n MNE_Roman python scripts/run_preprocessing.py \
+conda run -n MNE_August2026 python scripts/run_preprocessing.py \
   --review-only --no-ica-downsampling --overwrite
 ```
 
@@ -291,7 +291,7 @@ After every prefilled ICA entry has been visually checked and every
 `manual_review_confirmed` flag is `true`, clean all recordings at 120 Hz:
 
 ```bash
-conda run -n MNE_Roman python scripts/run_preprocessing.py \
+conda run -n MNE_August2026 python scripts/run_preprocessing.py \
   --no-ica-downsampling --overwrite
 ```
 

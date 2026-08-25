@@ -15,5 +15,6 @@ mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME"
 # Conda captures subprocess output by default, which hides tqdm updates until
 # the process exits. Stream stdout/stderr directly so interactive terminals
 # render the progress bar in real time.
-exec conda run --no-capture-output -n MNE_Roman \
+CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
+exec conda run --no-capture-output -n "$CONDA_ENV" \
     python ordinal_analysis/run_ordinal_analysis.py "$@"

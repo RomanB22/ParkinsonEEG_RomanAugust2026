@@ -89,7 +89,7 @@ bash psd_analysis/run_psd_analysis.sh \
 ```
 
 Configuration is in [`config.json`](config.json). The runner uses the existing
-`MNE_Roman` environment and the same non-interactive cache policy as the
+`MNE_August2026` environment and the same non-interactive cache policy as the
 preprocessing workflow.
 
 ## Outputs
@@ -127,5 +127,5 @@ definition, electrode sets, frequency resolution, and topomap color limits.
 Run validation with:
 
 ```bash
-conda run -n MNE_Roman python -m unittest discover -s tests -v
+conda run -n MNE_August2026 python -m unittest discover -s tests -v
 ```

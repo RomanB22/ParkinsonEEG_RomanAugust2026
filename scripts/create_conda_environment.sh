@@ -19,7 +19,7 @@ Usage:
 Options:
   --env NAME          Environment name (default: MNE_August2026)
   --python VERSION    Python version for a new environment (default: 3.14)
-  --run-tests         Run the repository test suite after installation
+  --run-tests         Run preprocessing tests that do not require analysis outputs
   -h, --help          Show this message
 
 If the named environment already exists, it is kept and its Python packages
@@ -128,8 +128,13 @@ for package in packages:
 '
 
 if [[ "$RUN_TESTS" == true ]]; then
-    echo "Running repository tests"
-    conda run --name "$CONDA_ENV" python -m unittest discover -s tests -v
+    echo "Running preprocessing tests"
+    conda run --name "$CONDA_ENV" python -m unittest -v \
+        tests.test_cleaning \
+        tests.test_config \
+        tests.test_dataset \
+        tests.test_ica \
+        tests.test_simple_pipeline
 fi
 
 echo

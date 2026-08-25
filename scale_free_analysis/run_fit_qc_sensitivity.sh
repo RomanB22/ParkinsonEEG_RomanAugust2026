@@ -12,5 +12,6 @@ export MPLCONFIGDIR="${TMPDIR:-/tmp}/parkinson_eeg_mpl"
 export XDG_CACHE_HOME="${TMPDIR:-/tmp}/parkinson_eeg_cache"
 mkdir -p "$MPLCONFIGDIR" "$XDG_CACHE_HOME"
 
-exec conda run --no-capture-output -n MNE_Roman \
+CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
+exec conda run --no-capture-output -n "$CONDA_ENV" \
     python scale_free_analysis/run_fit_qc_sensitivity.py "$@"

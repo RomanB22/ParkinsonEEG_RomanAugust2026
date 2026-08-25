@@ -16,6 +16,7 @@ SKIP_TESTS=false
 SKIP_SWEEP=false
 SKIP_EXPLORATION=false
 SKIP_MATCHED=false
+CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
 
 usage() {
     cat <<'EOF'
@@ -41,10 +42,11 @@ Options:
   --overwrite          Rerun and replace every analysis stage
   --dry-run            Print the commands and freshness decisions only
   --no-progress        Disable progress bars where supported
-  --skip-tests         Do not run repository validation tests first
+  --skip-tests         Do not run repository integration tests after analyses
   --skip-sweep         Skip the nine-run D/tau ordinal parameter sweep
   --skip-exploration   Skip the PD-versus-Control model exploration
   --skip-matched       Skip the complete matched-cohort sensitivity pipeline
+  --env NAME           Conda environment (default: MNE_August2026)
   -h, --help           Show this help
 
 Prerequisite:
@@ -83,6 +85,11 @@ while [[ $# -gt 0 ]]; do
             SKIP_MATCHED=true
             shift
             ;;
+        --env)
+            [[ $# -ge 2 ]] || { printf 'ERROR: --env requires a name\n' >&2; exit 2; }
+            CONDA_ENV="$2"
+            shift 2
+            ;;
         -h|--help)
             usage
             exit 0
@@ -95,10 +102,10 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-command -v conda >/dev/null 2>&1 || {
-    printf 'ERROR: conda is not available on PATH\n' >&2
-    exit 1
-}
+export PARKINSON_EEG_CONDA_ENV="$CONDA_ENV"
+environment_arguments=(--env "$CONDA_ENV")
+if [[ "$DRY_RUN" == true ]]; then environment_arguments+=(--dry-run); fi
+bash scripts/ensure_conda_environment.sh "${environment_arguments[@]}"
 
 [[ -f processed/metadata/subjects.csv ]] || {
     printf 'ERROR: missing processed/metadata/subjects.csv\n' >&2
@@ -216,7 +223,9 @@ exploration_current() {
         exploration/processed/features/subject_modeling_table.csv || return 1
     grep -q 'ordinal_global_renyi_entropy_alpha_10' \
         exploration/processed/features/subject_modeling_table.csv || return 1
-    grep -q 'bout_broad_5_15_oscillatory_occupancy' \
+    grep -q 'bout_alpha_oscillatory_occupancy' \
+        exploration/processed/features/subject_modeling_table.csv || return 1
+    ! grep -q 'broad_5_15' \
         exploration/processed/features/subject_modeling_table.csv || return 1
 }
 
@@ -236,7 +245,9 @@ quantitative_current() {
     grep -q 'renyi_complexity_alpha_5' "$dictionary" || return 1
     grep -q 'renyi_entropy_alpha_10' "$dictionary" || return 1
     grep -q 'renyi_complexity_alpha_10' "$dictionary" || return 1
-    grep -q 'bout_broad_5_15_oscillatory_occupancy' "$primary_dictionary" || return 1
+    grep -q 'bout_alpha_bouts_per_minute' "$primary_dictionary" || return 1
+    ! grep -q 'broad_5_15' "$primary_dictionary" || return 1
+    ! grep -q 'broad_5_15' "$dictionary" || return 1
 }
 
 run_stage() {
@@ -260,11 +271,6 @@ run_stage() {
 printf 'Project: %s\n' "$SCRIPT_DIR"
 printf 'Cleaned epochs found: %s\n' "$epoch_count"
 printf 'Mode: %s\n' "$([[ "$OVERWRITE" == true ]] && printf overwrite || printf resume)"
-
-if [[ "$SKIP_TESTS" == false ]]; then
-    printf '\n=== Repository tests ===\n'
-    execute conda run -n MNE_Roman python -m unittest discover -s tests
-fi
 
 run_stage "PSD analysis" psd_current psd_analysis/processed/manifest.json \
     bash psd_analysis/run_psd_analysis.sh
@@ -343,7 +349,7 @@ run_stage "MOCA quantitative-behavioral analysis" quantitative_current \
 
 if [[ "$SKIP_MATCHED" == false ]]; then
     printf '\n=== Complete matched-cohort sensitivity pipeline ===\n'
-    matched_command=(bash matched_analysis/run_matched_analyses.sh)
+    matched_command=(bash matched_analysis/run_matched_analyses.sh --env "$CONDA_ENV")
     if [[ "$OVERWRITE" == true ]]; then matched_command+=(--overwrite); fi
     if [[ "$DRY_RUN" == true ]]; then matched_command+=(--dry-run); fi
     if [[ "$NO_PROGRESS" == true ]]; then matched_command+=(--no-progress); fi
@@ -354,6 +360,11 @@ if [[ "$SKIP_MATCHED" == false ]]; then
     execute "${matched_command[@]}"
 else
     printf '\n=== Complete matched-cohort sensitivity pipeline ===\n  skipped by request\n'
+fi
+
+if [[ "$SKIP_TESTS" == false ]]; then
+    printf '\n=== Repository integration tests ===\n'
+    execute conda run -n "$CONDA_ENV" python -m unittest discover -s tests
 fi
 
 printf '\nAll requested analysis stages completed successfully.\n'

@@ -9,7 +9,7 @@ cd "$PROJECT_ROOT"
 
 BASE_CONFIG="${ORDINAL_BASE_CONFIG:-ordinal_analysis/config.json}"
 OUTPUT_ROOT="${ORDINAL_SWEEP_OUTPUT_ROOT:-ordinal_analysis/parameter_sweep}"
-CONDA_ENV="${ORDINAL_CONDA_ENV:-MNE_Roman}"
+CONDA_ENV="${ORDINAL_CONDA_ENV:-${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}}"
 
 embedding_dimensions=(4 6 7)
 delays=(1 5 10)

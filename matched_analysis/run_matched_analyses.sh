@@ -13,6 +13,7 @@ DRY_RUN=false
 NO_PROGRESS=false
 SKIP_SWEEP=false
 SKIP_EXPLORATION=false
+CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
 
 usage() {
     cat <<'EOF'
@@ -28,6 +29,7 @@ Options:
   --no-progress        Disable supported progress bars
   --skip-sweep         Skip ordinal sensitivity inputs and MOCA analysis
   --skip-exploration   Skip matched prediction models
+  --env NAME           Conda environment (default: MNE_August2026)
   -h, --help           Show this help
 
 Signal cleaning is not repeated: it is an independent subject-level operation.
@@ -42,11 +44,21 @@ while [[ $# -gt 0 ]]; do
         --no-progress) NO_PROGRESS=true ;;
         --skip-sweep) SKIP_SWEEP=true ;;
         --skip-exploration) SKIP_EXPLORATION=true ;;
+        --env)
+            [[ $# -ge 2 ]] || { printf 'ERROR: --env requires a name\n' >&2; exit 2; }
+            CONDA_ENV="$2"
+            shift
+            ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'ERROR: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
     esac
     shift
 done
+
+export PARKINSON_EEG_CONDA_ENV="$CONDA_ENV"
+environment_arguments=(--env "$CONDA_ENV")
+if [[ "$DRY_RUN" == true ]]; then environment_arguments+=(--dry-run); fi
+bash scripts/ensure_conda_environment.sh "${environment_arguments[@]}"
 
 print_command() {
     printf '  +'

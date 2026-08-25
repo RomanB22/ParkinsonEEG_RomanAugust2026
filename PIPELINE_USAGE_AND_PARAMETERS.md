@@ -64,7 +64,7 @@ dataset/sub-001/eeg/sub-001_task-Rest_eeg.fdt
 Both `.set` and `.fdt` are required. Confirm the conda environment:
 
 ```bash
-conda run -n MNE_Roman python -c "import mne; print(mne.__version__)"
+conda run -n MNE_August2026 python -c "import mne; print(mne.__version__)"
 ```
 
 Show the bash runner's help:
@@ -190,21 +190,21 @@ The bash runner targets the entire dataset or the configured pilot. For one
 participant, use:
 
 ```bash
-conda run -n MNE_Roman python scripts/preprocess_subject.py sub-025 \
+conda run -n MNE_August2026 python scripts/preprocess_subject.py sub-025 \
   --review-only --no-ica-downsampling --overwrite
 ```
 
 After updating that participant's ICA entry:
 
 ```bash
-conda run -n MNE_Roman python scripts/preprocess_subject.py sub-025 \
+conda run -n MNE_August2026 python scripts/preprocess_subject.py sub-025 \
   --no-ica-downsampling --overwrite
 ```
 
 For several selected participants:
 
 ```bash
-conda run -n MNE_Roman python scripts/run_preprocessing.py \
+conda run -n MNE_August2026 python scripts/run_preprocessing.py \
   --subjects sub-025 sub-026 sub-027 \
   --review-only --no-ica-downsampling --overwrite
 ```
@@ -232,7 +232,7 @@ bash scripts/run_full_cleaning.sh MODE [OPTIONS]
 | Option | Default | Meaning |
 |---|---|---|
 | `--config PATH` | `config/preprocessing.yaml` | Use a different configuration file. Prefer an absolute path if it is outside the project. |
-| `--env NAME` | `MNE_Roman` | Conda environment passed to every Python command. |
+| `--env NAME` | `MNE_August2026` | Conda environment passed to every Python command. |
 | `--overwrite` | off | Replace generated outputs for the same subjects. It never overwrites source files under `dataset/`. |
 | `--skip-manual-ica-review` | off | Bypass visual confirmation and automatically apply high-confidence ICLabel proposals in `clean` or `pilot` mode. The automatic lists and provenance are saved separately. |
 | `-h`, `--help` | — | Print usage and exit. |

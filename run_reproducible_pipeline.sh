@@ -21,6 +21,7 @@ SKIP_SWEEP=false
 SKIP_EXPLORATION=false
 SKIP_MATCHED=false
 SKIP_MANUAL_ICA_REVIEW=false
+CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
 
 usage() {
     cat <<'EOF'
@@ -41,6 +42,7 @@ Options:
   --skip-exploration         Skip full and demographically matched prediction models
   --skip-matched             Skip the complete matched-cohort sensitivity pipeline
   --skip-manual-ica-review   Explicitly use automatic ICLabel proposals during cleaning
+  --env NAME                 Conda environment (default: MNE_August2026)
   -h, --help                 Show this help
 
 Recommended reproducible reviewed workflow:
@@ -62,6 +64,11 @@ while [[ $# -gt 0 ]]; do
         --skip-exploration) SKIP_EXPLORATION=true ;;
         --skip-matched) SKIP_MATCHED=true ;;
         --skip-manual-ica-review) SKIP_MANUAL_ICA_REVIEW=true ;;
+        --env)
+            [[ $# -ge 2 ]] || { printf 'ERROR: --env requires a name\n' >&2; exit 2; }
+            CONDA_ENV="$2"
+            shift
+            ;;
         -h|--help) usage; exit 0 ;;
         *) printf 'ERROR: unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
     esac
@@ -83,8 +90,13 @@ if [[ "$MODE" == "review" && "$DRY_RUN" == true ]]; then
     exit 2
 fi
 
+export PARKINSON_EEG_CONDA_ENV="$CONDA_ENV"
+environment_arguments=(--env "$CONDA_ENV")
+if [[ "$DRY_RUN" == true ]]; then environment_arguments+=(--dry-run); fi
+bash scripts/ensure_conda_environment.sh "${environment_arguments[@]}"
+
 if [[ "$MODE" == "review" ]]; then
-    command=(bash scripts/run_full_cleaning.sh review)
+    command=(bash scripts/run_full_cleaning.sh review --env "$CONDA_ENV")
     if [[ "$OVERWRITE" == true ]]; then
         command+=(--overwrite)
     fi
@@ -94,7 +106,7 @@ fi
 if [[ ! -f processed/metadata/subjects.csv ]]; then
     printf '\n=== Dataset inspection and metadata bootstrap ===\n'
     if [[ "$DRY_RUN" == true ]]; then
-        printf '  + conda run -n MNE_Roman python scripts/inspect_dataset.py --config config/preprocessing.yaml\n'
+        printf '  + conda run -n %q python scripts/inspect_dataset.py --config config/preprocessing.yaml\n' "$CONDA_ENV"
         # Dry-run must remain read-only. Use the source participant table only
         # to support the downstream command preview.
         [[ -f dataset/participants.tsv ]] || {
@@ -104,7 +116,7 @@ if [[ ! -f processed/metadata/subjects.csv ]]; then
         expected_subjects=$(awk -F'\t' 'NR > 1 {count += 1} END {print count + 0}' \
             dataset/participants.tsv)
     else
-        conda run --no-capture-output -n MNE_Roman \
+        conda run --no-capture-output -n "$CONDA_ENV" \
             python scripts/inspect_dataset.py --config config/preprocessing.yaml
         [[ -f processed/metadata/subjects.csv ]] || {
             printf 'ERROR: dataset inspection did not create processed/metadata/subjects.csv\n' >&2
@@ -128,7 +140,7 @@ if [[ "$cleaned_epochs" -eq "$expected_subjects" ]] \
     cleaning_current=true
 fi
 
-cleaning_command=(bash scripts/run_full_cleaning.sh clean)
+cleaning_command=(bash scripts/run_full_cleaning.sh clean --env "$CONDA_ENV")
 if [[ "$OVERWRITE" == true ]]; then
     cleaning_command+=(--overwrite)
 fi
@@ -150,7 +162,7 @@ else
     "${cleaning_command[@]}"
 fi
 
-analysis_command=(bash run_all_analyses.sh)
+analysis_command=(bash run_all_analyses.sh --env "$CONDA_ENV")
 if [[ "$OVERWRITE" == true ]]; then
     analysis_command+=(--overwrite)
 fi

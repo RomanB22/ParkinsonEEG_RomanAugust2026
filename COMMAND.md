@@ -1,5 +1,16 @@
 # Reproduce the complete analysis
 
+`run_reproducible_pipeline.sh` is the full entry point: it bootstraps the conda
+environment and metadata, performs ICA cleaning, and then invokes
+`run_all_analyses.sh`. `run_all_analyses.sh` starts from existing cleaned epochs
+and runs only the downstream full-cohort and matched-cohort analyses.
+
+Both entry points check for the default `MNE_August2026` environment. If it is
+missing, they create it with Python 3.14 and install the pinned
+[`requirements.txt`](requirements.txt) stack. An existing environment is reused
+without reinstalling packages. Use `--env NAME` only when an intentional
+override is needed.
+
 Run the pipeline from ICA review through every full-cohort and matched-cohort
 analysis using the reviewed two-step workflow.
 

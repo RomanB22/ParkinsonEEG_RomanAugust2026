@@ -36,14 +36,14 @@ From the project root:
 bash scripts/create_conda_environment.sh --run-tests
 ```
 
-The setup script creates `MNE_Roman` with Python 3.14 and installs the complete
+The setup script creates `MNE_August2026` with Python 3.14 and installs the complete
 pinned stack from [`requirements.txt`](requirements.txt). If the environment
 already exists, it is retained and updated. The equivalent manual validation
 commands are:
 
 ```bash
-conda run -n MNE_Roman python scripts/inspect_dataset.py
-conda run -n MNE_Roman python -m unittest discover -s tests -v
+conda run -n MNE_August2026 python scripts/inspect_dataset.py
+conda run -n MNE_August2026 python -m unittest discover -s tests -v
 ```
 
 The code configures non-interactive MNE/Matplotlib caches automatically.
@@ -81,7 +81,7 @@ Generate ICA review material while keeping the temporary ICA copy at the final
 120 Hz rate:
 
 ```bash
-conda run -n MNE_Roman python scripts/preprocess_subject.py sub-001 \
+conda run -n MNE_August2026 python scripts/preprocess_subject.py sub-001 \
   --review-only --no-ica-downsampling --overwrite
 ```
 
@@ -91,7 +91,7 @@ list and reasons if necessary, then set
 `config/preprocessing.yaml`. After confirmation, create the cleaned outputs:
 
 ```bash
-conda run -n MNE_Roman python scripts/preprocess_subject.py sub-001 \
+conda run -n MNE_August2026 python scripts/preprocess_subject.py sub-001 \
   --no-ica-downsampling --overwrite
 ```
 
@@ -101,7 +101,7 @@ The configuration contains reviewed IC000 ocular-artifact decisions for one PD
 participant (`sub-001`) and one Control (`sub-101`):
 
 ```bash
-conda run -n MNE_Roman python scripts/preprocess_test_set.py \
+conda run -n MNE_August2026 python scripts/preprocess_test_set.py \
   --no-ica-downsampling --overwrite
 ```
 
@@ -148,7 +148,7 @@ The equivalent individual Python commands are shown below.
 First create review material for all subjects:
 
 ```bash
-conda run -n MNE_Roman python scripts/run_preprocessing.py \
+conda run -n MNE_August2026 python scripts/run_preprocessing.py \
   --review-only --no-ica-downsampling --overwrite
 ```
 
@@ -159,7 +159,7 @@ disagree, use `[]` when nothing should be removed, and set the participant's
 `ica.manual_review_confirmed` value to `true`. The final batch command is:
 
 ```bash
-conda run -n MNE_Roman python scripts/run_preprocessing.py \
+conda run -n MNE_August2026 python scripts/run_preprocessing.py \
   --no-ica-downsampling --overwrite
 ```
 

@@ -174,7 +174,7 @@ the dataset.
 Install or update the complete environment:
 
 ```bash
-bash scripts/create_conda_environment.sh --env MNE_Roman --run-tests
+bash scripts/create_conda_environment.sh --env MNE_August2026 --run-tests
 ```
 
 Run the full cohort and all shared electrodes:
@@ -316,7 +316,7 @@ engineering a final aggregate.
 Run the dedicated tests:
 
 ```bash
-conda run -n MNE_Roman python -m unittest discover \
+conda run -n MNE_August2026 python -m unittest discover \
   -s tests -p 'test_scale_free_analysis.py' -v
 ```
 

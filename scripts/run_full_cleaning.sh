@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Run the Parkinson resting-state EEG preprocessing workflow in MNE_Roman.
+# Run the Parkinson resting-state EEG preprocessing workflow.
 #
 # ICA review is deliberately a separate stage. ICLabel prefills proposals, but
 # the clean stage refuses to start until a person confirms every participant.
@@ -15,7 +15,7 @@ if [[ $# -gt 0 ]]; then
     shift
 fi
 
-CONDA_ENV="MNE_Roman"
+CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
 CONFIG_PATH="config/preprocessing.yaml"
 OVERWRITE=false
 SKIP_MANUAL_ICA_REVIEW=false
@@ -40,7 +40,7 @@ Modes:
 
 Options:
   --config PATH       Configuration file (default: config/preprocessing.yaml)
-  --env NAME          Conda environment (default: MNE_Roman)
+  --env NAME          Conda environment (default: MNE_August2026)
   --overwrite         Replace previously generated outputs for the same subjects
   --skip-manual-ica-review
                       Automatically apply high-confidence ICLabel proposals.
@@ -109,6 +109,9 @@ command -v conda >/dev/null 2>&1 || {
 }
 
 cd "$PROJECT_ROOT"
+
+export PARKINSON_EEG_CONDA_ENV="$CONDA_ENV"
+bash scripts/ensure_conda_environment.sh --env "$CONDA_ENV"
 
 if [[ ! -f "$CONFIG_PATH" ]]; then
     echo "ERROR: configuration file not found: $CONFIG_PATH" >&2

@@ -275,5 +275,5 @@ broadband/band topomap color limits.
 Run all repository tests with:
 
 ```bash
-conda run -n MNE_Roman python -m unittest discover -s tests -v
+conda run -n MNE_August2026 python -m unittest discover -s tests -v
 ```

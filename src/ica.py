@@ -137,7 +137,7 @@ def _iclabel_probabilities(ica, raw, config: dict[str, Any]) -> np.ndarray:
     except ImportError as error:
         raise RuntimeError(
             "ICLabel is enabled but mne-icalabel is not installed. Install it in "
-            "MNE_Roman with: python -m pip install mne-icalabel onnxruntime"
+            "MNE_August2026 with: python -m pip install mne-icalabel onnxruntime"
         ) from error
 
     return iclabel_label_components(
