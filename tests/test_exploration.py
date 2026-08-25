@@ -7,6 +7,7 @@ import pandas as pd
 from exploration.features import (
     FORBIDDEN_MODEL_COLUMNS,
     build_feature_table,
+    summarize_typical_bout_shapes,
     validate_model_features,
 )
 from exploration.modeling import (
@@ -29,6 +30,14 @@ class ExplorationTests(unittest.TestCase):
         self.assertEqual(table["target_pd"].value_counts().to_dict(), {1: 100, 0: 49})
         self.assertFalse({"ID", "EEG", "TYPE", "UPDRS"} & set(table.columns))
         self.assertTrue(np.isfinite(table["ordinal_global_entropy"]).all())
+        self.assertTrue(
+            np.isfinite(table["ordinal_global_renyi_entropy_alpha_0_1"]).all()
+        )
+        self.assertTrue(np.isfinite(table["aperiodic_exponent"]).all())
+        self.assertTrue(np.isfinite(table["bout_alpha_bouts_per_minute"]).all())
+        self.assertTrue(
+            np.isfinite(table["typical_alpha_envelope_peak_ratio"]).all()
+        )
         self.assertEqual(
             set(provenance.loc[~provenance["included"], "feature"]),
             {"participant_id", "ID", "EEG", "TYPE", "UPDRS", "GROUP"},
@@ -99,6 +108,25 @@ class ExplorationTests(unittest.TestCase):
         self.assertEqual(
             self.config["models"]["ordinal_adjusted"]["role"], "primary"
         )
+
+    def test_typical_bout_reduction_is_complete_and_bounded(self):
+        bands = self.config["candidate_features"]["bout_bands"]
+        table = summarize_typical_bout_shapes(
+            self.config["input"]["typical_bout_file"], bands
+        )
+        self.assertEqual(len(table), 149)
+        self.assertEqual(table["subject_id"].nunique(), 149)
+        for band in bands:
+            self.assertTrue((table[f"typical_{band}_envelope_peak_ratio"] > 1.0).all())
+            self.assertTrue(
+                (table[f"typical_{band}_envelope_half_height_width_s"] > 0.0).all()
+            )
+            self.assertTrue(
+                table[f"typical_{band}_envelope_asymmetry"].between(-1.0, 1.0).all()
+            )
+            self.assertTrue(
+                table[f"typical_{band}_relative_phase_consistency"].between(0.0, 1.0).all()
+            )
 
 
 if __name__ == "__main__":

@@ -40,6 +40,14 @@ def feature_label(name: str) -> str:
         return replacements[name]
     if name.startswith("psd_log2_"):
         return "PSD log₂ " + name.removeprefix("psd_log2_").replace("_vs_", " / ").replace("_", " ")
+    if name == "aperiodic_exponent":
+        return "Aperiodic exponent"
+    if name.startswith("bout_ordinal_"):
+        return "Within-bout ordinal " + name.removeprefix("bout_ordinal_").replace("_", " ")
+    if name.startswith("bout_"):
+        return "Bout " + name.removeprefix("bout_").replace("_", " ")
+    if name.startswith("typical_"):
+        return "Typical bout " + name.removeprefix("typical_").replace("_", " ")
     if name.startswith("ordinal_"):
         return "Ordinal " + name.removeprefix("ordinal_").replace("_", " ")
     return name.replace("_", " ").title()

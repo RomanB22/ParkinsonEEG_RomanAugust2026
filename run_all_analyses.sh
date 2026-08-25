@@ -190,7 +190,12 @@ typical_bouts_current() {
 }
 
 exploration_current() {
-    [[ -f exploration/processed/manifest.json ]]
+    [[ -f exploration/processed/manifest.json ]] || return 1
+    [[ -f exploration/processed/MODEL_REVISION.md ]] || return 1
+    [[ -f exploration/processed/metrics/auc_differences_vs_psd.csv ]] || return 1
+    [[ -f exploration/processed/models/typical_bout_shape_adjusted.joblib ]] || return 1
+    grep -q 'ordinal_global_renyi_entropy_alpha_0_1' \
+        exploration/processed/features/subject_modeling_table.csv || return 1
 }
 
 quantitative_current() {

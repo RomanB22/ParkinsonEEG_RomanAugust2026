@@ -38,8 +38,12 @@ whole-head median H, C, and F output:
 - Fisher information F.
 
 The larger band-ordinal sensitivity model uses H, C, and F for theta, alpha,
-and beta. Delta, low gamma, and the overlapping broad 5–15 Hz band do not enter
-that model, limiting dimensionality and overlap.
+and beta. Rényi sensitivity models add entropy and complexity only at the two
+prespecified endpoints, α=0.1 and α=5. Intermediate α values are available in
+the source tables but are not model predictors because they are extremely
+rank-redundant. Embedding dimensions are evaluated independently and are never
+concatenated into one feature vector. Delta, low gamma, and the overlapping
+broad 5–15 Hz band do not enter the band model.
 
 PSD uses the subject median across shared electrodes. Relative powers are
 compositional, so the model does not enter all percentages independently. It
@@ -55,6 +59,21 @@ log2(beta / low_gamma)
 A one-unit increase means a doubling of the numerator-to-low-gamma ratio. The
 overlapping 5–15 Hz PSD band is excluded.
 
+New scale-free and bout blocks are represented conservatively:
+
+- one subject-median aperiodic exponent;
+- occupancy, bouts/minute, and mean duration in theta, alpha, low beta, and
+  high beta;
+- within-bout H, C, and F in those four bands;
+- four summaries of each typical bout: peak envelope/baseline ratio,
+  half-height width, pre/post envelope asymmetry, and relative-phase
+  consistency.
+
+The full time curves and individual electrode values do not enter the model.
+Electrodes are averaged within subject before typical-bout modeling. The bout
+and aperiodic blocks are explicitly labeled fit-QC-sensitive because bout
+detection uses the fitted aperiodic background.
+
 ## Models
 
 All models are standardized L2-regularized logistic regressions. There is no
@@ -66,9 +85,16 @@ random forest, boosting, or neural network.
 | Demographics | Baseline | Age, sex |
 | Ordinal H/C/F | Primary unadjusted | Global H, C, F |
 | Ordinal H/C/F + demographics | Primary | Age, sex, global H, C, F |
+| Ordinal + Rényi endpoints | Sensitivity | Primary ordinal plus α=0.1/5 entropy and complexity |
 | PSD + demographics | Secondary | Age, sex, four PSD log ratios |
 | Ordinal + PSD + demographics | Secondary | Global H/C/F, PSD ratios, age, sex |
 | Band ordinal + demographics | Sensitivity | Theta/alpha/beta H/C/F, age, sex |
+| Band ordinal + Rényi endpoints | Sensitivity | Band H/C/F and endpoint Rényi quantities, age, sex |
+| Aperiodic exponent | Fit-sensitive | Aperiodic exponent, age, sex |
+| Bout dynamics | Fit-sensitive | Three bout properties in four bands, age, sex |
+| Within-bout ordinal | Fit-sensitive | Bout H/C/F in four bands, age, sex |
+| Typical-bout shape | Fit-sensitive | Four shape/phase summaries in four bands, age, sex |
+| Compact multimodal EEG | Sensitivity | Global ordinal, PSD, exponent, occupancy/duration, age, sex |
 | Clinical extension | Secondary clinical | Ordinal + PSD + age + sex + MOCA |
 
 The ridge strength is the only learned hyperparameter. Standardized
@@ -94,6 +120,10 @@ the decision threshold maximizes Youden's J statistic using only inner
 out-of-fold predictions from the outer training subjects. A test subject never
 influences its threshold. Model AUC differences use paired subject bootstrap
 samples against the demographic baseline.
+The revision additionally reports paired differences against `psd_adjusted`,
+the established EEG-only benchmark. An added feature block is called an
+improvement only when the 95% paired bootstrap interval for ΔAUC excludes zero
+on the positive side.
 
 The all-subject `.joblib` models are descriptive final fits. They are not used
 to claim independent performance; only out-of-fold predictions support the
@@ -134,6 +164,7 @@ all random seeds are in [`config.json`](config.json).
 ```text
 exploration/processed/
 ├── manifest.json
+├── MODEL_REVISION.md
 ├── exploration.log
 ├── features/
 │   ├── subject_modeling_table.csv
@@ -152,6 +183,7 @@ exploration/processed/
 ├── metrics/
 │   ├── model_performance.csv
 │   ├── auc_differences_vs_demographics.csv
+│   ├── auc_differences_vs_psd.csv
 │   ├── coefficient_stability.csv
 │   ├── final_model_coefficients.csv
 │   ├── permutation_tests.csv
@@ -183,6 +215,10 @@ sweep completeness, and the external-validation limitation.
 - Repeated cross-validation reduces but cannot eliminate optimism from working
   with one dataset.
 - The clinical extension must not be interpreted as EEG-only performance.
+- Bout, within-bout ordinal, typical-shape, and aperiodic models are sensitive
+  to spectral-fit quality; inspect the scale-free fit-QC outputs alongside them.
+- Comparing many feature blocks is exploratory. Prefer paired uncertainty and
+  stable coefficients over selecting the largest point estimate.
 - External cohort validation is required before any diagnostic claim.
 - Coefficients describe associations conditional on the included predictors;
   they do not establish causal mechanisms.

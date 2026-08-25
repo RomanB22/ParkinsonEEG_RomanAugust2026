@@ -55,6 +55,7 @@ def load_exploration_config(path: str | Path) -> dict[str, Any]:
         "primary_ordinal_parameters",
         "ordinal_sweep",
         "ordinal_model_bands",
+        "candidate_features",
         "psd_log_ratio",
         "models",
         "validation",
@@ -78,6 +79,21 @@ def load_exploration_config(path: str | Path) -> dict[str, Any]:
         "inner_youden",
     }:
         raise ValueError("threshold_policy must be fixed or inner_youden")
+    candidate = config["candidate_features"]
+    if candidate.get("renyi_metrics") != [
+        "renyi_entropy_alpha_0_1",
+        "renyi_complexity_alpha_0_1",
+        "renyi_entropy_alpha_5",
+        "renyi_complexity_alpha_5",
+    ]:
+        raise ValueError("Exploration Rényi predictors must remain the alpha endpoints")
+    if candidate.get("bout_bands") != [
+        "theta",
+        "alpha",
+        "low_beta",
+        "high_beta",
+    ]:
+        raise ValueError("Exploration bout bands must match the bout pipeline")
     return config
 
 
@@ -101,6 +117,154 @@ def _configure_logger(output_dir: Path, overwrite: bool) -> logging.Logger:
 def _write_csv(table: pd.DataFrame, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(path, index=False, float_format="%.17g")
+
+
+def _write_revision_report(
+    path: Path,
+    performance: pd.DataFrame,
+    auc_vs_demographics: pd.DataFrame,
+    auc_vs_psd: pd.DataFrame,
+    permutation_results: pd.DataFrame,
+    models: dict[str, dict[str, Any]],
+) -> None:
+    """Write a concise, uncertainty-aware audit of the revised model set."""
+    auc = (
+        performance.loc[performance["metric"].eq("roc_auc")]
+        .set_index("model")
+        .sort_values("estimate", ascending=False)
+    )
+    vs_demo = auc_vs_demographics.set_index("model")
+    vs_psd = auc_vs_psd.set_index("model")
+    permutation = (
+        permutation_results.set_index("model")
+        if not permutation_results.empty and "model" in permutation_results
+        else pd.DataFrame()
+    )
+
+    def interval(row: pd.Series) -> str:
+        return f"{row['estimate']:.3f} [{row['ci_lower']:.3f}, {row['ci_upper']:.3f}]"
+
+    def difference(table: pd.DataFrame, model: str) -> str:
+        if model not in table.index:
+            return "reference"
+        row = table.loc[model]
+        marker = "†" if float(row["ci_lower"]) > 0 or float(row["ci_upper"]) < 0 else ""
+        return (
+            f"{float(row['auc_difference']):+.3f} "
+            f"[{float(row['ci_lower']):+.3f}, {float(row['ci_upper']):+.3f}]{marker}"
+        )
+
+    lines = [
+        "# Exploration model revision",
+        "",
+        "This report compares the newly available EEG feature blocks using the same "
+        "repeated nested cross-validation splits and ridge-logistic model family. "
+        "Values are subject-level out-of-fold ROC AUC with stratified-bootstrap 95% "
+        "intervals. A dagger (†) marks a paired AUC-difference interval that excludes zero.",
+        "",
+        "## Model comparison",
+        "",
+        "| Model | Predictors | ROC AUC [95% CI] | ΔAUC vs demographics | ΔAUC vs PSD |",
+        "|---|---:|---:|---:|---:|",
+    ]
+    for model, row in auc.iterrows():
+        lines.append(
+            f"| {models[model]['label']} | {len(models[model]['features'])} | "
+            f"{interval(row)} | {difference(vs_demo, model)} | "
+            f"{difference(vs_psd, model)} |"
+        )
+
+    eeg_models = [
+        model
+        for model in auc.index
+        if model not in {"clinical_extension", "demographics"}
+    ]
+    best_eeg = max(eeg_models, key=lambda model: float(auc.loc[model, "estimate"]))
+    improved_vs_psd = [
+        model
+        for model in eeg_models
+        if model in vs_psd.index and float(vs_psd.loc[model, "ci_lower"]) > 0
+    ]
+    best_recommendation = (
+        "- PSD + demographics remains the highest-scoring EEG model; retain it as the benchmark."
+        if best_eeg == "psd_adjusted"
+        else f"- Retain {models[best_eeg]['label']} as the highest-scoring EEG candidate, "
+        "without claiming superiority unless its paired interval versus PSD is positive."
+    )
+    lines.extend(
+        [
+            "",
+            "## Conservative interpretation",
+            "",
+            f"The highest internally validated EEG-only model is **{models[best_eeg]['label']}** "
+            f"(AUC {interval(auc.loc[best_eeg])}).",
+            "",
+        ]
+    )
+    if improved_vs_psd:
+        names = ", ".join(f"**{models[model]['label']}**" for model in improved_vs_psd)
+        lines.append(
+            f"The following additions have a paired 95% interval above the PSD benchmark: {names}."
+        )
+    else:
+        lines.append(
+            "No added EEG feature block has a paired 95% AUC-difference interval wholly "
+            "above the PSD benchmark. Any higher point estimate should therefore be treated "
+            "as promising but uncertain, rather than a demonstrated improvement."
+        )
+    lines.extend(
+        [
+            "",
+            "Rényi models use only α=0.1 and α=5 as sensitivity endpoints; the intermediate "
+            "α values were excluded because they are highly redundant with H, C, F and with "
+            "one another. Embedding dimensions remain separate sensitivity analyses and are "
+            "never concatenated into a single feature vector.",
+            "",
+            "Bout dynamics, within-bout ordinal quantities, typical-bout shapes, and the "
+            "aperiodic exponent depend on spectral parameterization or its bout threshold. "
+            "Their results remain fit-QC-sensitive even when their cross-validation score is high.",
+            "",
+            "The clinical-extension model includes MOCA and is not an EEG-only diagnostic model. "
+            "All results are internal to this case-control cohort and require external validation.",
+            "",
+            "## Recommended reporting set",
+            "",
+            "- Keep demographics as the baseline and PSD + demographics as the EEG benchmark.",
+            best_recommendation,
+            "- Report within-bout ordinal, bout dynamics, typical-bout shape, aperiodic, and "
+            "Rényi models as prespecified sensitivity blocks rather than combining every quantity.",
+            "- Keep the clinical extension separate because MOCA changes the intended use and "
+            "is not an EEG feature.",
+            "- Do not select a model from the ordinal embedding sweep; use it only to assess "
+            "whether conclusions depend on D and tau.",
+            "",
+            "## Permutation tests",
+            "",
+        ]
+    )
+    if permutation.empty:
+        lines.append("Permutation tests were skipped for this run.")
+    else:
+        p_column = next(
+            (
+                column
+                for column in permutation.columns
+                if column in {"permutation_p", "permutation_p_value"}
+                or "p_value" in column
+            ),
+            None,
+        )
+        if p_column is None:
+            lines.append("See `metrics/permutation_tests.csv` for the complete chance benchmark.")
+        else:
+            lines.extend(["| Model | Permutation p |", "|---|---:|"])
+            for model in auc.index:
+                if model in permutation.index:
+                    lines.append(
+                        f"| {models[model]['label']} | "
+                        f"{float(permutation.loc[model, p_column]):.4g} |"
+                    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def _feature_summary(table: pd.DataFrame, features: list[str]) -> pd.DataFrame:
@@ -334,6 +498,12 @@ def run_analysis(
         n_resamples=int(config["validation"]["bootstrap_resamples"]),
         seed=int(config["validation"]["random_seed"]) + 1,
     )
+    auc_differences_vs_psd = bootstrap_auc_differences(
+        averaged_predictions,
+        reference_model="psd_adjusted",
+        n_resamples=int(config["validation"]["bootstrap_resamples"]),
+        seed=int(config["validation"]["random_seed"]) + 2,
+    )
     coefficient_summary = _coefficient_summary(fold_coefficients)
     first_model = next(iter(models))
     fold_assignments = predictions.loc[
@@ -347,6 +517,7 @@ def run_analysis(
     _write_csv(fold_coefficients, cv_dir / "outer_fold_coefficients.csv")
     _write_csv(performance, metrics_dir / "model_performance.csv")
     _write_csv(auc_differences, metrics_dir / "auc_differences_vs_demographics.csv")
+    _write_csv(auc_differences_vs_psd, metrics_dir / "auc_differences_vs_psd.csv")
     _write_csv(coefficient_summary, metrics_dir / "coefficient_stability.csv")
 
     logger.info("Fitting descriptive final models and permutation tests")
@@ -358,6 +529,14 @@ def run_analysis(
     )
     _write_csv(final_coefficients, metrics_dir / "final_model_coefficients.csv")
     _write_csv(permutation_results, metrics_dir / "permutation_tests.csv")
+    _write_revision_report(
+        output_dir / "MODEL_REVISION.md",
+        performance,
+        auc_differences,
+        auc_differences_vs_psd,
+        permutation_results,
+        models,
+    )
 
     completed_sweeps = discover_completed_sweeps(config)
     sweep_status = _sweep_status(config, completed_sweeps)
@@ -439,7 +618,16 @@ def run_analysis(
         figures_dir / "validation" / "confusion_matrices.png",
         dpi,
     )
-    for model_name in ("ordinal_adjusted", "ordinal_psd_adjusted"):
+    for model_name in (
+        "psd_adjusted",
+        "ordinal_adjusted",
+        "ordinal_renyi_adjusted",
+        "bout_dynamics_adjusted",
+        "bout_ordinal_adjusted",
+        "typical_bout_shape_adjusted",
+        "multimodal_compact",
+        "ordinal_psd_adjusted",
+    ):
         plot_coefficient_stability(
             fold_coefficients,
             model_name,
@@ -479,9 +667,12 @@ def run_analysis(
         "primary_ordinal_parameters": config["primary_ordinal_parameters"],
         "leakage_exclusions": LEAKAGE_EXCLUSIONS,
         "feature_policy": (
-            "Every model uses one row per subject. Ordinal and PSD electrode values are "
-            "aggregated within subject upstream. PSD predictors are prespecified log2 "
-            "ratios against low gamma; overlapping broad_5_15 is excluded."
+            "Every model uses one row per subject. Electrode and bout observations are "
+            "aggregated within subject before modeling. PSD predictors are prespecified "
+            "log2 ratios against low gamma; overlapping broad_5_15 is excluded. Rényi "
+            "models retain only alpha=0.1 and alpha=5 endpoints because intermediate "
+            "alphas are extremely redundant. Typical-bout curves are reduced to peak, "
+            "half-height width, temporal asymmetry, and relative-phase consistency."
         ),
         "validation_policy": (
             "All scaling and ridge-C selection occur within repeated nested stratified "

@@ -34,6 +34,102 @@ LEAKAGE_EXCLUSIONS = {
 SWEEP_PATTERN = re.compile(r"D(?P<dimension>\d+)_tau(?P<delay>\d+)$")
 
 
+def summarize_typical_bout_shapes(
+    path: str | Path,
+    requested_bands: list[str],
+) -> pd.DataFrame:
+    """Reduce each subject's bout curves to four transparent scalars per band."""
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"Typical-bout input does not exist: {path}")
+    with np.load(path) as payload:
+        required = {
+            "subject_ids",
+            "bands",
+            "times_seconds",
+            "normalized_amplitude_envelopes",
+            "relative_phase_phasors",
+            "bout_counts",
+        }
+        missing = sorted(required - set(payload.files))
+        if missing:
+            raise ValueError(f"{path} is missing typical-bout arrays: {missing}")
+        subject_ids = payload["subject_ids"].astype(str)
+        available_bands = payload["bands"].astype(str).tolist()
+        times = payload["times_seconds"].astype(float)
+        envelopes = payload["normalized_amplitude_envelopes"].astype(float)
+        phasors = payload["relative_phase_phasors"].astype(np.complex128)
+        counts = payload["bout_counts"].astype(int)
+    missing_bands = sorted(set(requested_bands) - set(available_bands))
+    if missing_bands:
+        raise ValueError(f"Typical-bout input is missing bands: {missing_bands}")
+    if envelopes.shape != phasors.shape or envelopes.shape[:3] != counts.shape:
+        raise ValueError("Typical-bout arrays have inconsistent dimensions")
+    if envelopes.shape[0] != len(subject_ids) or envelopes.shape[-1] != len(times):
+        raise ValueError("Typical-bout subject or time axes are inconsistent")
+    if len(times) < 3 or not np.all(np.diff(times) > 0.0):
+        raise ValueError("Typical-bout time axis must be strictly increasing")
+
+    central_phase_window = np.abs(times) <= 0.25
+    peak_search_window = np.abs(times) <= 0.25
+    sample_period = float(np.median(np.diff(times)))
+    rows: list[dict[str, Any]] = []
+    for subject_index, subject_id in enumerate(subject_ids):
+        row: dict[str, Any] = {"subject_id": subject_id}
+        for band in requested_bands:
+            band_index = available_bands.index(band)
+            valid_electrodes = counts[subject_index, :, band_index] > 0
+            valid_electrodes &= np.all(
+                np.isfinite(envelopes[subject_index, :, band_index]), axis=1
+            )
+            valid_electrodes &= np.all(
+                np.isfinite(phasors[subject_index, :, band_index]), axis=1
+            )
+            if not valid_electrodes.any():
+                raise ValueError(f"{subject_id}/{band} has no usable typical-bout curve")
+            envelope = np.mean(
+                envelopes[subject_index, valid_electrodes, band_index], axis=0
+            )
+            candidate_indices = np.flatnonzero(peak_search_window)
+            peak_index = int(
+                candidate_indices[np.argmax(envelope[peak_search_window])]
+            )
+            peak = float(envelope[peak_index])
+            half_height = 1.0 + 0.5 * (peak - 1.0)
+            left = peak_index
+            right = peak_index
+            while left > 0 and envelope[left - 1] >= half_height:
+                left -= 1
+            while right + 1 < len(envelope) and envelope[right + 1] >= half_height:
+                right += 1
+            width = float((right - left + 1) * sample_period)
+            excess = np.clip(envelope - 1.0, 0.0, None)
+            pre = float(np.trapezoid(excess[times < 0.0], times[times < 0.0]))
+            post = float(np.trapezoid(excess[times > 0.0], times[times > 0.0]))
+            asymmetry = (post - pre) / (post + pre) if post + pre > 0.0 else 0.0
+            phase_consistency = float(
+                np.mean(
+                    np.abs(
+                        phasors[
+                            subject_index,
+                            valid_electrodes,
+                            band_index,
+                        ][:, central_phase_window]
+                    )
+                )
+            )
+            prefix = f"typical_{band}"
+            row[f"{prefix}_envelope_peak_ratio"] = peak
+            row[f"{prefix}_envelope_half_height_width_s"] = width
+            row[f"{prefix}_envelope_asymmetry"] = float(asymmetry)
+            row[f"{prefix}_relative_phase_consistency"] = phase_consistency
+        rows.append(row)
+    table = pd.DataFrame.from_records(rows)
+    if table["subject_id"].duplicated().any():
+        raise ValueError("Typical-bout input contains duplicate subjects")
+    return table
+
+
 def _read_csv(path: str | Path, required: set[str]) -> pd.DataFrame:
     path = Path(path)
     if not path.exists():
@@ -95,18 +191,20 @@ def build_feature_table(config: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFr
         raise ValueError(f"Expected exactly PD and Control groups, found {sorted(groups)}")
     subject_ids = set(participants["participant_id"].astype(str))
 
+    candidate_settings = config["candidate_features"]
+    ordinal_core_metrics = ["entropy", "complexity", "fisher_information"]
+    renyi_metrics = [str(value) for value in candidate_settings["renyi_metrics"]]
+    ordinal_metrics = [*ordinal_core_metrics, *renyi_metrics]
     ordinal_global = _read_csv(
         inputs["ordinal_global_file"],
-        {"subject_id", "group", "entropy", "complexity", "fisher_information", "n_electrodes"},
+        {"subject_id", "group", "n_electrodes", *ordinal_metrics},
     )
     _validate_subjects("ordinal global", ordinal_global, subject_ids)
     if ordinal_global["subject_id"].duplicated().any():
         raise ValueError("Ordinal global table must contain one row per subject")
     ordinal_global = ordinal_global.rename(
         columns={
-            "entropy": "ordinal_global_entropy",
-            "complexity": "ordinal_global_complexity",
-            "fisher_information": "ordinal_global_fisher_information",
+            **{metric: f"ordinal_global_{metric}" for metric in ordinal_metrics},
             "n_electrodes": "ordinal_n_electrodes",
             "group": "ordinal_group",
         }
@@ -114,7 +212,7 @@ def build_feature_table(config: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFr
 
     ordinal_band = _read_csv(
         inputs["ordinal_band_file"],
-        {"subject_id", "group", "band", "entropy", "complexity", "fisher_information"},
+        {"subject_id", "group", "band", *ordinal_metrics},
     )
     _validate_subjects("ordinal band", ordinal_band, subject_ids)
     requested_bands = [str(value) for value in config["ordinal_model_bands"]]
@@ -127,7 +225,7 @@ def build_feature_table(config: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFr
     ordinal_wide = selected_ordinal.pivot(
         index="subject_id",
         columns="band",
-        values=["entropy", "complexity", "fisher_information"],
+        values=ordinal_metrics,
     )
     ordinal_wide.columns = [
         f"ordinal_{band}_{metric}" for metric, band in ordinal_wide.columns
@@ -163,6 +261,60 @@ def build_feature_table(config: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFr
     electrode_counts = psd.groupby("subject_id")["n_electrodes"].min()
     psd_features["psd_n_electrodes"] = electrode_counts.reindex(psd_wide.index).to_numpy()
 
+    aperiodic = _read_csv(
+        inputs["aperiodic_subject_file"],
+        {"subject_id", "group", "aperiodic_exponent"},
+    )
+    _validate_subjects("aperiodic", aperiodic, subject_ids)
+    if aperiodic["subject_id"].duplicated().any():
+        raise ValueError("Aperiodic table must contain one row per subject")
+    aperiodic = aperiodic.rename(columns={"group": "aperiodic_group"})[
+        ["subject_id", "aperiodic_group", "aperiodic_exponent"]
+    ]
+
+    bout_bands = [str(value) for value in candidate_settings["bout_bands"]]
+    bout_metrics = [str(value) for value in candidate_settings["bout_metrics"]]
+    bouts = _read_csv(
+        inputs["bout_subject_file"],
+        {"subject_id", "group", "band", *bout_metrics},
+    )
+    _validate_subjects("bout properties", bouts, subject_ids)
+    selected_bouts = bouts.loc[bouts["band"].isin(bout_bands)]
+    if set(selected_bouts["band"]) != set(bout_bands):
+        raise ValueError("Bout-property input is missing a requested band")
+    bout_wide = selected_bouts.pivot(
+        index="subject_id", columns="band", values=bout_metrics
+    )
+    bout_wide.columns = [f"bout_{band}_{metric}" for metric, band in bout_wide.columns]
+    bout_wide = bout_wide.reset_index()
+
+    bout_ordinal_metrics = [
+        str(value) for value in candidate_settings["bout_ordinal_metrics"]
+    ]
+    bout_ordinal = _read_csv(
+        inputs["bout_ordinal_subject_file"],
+        {"subject_id", "group", "band", *bout_ordinal_metrics},
+    )
+    _validate_subjects("within-bout ordinal", bout_ordinal, subject_ids)
+    selected_bout_ordinal = bout_ordinal.loc[
+        bout_ordinal["band"].isin(bout_bands)
+    ]
+    if set(selected_bout_ordinal["band"]) != set(bout_bands):
+        raise ValueError("Within-bout ordinal input is missing a requested band")
+    bout_ordinal_wide = selected_bout_ordinal.pivot(
+        index="subject_id", columns="band", values=bout_ordinal_metrics
+    )
+    bout_ordinal_wide.columns = [
+        f"bout_ordinal_{band}_{metric}"
+        for metric, band in bout_ordinal_wide.columns
+    ]
+    bout_ordinal_wide = bout_ordinal_wide.reset_index()
+
+    typical_bouts = summarize_typical_bout_shapes(
+        inputs["typical_bout_file"], bout_bands
+    )
+    _validate_subjects("typical-bout shapes", typical_bouts, subject_ids)
+
     table = participants.rename(
         columns={
             "participant_id": "subject_id",
@@ -185,9 +337,19 @@ def build_feature_table(config: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFr
     )
     table = table.merge(ordinal_wide, on="subject_id", how="left", validate="one_to_one")
     table = table.merge(psd_features, on="subject_id", how="left", validate="one_to_one")
+    table = table.merge(aperiodic, on="subject_id", how="left", validate="one_to_one")
+    table = table.merge(bout_wide, on="subject_id", how="left", validate="one_to_one")
+    table = table.merge(
+        bout_ordinal_wide, on="subject_id", how="left", validate="one_to_one"
+    )
+    table = table.merge(
+        typical_bouts, on="subject_id", how="left", validate="one_to_one"
+    )
     if not table["group"].eq(table["ordinal_group"]).all():
         raise ValueError("Participant and ordinal group labels disagree")
-    table = table.drop(columns=["ordinal_group"])
+    if not table["group"].eq(table["aperiodic_group"]).all():
+        raise ValueError("Participant and aperiodic group labels disagree")
+    table = table.drop(columns=["ordinal_group", "aperiodic_group"])
     table = table.drop(columns=["ID", "EEG", "TYPE", "UPDRS"])
     table = table.sort_values("subject_id").reset_index(drop=True)
     validate_model_features(table, config["models"])
@@ -199,6 +361,14 @@ def build_feature_table(config: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFr
                 source = "ordinal analysis"
             elif feature.startswith("psd_"):
                 source = "PSD analysis"
+            elif feature.startswith("aperiodic_"):
+                source = "scale-free specparam analysis"
+            elif feature.startswith("bout_ordinal_"):
+                source = "within-bout ordinal analysis"
+            elif feature.startswith("bout_"):
+                source = "scale-free bout analysis"
+            elif feature.startswith("typical_"):
+                source = "subject-balanced typical-bout analysis"
             else:
                 source = "participant metadata"
             provenance_rows.append(
