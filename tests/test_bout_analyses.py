@@ -21,6 +21,7 @@ class BoutAnalysesTests(unittest.TestCase):
         self.assertEqual(config["specparam"]["frequency_range_hz"], [1.0, 50.0])
         self.assertEqual(config["ordinal"]["embedding_dimension"], 6)
         self.assertEqual(METRICS, ("entropy", "complexity", "fisher_information"))
+        self.assertEqual(config["bands"]["broad_5_15"], [5.0, 15.0])
 
     def test_counts_match_ordpy_for_one_bout(self):
         signal = np.asarray([3.0, 1.0, 4.0, 1.5, 5.0, 9.0, 2.0])

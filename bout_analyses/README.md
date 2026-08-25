@@ -17,7 +17,9 @@ present in every analyzed subject. Its sequence is:
 4. Detect samples above the 95th-percentile aperiodic-relative power threshold
    for at least three cycles, independently within each accepted epoch.
 5. Collapse detections into theta (4–7 Hz), alpha (8–13 Hz), low-beta
-   (13–20 Hz), and high-beta (20–30 Hz) bouts.
+   (13–20 Hz), high-beta (20–30 Hz), and broad 5–15 Hz bouts. The broad band
+   intentionally overlaps theta and alpha and is interpreted as a separate
+   sensitivity representation, not an independent frequency partition.
 6. Zero-phase band-pass each complete accepted epoch before extracting the
    corresponding bout intervals. Short bouts are never filtered in isolation.
 7. Encode every bout independently into ordinal patterns. Pattern counts are

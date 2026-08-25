@@ -34,7 +34,7 @@
     "aperiodic_metrics": ["aperiodic_exponent", "aperiodic_exponent_qc"],
     "ordinal_metrics": ["entropy", "complexity", "fisher_information"],
     "ordinal_bands": ["delta", "theta", "alpha", "beta", "low_gamma", "broad_5_15"],
-    "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],
+    "bout_bands": ["theta", "alpha", "low_beta", "high_beta", "broad_5_15"],
     "bout_properties": [
       "oscillatory_occupancy",
       "bouts_per_minute",

@@ -149,13 +149,13 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         cohort, features, dictionary = build_subject_features(config)
         self.assertEqual(len(cohort), 149)
         self.assertEqual(int(cohort["group"].eq("PD").sum()), 100)
-        self.assertEqual(len(dictionary), 55)
+        self.assertEqual(len(dictionary), 63)
         self.assertIn("aperiodic_exponent", set(dictionary["feature_id"]))
         self.assertIn("aperiodic_exponent_qc", set(dictionary["feature_id"]))
         self.assertFalse(dictionary["feature_id"].str.contains("renyi").any())
         self.assertFalse(features.duplicated(["subject_id", "feature_id"]).any())
         pd_features = features.loc[features["group"].eq("PD")]
-        self.assertEqual(len(pd_features), 100 * 55)
+        self.assertEqual(len(pd_features), 100 * 63)
         self.assertTrue(
             pd_features.loc[
                 pd_features["feature_id"].ne("aperiodic_exponent_qc"), "value"

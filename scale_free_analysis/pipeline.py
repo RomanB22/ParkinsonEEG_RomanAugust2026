@@ -103,8 +103,11 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     if [float(value) for value in config["specparam"]["frequency_range_hz"]] not in ranges:
         raise ValueError("Aperiodic sensitivity must contain the primary frequency range")
     bands = config["bands"]
-    if list(bands) != ["theta", "alpha", "low_beta", "high_beta"]:
-        raise ValueError("bands must be theta, alpha, low_beta, and high_beta in order")
+    expected_bands = ["theta", "alpha", "low_beta", "high_beta", "broad_5_15"]
+    if list(bands) != expected_bands:
+        raise ValueError(
+            "bands must be theta, alpha, low_beta, high_beta, and broad_5_15 in order"
+        )
     for name, limits in bands.items():
         if len(limits) != 2 or not 0.0 < float(limits[0]) < float(limits[1]):
             raise ValueError(f"Invalid frequency limits for {name}")

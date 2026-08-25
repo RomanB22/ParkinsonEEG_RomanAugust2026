@@ -171,6 +171,7 @@ ordinal_sweep_current() {
 
 scale_free_current() {
     [[ -f scale_free_analysis/processed/manifest.json ]] || return 1
+    grep -q '"broad_5_15"' scale_free_analysis/processed/manifest.json || return 1
     [[ -f scale_free_analysis/processed/metrics/specparam_fit_qc_summary.csv ]] || return 1
     [[ -f scale_free_analysis/processed/metrics/subject_aperiodic_range_sensitivity.csv ]] || return 1
     [[ -f scale_free_analysis/processed/figures/aperiodic_diagnostics/group_median_decomposition_and_residuals.png ]] || return 1
@@ -178,7 +179,8 @@ scale_free_current() {
 }
 
 bout_current() {
-    [[ -f bout_analyses/processed/manifest.json ]]
+    [[ -f bout_analyses/processed/manifest.json ]] || return 1
+    grep -q '"broad_5_15"' bout_analyses/processed/manifest.json
 }
 
 fit_qc_sensitivity_current() {
@@ -189,6 +191,8 @@ fit_qc_sensitivity_current() {
     [[ -f bout_analyses/processed/figures/fit_qc_sensitivity/within_bout_ordinal_all_vs_fit_qc.png ]] || return 1
     [[ -f quantitative_behavioral/processed/fit_qc_sensitivity_manifest.json ]] || return 1
     [[ -f quantitative_behavioral/processed/metrics/fit_qc_sensitivity/subject_level_correlations.csv ]] || return 1
+    grep -q 'broad_5_15' scale_free_analysis/processed/metrics/subject_band_metrics_fit_qc.csv || return 1
+    grep -q 'broad_5_15' bout_analyses/processed/metrics/subject_band_metrics_fit_qc.csv || return 1
 }
 
 typical_bouts_current() {
@@ -199,6 +203,7 @@ typical_bouts_current() {
     [[ -f scale_free_analysis/processed/figures/typical_bouts/grand_average_all_subjects.png ]] || return 1
     [[ -f scale_free_analysis/processed/figures/typical_bouts/grand_average_fit_qc.png ]] || return 1
     [[ -f scale_free_analysis/processed/figures/typical_bouts/bout_detection_subject_coverage.png ]] || return 1
+    grep -q 'broad_5_15' scale_free_analysis/processed/typical_bouts_manifest.json || return 1
 }
 
 exploration_current() {
@@ -210,6 +215,8 @@ exploration_current() {
     grep -q 'ordinal_global_renyi_entropy_alpha_0_1' \
         exploration/processed/features/subject_modeling_table.csv || return 1
     grep -q 'ordinal_global_renyi_entropy_alpha_10' \
+        exploration/processed/features/subject_modeling_table.csv || return 1
+    grep -q 'bout_broad_5_15_oscillatory_occupancy' \
         exploration/processed/features/subject_modeling_table.csv || return 1
 }
 
@@ -229,6 +236,7 @@ quantitative_current() {
     grep -q 'renyi_complexity_alpha_5' "$dictionary" || return 1
     grep -q 'renyi_entropy_alpha_10' "$dictionary" || return 1
     grep -q 'renyi_complexity_alpha_10' "$dictionary" || return 1
+    grep -q 'bout_broad_5_15_oscillatory_occupancy' "$primary_dictionary" || return 1
 }
 
 run_stage() {
@@ -273,9 +281,15 @@ if [[ "$SKIP_SWEEP" == false ]]; then
     if [[ "$NO_PROGRESS" == true ]]; then
         ordinal_sweep_command+=(--no-progress)
     fi
-    run_stage "Ordinal D/tau parameter sweep" ordinal_sweep_current \
-        ordinal_analysis/parameter_sweep/D7_tau10/manifest.json \
-        "${ordinal_sweep_command[@]}"
+    printf '\n=== Ordinal D/tau parameter sweep ===\n'
+    if [[ "$OVERWRITE" == false ]] && ordinal_sweep_current; then
+        printf '  current output found; skipping\n'
+    else
+        if [[ "$OVERWRITE" == true ]]; then
+            ordinal_sweep_command+=(--overwrite)
+        fi
+        execute "${ordinal_sweep_command[@]}"
+    fi
 else
     printf '\n=== Ordinal D/tau parameter sweep ===\n  skipped by request\n'
 fi
@@ -283,6 +297,12 @@ fi
 scale_free_command=(bash scale_free_analysis/run_scale_free_analysis.sh)
 if [[ "$NO_PROGRESS" == true ]]; then
     scale_free_command+=(--no-progress)
+fi
+if [[ "$OVERWRITE" == false \
+    && -f scale_free_analysis/processed/figures/specparam_decomposition/index.html \
+    && -f scale_free_analysis/processed/manifest.json ]] \
+    && ! grep -q '"broad_5_15"' scale_free_analysis/processed/manifest.json; then
+    scale_free_command+=(--skip-specparam-gallery)
 fi
 run_stage "Scale-free and bout-property analysis" scale_free_current \
     scale_free_analysis/processed/manifest.json "${scale_free_command[@]}"

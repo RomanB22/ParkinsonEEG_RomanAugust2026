@@ -193,7 +193,7 @@ itself adjusted for all tested features.
 Benjamini-Hochberg false-discovery-rate (BH-FDR) correction is applied at
 `alpha=0.05`. Adjusted and unadjusted methods are corrected separately.
 
-### Primary 55-feature analysis
+### Primary 63-feature analysis
 
 BH-FDR is applied within each prespecified feature family:
 
@@ -202,19 +202,19 @@ BH-FDR is applied within each prespecified feature family:
 | All-fit and QC-qualified aperiodic exponent | 2 |
 | Broadband regular ordinal quantities | 3 |
 | Band-resolved regular ordinal quantities | 18 |
-| Bout properties | 20 |
-| Within-bout regular ordinal quantities | 12 |
+| Bout properties | 25 |
+| Within-bout regular ordinal quantities | 15 |
 
 ### Fit-QC bout sensitivity
 
-The fit-QC sensitivity is a separate 32-feature analysis restricted to
+The fit-QC sensitivity is a separate 40-feature analysis restricted to
 subjects with at least 48/60 passing specparam fits. Only passing-electrode
-values contribute to the subject mean. It contains 20 band-resolved bout
-properties and 12 within-bout H/C/F quantities. Partial Spearman correlations
+values contribute to the subject mean. It contains 25 band-resolved bout
+properties and 15 within-bout H/C/F quantities. Partial Spearman correlations
 use the same age/sex rank-residualization and subject bootstrap as the primary
-analysis. BH-FDR is controlled separately within its 20-feature bout-property
-family and 12-feature within-bout ordinal family, and not pooled with the
-primary 55-feature analysis.
+analysis. BH-FDR is controlled separately within its 25-feature bout-property
+family and 15-feature within-bout ordinal family, and not pooled with the
+primary 63-feature analysis.
 
 ### Separate embedding-dimension analyses
 

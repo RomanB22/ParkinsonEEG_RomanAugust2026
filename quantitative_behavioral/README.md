@@ -32,17 +32,17 @@ are never treated as independent patients.
 
 ## Prespecified feature families
 
-The defaults produce 55 transparent features:
+The defaults produce 63 transparent features:
 
 | Family | Features | Count |
 |---|---|---:|
 | Aperiodic | All-fit and QC-qualified fixed-mode specparam exponents over 1–50 Hz | 2 |
 | Broadband ordinal | H, C, F from `D=6`, `tau=1` | 3 |
 | Band ordinal | H, C, F in delta, theta, alpha, beta, low gamma, and broad 5–15 Hz | 18 |
-| Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in four eBOSC bands | 20 |
-| Within-bout ordinal | H, C, F pooled within detected theta, alpha, low-beta, and high-beta bouts | 12 |
+| Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in five eBOSC bands | 25 |
+| Within-bout ordinal | H, C, F pooled within the five configured bout bands | 15 |
 
-The 55-feature primary table retains regular permutation entropy,
+The 63-feature primary table retains regular permutation entropy,
 statistical complexity, and Fisher information. Rényi quantities are added in
 the separate embedding-dimension analysis blocks described below. Within-bout
 ordinal quantities remain regular H/C/F only.
@@ -57,10 +57,10 @@ ordinal features come from `bout_analyses/`. All upstream manifests are checked
 for the expected 60 shared electrodes and analysis parameters before any
 correlation is calculated.
 
-A separate fit-QC sensitivity repeats the 20 bout-property and 12 within-bout
+A separate fit-QC sensitivity repeats the 25 bout-property and 15 within-bout
 ordinal MOCA associations using only passing electrodes in subjects with at
 least 48/60 passing fits. It currently contains 70 PD participants. This
-32-feature sensitivity is kept out of the primary 55-feature table and receives
+40-feature sensitivity is kept out of the primary 63-feature table and receives
 its own family-specific BH corrections.
 
 ## Separate embedding-dimension analyses

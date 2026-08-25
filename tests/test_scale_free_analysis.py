@@ -42,6 +42,7 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
                 "alpha": [8.0, 13.0],
                 "low_beta": [13.0, 20.0],
                 "high_beta": [20.0, 30.0],
+                "broad_5_15": [5.0, 15.0],
             },
         )
 

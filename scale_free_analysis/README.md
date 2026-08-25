@@ -55,9 +55,11 @@ without conflating it with a different peak model. The ranges are parallel
 sensitivity analyses; the pipeline does not choose the most favorable result.
 
 The highest fitted peak in each theta (4–7 Hz), alpha (8–13 Hz), low-beta
-(13–20 Hz), and high-beta (20–30 Hz) band supplies center frequency, power, and
-bandwidth. A `peak_present` indicator distinguishes a missing peak from a
-numerical value.
+(13–20 Hz), high-beta (20–30 Hz), and broad 5–15 Hz band supplies center
+frequency, power, and bandwidth. The broad band deliberately overlaps theta
+and alpha and is treated as a sensitivity representation rather than an
+independent partition. A `peak_present` indicator distinguishes a missing peak
+from a numerical value.
 
 For visual inspection, the pipeline also writes one decomposition PNG for
 every analyzed subject and shared electrode. The files are organized by group

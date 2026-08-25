@@ -35,7 +35,7 @@
       "renyi_complexity_alpha_10"
     ],
     "renyi_policy": "Prespecified low/high alpha endpoints only; intermediate alphas are excluded from models because of extreme rank redundancy",
-    "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],
+    "bout_bands": ["theta", "alpha", "low_beta", "high_beta", "broad_5_15"],
     "bout_metrics": ["oscillatory_occupancy", "bouts_per_minute", "bout_duration_mean_s"],
     "bout_ordinal_metrics": ["entropy", "complexity", "fisher_information"],
     "typical_bout_summaries": ["envelope_peak_ratio", "envelope_half_height_width_s", "envelope_asymmetry", "relative_phase_consistency"]
@@ -94,22 +94,22 @@
     "bout_dynamics_adjusted": {
       "label": "Bout dynamics + demographics",
       "role": "fit_sensitive_sensitivity",
-      "features": ["age_years", "sex_male", "bout_theta_oscillatory_occupancy", "bout_theta_bouts_per_minute", "bout_theta_bout_duration_mean_s", "bout_alpha_oscillatory_occupancy", "bout_alpha_bouts_per_minute", "bout_alpha_bout_duration_mean_s", "bout_low_beta_oscillatory_occupancy", "bout_low_beta_bouts_per_minute", "bout_low_beta_bout_duration_mean_s", "bout_high_beta_oscillatory_occupancy", "bout_high_beta_bouts_per_minute", "bout_high_beta_bout_duration_mean_s"]
+      "features": ["age_years", "sex_male", "bout_theta_oscillatory_occupancy", "bout_theta_bouts_per_minute", "bout_theta_bout_duration_mean_s", "bout_alpha_oscillatory_occupancy", "bout_alpha_bouts_per_minute", "bout_alpha_bout_duration_mean_s", "bout_low_beta_oscillatory_occupancy", "bout_low_beta_bouts_per_minute", "bout_low_beta_bout_duration_mean_s", "bout_high_beta_oscillatory_occupancy", "bout_high_beta_bouts_per_minute", "bout_high_beta_bout_duration_mean_s", "bout_broad_5_15_oscillatory_occupancy", "bout_broad_5_15_bouts_per_minute", "bout_broad_5_15_bout_duration_mean_s"]
     },
     "bout_ordinal_adjusted": {
       "label": "Within-bout ordinal + demographics",
       "role": "fit_sensitive_sensitivity",
-      "features": ["age_years", "sex_male", "bout_ordinal_theta_entropy", "bout_ordinal_theta_complexity", "bout_ordinal_theta_fisher_information", "bout_ordinal_alpha_entropy", "bout_ordinal_alpha_complexity", "bout_ordinal_alpha_fisher_information", "bout_ordinal_low_beta_entropy", "bout_ordinal_low_beta_complexity", "bout_ordinal_low_beta_fisher_information", "bout_ordinal_high_beta_entropy", "bout_ordinal_high_beta_complexity", "bout_ordinal_high_beta_fisher_information"]
+      "features": ["age_years", "sex_male", "bout_ordinal_theta_entropy", "bout_ordinal_theta_complexity", "bout_ordinal_theta_fisher_information", "bout_ordinal_alpha_entropy", "bout_ordinal_alpha_complexity", "bout_ordinal_alpha_fisher_information", "bout_ordinal_low_beta_entropy", "bout_ordinal_low_beta_complexity", "bout_ordinal_low_beta_fisher_information", "bout_ordinal_high_beta_entropy", "bout_ordinal_high_beta_complexity", "bout_ordinal_high_beta_fisher_information", "bout_ordinal_broad_5_15_entropy", "bout_ordinal_broad_5_15_complexity", "bout_ordinal_broad_5_15_fisher_information"]
     },
     "typical_bout_shape_adjusted": {
       "label": "Typical-bout shape + demographics",
       "role": "fit_sensitive_sensitivity",
-      "features": ["age_years", "sex_male", "typical_theta_envelope_peak_ratio", "typical_theta_envelope_half_height_width_s", "typical_theta_envelope_asymmetry", "typical_theta_relative_phase_consistency", "typical_alpha_envelope_peak_ratio", "typical_alpha_envelope_half_height_width_s", "typical_alpha_envelope_asymmetry", "typical_alpha_relative_phase_consistency", "typical_low_beta_envelope_peak_ratio", "typical_low_beta_envelope_half_height_width_s", "typical_low_beta_envelope_asymmetry", "typical_low_beta_relative_phase_consistency", "typical_high_beta_envelope_peak_ratio", "typical_high_beta_envelope_half_height_width_s", "typical_high_beta_envelope_asymmetry", "typical_high_beta_relative_phase_consistency"]
+      "features": ["age_years", "sex_male", "typical_theta_envelope_peak_ratio", "typical_theta_envelope_half_height_width_s", "typical_theta_envelope_asymmetry", "typical_theta_relative_phase_consistency", "typical_alpha_envelope_peak_ratio", "typical_alpha_envelope_half_height_width_s", "typical_alpha_envelope_asymmetry", "typical_alpha_relative_phase_consistency", "typical_low_beta_envelope_peak_ratio", "typical_low_beta_envelope_half_height_width_s", "typical_low_beta_envelope_asymmetry", "typical_low_beta_relative_phase_consistency", "typical_high_beta_envelope_peak_ratio", "typical_high_beta_envelope_half_height_width_s", "typical_high_beta_envelope_asymmetry", "typical_high_beta_relative_phase_consistency", "typical_broad_5_15_envelope_peak_ratio", "typical_broad_5_15_envelope_half_height_width_s", "typical_broad_5_15_envelope_asymmetry", "typical_broad_5_15_relative_phase_consistency"]
     },
     "multimodal_compact": {
       "label": "Compact multimodal EEG + demographics",
       "role": "multimodal_sensitivity",
-      "features": ["age_years", "sex_male", "ordinal_global_entropy", "ordinal_global_complexity", "ordinal_global_fisher_information", "psd_log2_delta_vs_low_gamma", "psd_log2_theta_vs_low_gamma", "psd_log2_alpha_vs_low_gamma", "psd_log2_beta_vs_low_gamma", "aperiodic_exponent", "bout_theta_oscillatory_occupancy", "bout_theta_bout_duration_mean_s", "bout_alpha_oscillatory_occupancy", "bout_alpha_bout_duration_mean_s", "bout_low_beta_oscillatory_occupancy", "bout_low_beta_bout_duration_mean_s", "bout_high_beta_oscillatory_occupancy", "bout_high_beta_bout_duration_mean_s"]
+      "features": ["age_years", "sex_male", "ordinal_global_entropy", "ordinal_global_complexity", "ordinal_global_fisher_information", "psd_log2_delta_vs_low_gamma", "psd_log2_theta_vs_low_gamma", "psd_log2_alpha_vs_low_gamma", "psd_log2_beta_vs_low_gamma", "aperiodic_exponent", "bout_theta_oscillatory_occupancy", "bout_theta_bout_duration_mean_s", "bout_alpha_oscillatory_occupancy", "bout_alpha_bout_duration_mean_s", "bout_low_beta_oscillatory_occupancy", "bout_low_beta_bout_duration_mean_s", "bout_high_beta_oscillatory_occupancy", "bout_high_beta_bout_duration_mean_s", "bout_broad_5_15_oscillatory_occupancy", "bout_broad_5_15_bout_duration_mean_s"]
     },
     "clinical_extension": {
       "label": "Ordinal + PSD + demographics + MOCA",

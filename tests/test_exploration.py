@@ -53,7 +53,12 @@ class ExplorationTests(unittest.TestCase):
         for specification in self.config["models"].values():
             features = set(specification["features"])
             self.assertFalse(features & FORBIDDEN_MODEL_COLUMNS)
-            self.assertFalse(any("broad_5_15" in feature for feature in features))
+            self.assertFalse(
+                any(
+                    "psd" in feature and "broad_5_15" in feature
+                    for feature in features
+                )
+            )
 
     def test_nested_validation_returns_repeated_out_of_fold_predictions(self):
         rng = np.random.default_rng(7)

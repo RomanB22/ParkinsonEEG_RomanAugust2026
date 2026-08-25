@@ -96,6 +96,7 @@ def load_exploration_config(path: str | Path) -> dict[str, Any]:
         "alpha",
         "low_beta",
         "high_beta",
+        "broad_5_15",
     ]:
         raise ValueError("Exploration bout bands must match the bout pipeline")
     matching = config["demographic_matching"]

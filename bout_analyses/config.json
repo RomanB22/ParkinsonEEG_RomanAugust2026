@@ -9,7 +9,8 @@
     "theta": [4.0, 7.0],
     "alpha": [8.0, 13.0],
     "low_beta": [13.0, 20.0],
-    "high_beta": [20.0, 30.0]
+    "high_beta": [20.0, 30.0],
+    "broad_5_15": [5.0, 15.0]
   },
   "psd": {
     "fmin_hz": 1.0,
@@ -53,9 +54,9 @@
       "theta": "Theta",
       "alpha": "Alpha",
       "low_beta": "Low beta",
-      "high_beta": "High beta"
+      "high_beta": "High beta",
+      "broad_5_15": "Broad 5–15 Hz"
     },
     "subject_topomaps": true
   }
 }
-

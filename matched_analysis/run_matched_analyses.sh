@@ -67,7 +67,7 @@ run_stage() {
     shift 2
     local -a command=("$@")
     printf '\n=== Matched: %s ===\n' "$label"
-    if [[ "$OVERWRITE" == false && -f "$sentinel" ]]; then
+    if [[ "$OVERWRITE" == false ]] && stage_current "$sentinel"; then
         printf '  current output found; skipping\n'
         return
     fi
@@ -75,6 +75,44 @@ run_stage() {
         command+=(--overwrite)
     fi
     execute "${command[@]}"
+}
+
+stage_current() {
+    local sentinel="$1"
+    [[ -f "$sentinel" ]] || return 1
+    case "$sentinel" in
+        ordinal_analysis/processed_matched/manifest.json)
+            [[ -f ordinal_analysis/processed_matched/figures/topomaps/renyi_alpha_10/group_mean_topomaps.png ]]
+            ;;
+        scale_free_analysis/processed_matched/manifest.json|bout_analyses/processed_matched/manifest.json|scale_free_analysis/processed_matched/typical_bouts_manifest.json)
+            grep -q '"broad_5_15"' "$sentinel"
+            ;;
+        scale_free_analysis/processed_matched/fit_qc_sensitivity_manifest.json)
+            grep -q 'broad_5_15' scale_free_analysis/processed_matched/metrics/subject_band_metrics_fit_qc.csv \
+                && grep -q 'broad_5_15' bout_analyses/processed_matched/metrics/subject_band_metrics_fit_qc.csv
+            ;;
+        exploration/processed_matched/manifest.json)
+            grep -q 'bout_broad_5_15_oscillatory_occupancy' \
+                exploration/processed_matched/features/subject_modeling_table.csv
+            ;;
+        quantitative_behavioral/processed_matched/manifest.json)
+            grep -q 'bout_broad_5_15_oscillatory_occupancy' \
+                quantitative_behavioral/processed_matched/metrics/feature_dictionary.csv
+            ;;
+        *) return 0 ;;
+    esac
+}
+
+matched_sweep_current() {
+    local dimension delay directory
+    for dimension in 4 6 7; do
+        for delay in 1 5 10; do
+            directory="ordinal_analysis/parameter_sweep_matched/D${dimension}_tau${delay}"
+            [[ -f "$directory/manifest.json" ]] || return 1
+            grep -q 'renyi_entropy_alpha_10' \
+                "$directory/metrics/subject_electrode_mean_metrics.csv" || return 1
+        done
+    done
 }
 
 CONFIG_ROOT="matched_analysis/processed/configs"
@@ -98,8 +136,7 @@ if [[ "$SKIP_SWEEP" == false ]]; then
     sweep_command=(bash ordinal_analysis/run_ordinal_parameter_sweep.sh)
     if [[ "$NO_PROGRESS" == true ]]; then sweep_command+=(--no-progress); fi
     printf '\n=== Matched: ordinal D/tau parameter sweep ===\n'
-    if [[ "$OVERWRITE" == false \
-        && -f ordinal_analysis/parameter_sweep_matched/D7_tau10/manifest.json ]]; then
+    if [[ "$OVERWRITE" == false ]] && matched_sweep_current; then
         printf '  current output found; skipping\n'
     else
         if [[ "$OVERWRITE" == true ]]; then sweep_command+=(--overwrite); fi
@@ -122,6 +159,13 @@ scale_command=(
     --config "$CONFIG_ROOT/scale_free.json"
 )
 if [[ "$NO_PROGRESS" == true ]]; then scale_command+=(--no-progress); fi
+if [[ "$OVERWRITE" == false \
+    && -f scale_free_analysis/processed_matched/figures/specparam_decomposition/index.html \
+    && -f scale_free_analysis/processed_matched/manifest.json ]] \
+    && ! grep -q '"broad_5_15"' \
+        scale_free_analysis/processed_matched/manifest.json; then
+    scale_command+=(--skip-specparam-gallery)
+fi
 run_stage "scale-free and bout-property analysis" \
     scale_free_analysis/processed_matched/manifest.json "${scale_command[@]}"
 

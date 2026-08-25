@@ -81,9 +81,9 @@ overlapping 5–15 Hz PSD band is excluded.
 New scale-free and bout blocks are represented conservatively:
 
 - one subject-median aperiodic exponent;
-- occupancy, bouts/minute, and mean duration in theta, alpha, low beta, and
-  high beta;
-- within-bout H, C, and F in those four bands;
+- occupancy, bouts/minute, and mean duration in theta, alpha, low beta, high
+  beta, and broad 5–15 Hz;
+- within-bout H, C, and F in those five bands;
 - four summaries of each typical bout: peak envelope/baseline ratio,
   half-height width, pre/post envelope asymmetry, and relative-phase
   consistency.
@@ -110,9 +110,9 @@ random forest, boosting, or neural network.
 | Band ordinal + demographics | Sensitivity | Theta/alpha/beta H/C/F, age, sex |
 | Band ordinal + Rényi endpoints | Sensitivity | Band H/C/F and endpoint Rényi quantities, age, sex |
 | Aperiodic exponent | Fit-sensitive | Aperiodic exponent, age, sex |
-| Bout dynamics | Fit-sensitive | Three bout properties in four bands, age, sex |
-| Within-bout ordinal | Fit-sensitive | Bout H/C/F in four bands, age, sex |
-| Typical-bout shape | Fit-sensitive | Four shape/phase summaries in four bands, age, sex |
+| Bout dynamics | Fit-sensitive | Three bout properties in five bands, age, sex |
+| Within-bout ordinal | Fit-sensitive | Bout H/C/F in five bands, age, sex |
+| Typical-bout shape | Fit-sensitive | Four shape/phase summaries in five bands, age, sex |
 | Compact multimodal EEG | Sensitivity | Global ordinal, PSD, exponent, occupancy/duration, age, sex |
 | Clinical extension | Secondary clinical | Ordinal + PSD + age + sex + MOCA |
 
