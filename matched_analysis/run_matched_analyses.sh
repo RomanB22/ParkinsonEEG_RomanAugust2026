@@ -20,7 +20,7 @@ usage() {
 Usage: bash matched_analysis/run_matched_analyses.sh [options]
 
 Prepare one canonical exact-sex/optimal-age matched cohort, then run matched:
-PSD, ordinal quantities/planes/topomaps, ordinal D/tau inputs, scale-free,
+PSD, ordinal quantities/planes/topomaps, ordinal D={3,4,5,6} inputs at tau=1, scale-free,
 bouts, fit-QC sensitivity, typical bouts, prediction models, and MOCA analyses.
 
 Options:
@@ -120,14 +120,12 @@ stage_current() {
 }
 
 matched_sweep_current() {
-    local dimension delay directory
-    for dimension in 4 6 7; do
-        for delay in 1 5 10; do
-            directory="ordinal_analysis/parameter_sweep_matched/D${dimension}_tau${delay}"
-            [[ -f "$directory/manifest.json" ]] || return 1
-            grep -q 'renyi_entropy_alpha_10' \
-                "$directory/metrics/subject_electrode_mean_metrics.csv" || return 1
-        done
+    local dimension directory
+    for dimension in 3 4 5 6; do
+        directory="ordinal_analysis/parameter_sweep_matched/D${dimension}_tau1"
+        [[ -f "$directory/manifest.json" ]] || return 1
+        grep -q 'renyi_entropy_alpha_10' \
+            "$directory/metrics/subject_electrode_mean_metrics.csv" || return 1
     done
 }
 
@@ -151,7 +149,7 @@ run_stage "ordinal metrics, all-alpha planes, and all-alpha topomaps" \
 if [[ "$SKIP_SWEEP" == false ]]; then
     sweep_command=(bash ordinal_analysis/run_ordinal_parameter_sweep.sh)
     if [[ "$NO_PROGRESS" == true ]]; then sweep_command+=(--no-progress); fi
-    printf '\n=== Matched: ordinal D/tau parameter sweep ===\n'
+    printf '\n=== Matched: ordinal embedding-dimension sweep (tau=1) ===\n'
     if [[ "$OVERWRITE" == false ]] && matched_sweep_current; then
         printf '  current output found; skipping\n'
     else
@@ -167,7 +165,7 @@ if [[ "$SKIP_SWEEP" == false ]]; then
         fi
     fi
 else
-    printf '\n=== Matched: ordinal D/tau parameter sweep ===\n  skipped by request\n'
+    printf '\n=== Matched: ordinal embedding-dimension sweep (tau=1) ===\n  skipped by request\n'
 fi
 
 scale_command=(

@@ -492,31 +492,31 @@ def plot_sweep_sensitivity(
     path: Path,
     dpi: int,
 ) -> None:
-    """Plot ordinal-core ROC AUC across completed D/tau sweep runs."""
+    """Plot ordinal-core ROC AUC across embedding dimensions at tau=1."""
     fig, axis = plt.subplots(figsize=(8, 5.5))
-    for dimension, selected in sweep_performance.groupby("embedding_dimension"):
-        selected = selected.sort_values("delay_samples")
-        axis.errorbar(
-            selected["delay_samples"],
-            selected["estimate"],
-            yerr=np.vstack(
-                [
-                    selected["estimate"] - selected["ci_lower"],
-                    selected["ci_upper"] - selected["estimate"],
-                ]
-            ),
-            marker="o",
-            capsize=3,
-            label=f"D={dimension}",
-        )
+    delays = set(sweep_performance["delay_samples"].astype(int))
+    if delays != {1}:
+        raise ValueError(f"Ordinal sensitivity plot requires only tau=1; found {delays}")
+    selected = sweep_performance.sort_values("embedding_dimension")
+    axis.errorbar(
+        selected["embedding_dimension"],
+        selected["estimate"],
+        yerr=np.vstack(
+            [
+                selected["estimate"] - selected["ci_lower"],
+                selected["ci_upper"] - selected["estimate"],
+            ]
+        ),
+        marker="o",
+        capsize=3,
+    )
     axis.axhline(0.5, color="0.6", linestyle="--", linewidth=1)
     axis.set(
-        xlabel="Delay τ (samples)",
+        xlabel="Embedding dimension D",
         ylabel="Nested-CV ROC AUC",
-        title="Ordinal H/C/F parameter sensitivity",
+        title="Ordinal H/C/F embedding-dimension sensitivity (τ=1)",
     )
-    axis.set_xticks(sorted(sweep_performance["delay_samples"].unique()))
+    axis.set_xticks(sorted(selected["embedding_dimension"].unique()))
     axis.grid(alpha=0.2)
-    axis.legend(frameon=False)
     fig.tight_layout()
     _save(fig, path, dpi)

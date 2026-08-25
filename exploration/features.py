@@ -398,8 +398,14 @@ def build_feature_table(config: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFr
 
 
 def discover_completed_sweeps(config: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return completed ordinal sweep global tables with parsed D and tau."""
+    """Return configured ordinal sweep tables, ignoring legacy settings."""
     root = Path(config["input"]["ordinal_sweep_root"])
+    expected_dimensions = {
+        int(value) for value in config["ordinal_sweep"]["expected_dimensions"]
+    }
+    expected_delays = {
+        int(value) for value in config["ordinal_sweep"]["expected_delays"]
+    }
     completed = []
     if not root.exists():
         return completed
@@ -408,10 +414,14 @@ def discover_completed_sweeps(config: dict[str, Any]) -> list[dict[str, Any]]:
         metrics_path = directory / "metrics" / "subject_electrode_mean_metrics.csv"
         if match is None or not metrics_path.exists():
             continue
+        dimension = int(match.group("dimension"))
+        delay = int(match.group("delay"))
+        if dimension not in expected_dimensions or delay not in expected_delays:
+            continue
         completed.append(
             {
-                "embedding_dimension": int(match.group("dimension")),
-                "delay_samples": int(match.group("delay")),
+                "embedding_dimension": dimension,
+                "delay_samples": delay,
                 "path": str(metrics_path),
             }
         )

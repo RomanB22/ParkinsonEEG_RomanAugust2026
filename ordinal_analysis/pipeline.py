@@ -64,10 +64,10 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     ordinal = config["ordinal"]
     dx = int(ordinal["embedding_dimension"])
     tau = int(ordinal["delay_samples"])
-    if not 2 <= dx <= 7:
-        raise ValueError("ordinal.embedding_dimension must be between 2 and 7")
-    if tau < 1:
-        raise ValueError("ordinal.delay_samples must be at least 1")
+    if not 3 <= dx <= 6:
+        raise ValueError("ordinal.embedding_dimension must be between 3 and 6")
+    if tau != 1:
+        raise ValueError("ordinal.delay_samples must be 1 for this analysis")
     if ordinal.get("tie_precision") is not None:
         raise ValueError(
             "This analysis is configured to retain every signal decimal; "

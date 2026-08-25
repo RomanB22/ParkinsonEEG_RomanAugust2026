@@ -34,7 +34,7 @@ The `run` command includes:
 
 - reviewed ICA signal cleaning;
 - PSD and relative band-power analyses;
-- primary and D/tau-sensitivity ordinal analyses;
+- primary and D={3,4,5,6} ordinal sensitivity analyses, all at tau=1;
 - scale-free/specparam, bout, within-bout ordinal, and fit-QC analyses;
 - typical-bout and other diagnostic figures;
 - PD-versus-Control exploration models;

@@ -9,6 +9,7 @@ import pandas as pd
 from exploration.features import (
     FORBIDDEN_MODEL_COLUMNS,
     build_feature_table,
+    discover_completed_sweeps,
     summarize_typical_bout_shapes,
     validate_model_features,
 )
@@ -123,6 +124,25 @@ class ExplorationTests(unittest.TestCase):
         self.assertEqual(
             self.config["models"]["ordinal_adjusted"]["role"], "primary"
         )
+        self.assertEqual(
+            self.config["ordinal_sweep"],
+            {"expected_dimensions": [3, 4, 5, 6], "expected_delays": [1]},
+        )
+
+    def test_sweep_discovery_ignores_legacy_nonunit_delays(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for setting in ("D2_tau1", "D3_tau1", "D4_tau1", "D4_tau5", "D6_tau10"):
+                metrics = root / setting / "metrics"
+                metrics.mkdir(parents=True)
+                (metrics / "subject_electrode_mean_metrics.csv").touch()
+            config = json.loads(json.dumps(self.config))
+            config["input"]["ordinal_sweep_root"] = str(root)
+            completed = discover_completed_sweeps(config)
+            self.assertEqual(
+                [(row["embedding_dimension"], row["delay_samples"]) for row in completed],
+                [(3, 1), (4, 1)],
+            )
 
     def test_typical_bout_reduction_is_complete_and_bounded(self):
         bands = self.config["candidate_features"]["bout_bands"]

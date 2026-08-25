@@ -131,8 +131,8 @@ The runner refuses to replace an existing electrode-metrics table unless
 `--overwrite` is supplied. A custom configuration can be selected with
 `--config PATH`.
 
-To run the complete 9-combination parameter sweep for embedding dimensions
-`D = 4, 6, 7` and delays `tau = 1, 5, 10`:
+To run the four-setting embedding-dimension sensitivity analysis for
+`D = 3, 4, 5, 6`, always with `tau = 1`:
 
 ```bash
 bash ordinal_analysis/run_ordinal_parameter_sweep.sh --overwrite
@@ -142,9 +142,9 @@ Arguments such as `--subjects` and `--no-progress` are forwarded to every run.
 The sweep saves complete metric tables but skips duplicated figure batteries by
 default; the primary ordinal analysis supplies the detailed planes and violins,
 and exploration supplies the cross-setting sensitivity figure. Pass
-`--with-figures` only when figures for every D/tau combination are needed.
-Results and the exact generated configuration for each combination are kept in
-`ordinal_analysis/parameter_sweep/D<dimension>_tau<delay>/`. The sweep runs
+`--with-figures` only when figures for every D setting are needed.
+Results and the exact generated configuration for each setting are kept in
+`ordinal_analysis/parameter_sweep/D<dimension>_tau1/`. The sweep runs
 sequentially and stops immediately if any combination fails. Its base config,
 output root, and Conda environment can be changed with `ORDINAL_BASE_CONFIG`,
 `ORDINAL_SWEEP_OUTPUT_ROOT`, and `ORDINAL_CONDA_ENV`, respectively.

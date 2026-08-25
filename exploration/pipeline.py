@@ -79,6 +79,14 @@ def load_exploration_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("outer_repeats must be positive")
     if int(validation["bootstrap_resamples"]) < 20:
         raise ValueError("bootstrap_resamples must be at least 20")
+    primary_ordinal = config["primary_ordinal_parameters"]
+    if int(primary_ordinal.get("delay_samples", -1)) != 1:
+        raise ValueError("The primary ordinal analysis must use tau=1")
+    ordinal_sweep = config["ordinal_sweep"]
+    if ordinal_sweep.get("expected_dimensions") != [3, 4, 5, 6]:
+        raise ValueError("Ordinal sensitivity must prespecify D=3,4,5,6")
+    if ordinal_sweep.get("expected_delays") != [1]:
+        raise ValueError("Ordinal sensitivity must use only tau=1")
     threshold = float(validation["classification_threshold"])
     if not 0.0 < threshold < 1.0:
         raise ValueError("classification_threshold must lie between zero and one")
@@ -276,7 +284,7 @@ def _write_revision_report(
             "- Keep the clinical extension separate because MOCA changes the intended use and "
             "is not an EEG feature.",
             "- Do not select a model from the ordinal embedding sweep; use it only to assess "
-            "whether conclusions depend on D and tau.",
+            "whether conclusions depend on D at fixed tau=1.",
             "",
             "## Permutation tests",
             "",

@@ -11,8 +11,8 @@ BASE_CONFIG="${ORDINAL_BASE_CONFIG:-ordinal_analysis/config.json}"
 OUTPUT_ROOT="${ORDINAL_SWEEP_OUTPUT_ROOT:-ordinal_analysis/parameter_sweep}"
 CONDA_ENV="${ORDINAL_CONDA_ENV:-${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}}"
 
-embedding_dimensions=(4 6 7)
-delays=(1 5 10)
+embedding_dimensions=(3 4 5 6)
+delays=(1)
 total_runs=$(( ${#embedding_dimensions[@]} * ${#delays[@]} ))
 run_number=0
 overwrite=false
@@ -25,13 +25,13 @@ for argument in "$@"; do
             cat <<'EOF'
 Usage: bash ordinal_analysis/run_ordinal_parameter_sweep.sh [ANALYSIS_OPTIONS]
 
-Run all 9 combinations of D={4,6,7} and tau={1,5,10}.
+Run D={3,4,5,6} with the ordinal delay fixed at tau=1.
 ANALYSIS_OPTIONS are forwarded to run_ordinal_analysis.sh; for example:
   --subjects sub-001 sub-101
   --overwrite
   --no-progress
 By default sensitivity runs save metric tables without duplicating the full
-figure battery. Pass --with-figures to render figures for every D/tau setting.
+figure battery. Pass --with-figures to render figures for every D setting.
 
 Environment overrides:
   ORDINAL_BASE_CONFIG       Base JSON configuration
@@ -63,11 +63,33 @@ if [[ ! -f "$BASE_CONFIG" ]]; then
     exit 1
 fi
 
+sweep_output_current() {
+    local output_dir="$1"
+    local table header
+    [[ -f "${output_dir}/manifest.json" ]] || return 1
+    for table in \
+        "${output_dir}/metrics/subject_electrode_mean_metrics.csv" \
+        "${output_dir}/metrics/band_subject_electrode_mean_metrics.csv"; do
+        [[ -f "$table" ]] || return 1
+        IFS= read -r header < "$table"
+        [[ "$header" == *"renyi_entropy_alpha_0_1"* ]] || return 1
+        [[ "$header" == *"renyi_complexity_alpha_0_1"* ]] || return 1
+        [[ "$header" == *"renyi_entropy_alpha_10"* ]] || return 1
+        [[ "$header" == *"renyi_complexity_alpha_10"* ]] || return 1
+    done
+}
+
 for dimension in "${embedding_dimensions[@]}"; do
     for delay in "${delays[@]}"; do
         run_number=$((run_number + 1))
         output_dir="${OUTPUT_ROOT}/D${dimension}_tau${delay}"
         config_path="${output_dir}/config.json"
+
+        if [[ "$overwrite" == false ]] && sweep_output_current "$output_dir"; then
+            printf '\n[%d/%d] Reusing completed ordinal analysis with D=%d, tau=%d\n' \
+                "$run_number" "$total_runs" "$dimension" "$delay"
+            continue
+        fi
 
         mkdir -p "$output_dir"
         if [[ ! -f "$config_path" || "$overwrite" == true ]]; then
@@ -103,5 +125,5 @@ Path(config_path).write_text(
     done
 done
 
-printf '\nCompleted all %d ordinal parameter combinations. Outputs: %s\n' \
+printf '\nCompleted all %d ordinal embedding-dimension settings at tau=1. Outputs: %s\n' \
     "$total_runs" "$OUTPUT_ROOT"

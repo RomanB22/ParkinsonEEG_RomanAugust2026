@@ -25,7 +25,7 @@ Usage: bash run_all_analyses.sh [options]
 Run the complete post-cleaning Parkinson EEG analysis pipeline:
   1. PSD analysis
   2. Primary ordinal analysis
-  3. Ordinal D/tau parameter sweep
+  3. Ordinal embedding-dimension sweep at tau=1
   4. Scale-free/specparam and bout-property analysis
   5. Within-bout ordinal analysis
   6. Specparam fit-QC bout and within-bout sensitivity
@@ -43,7 +43,7 @@ Options:
   --dry-run            Print the commands and freshness decisions only
   --no-progress        Disable progress bars where supported
   --skip-tests         Do not run repository integration tests after analyses
-  --skip-sweep         Skip the nine-run D/tau ordinal parameter sweep
+  --skip-sweep         Skip the D={3,4,5,6}, tau=1 ordinal sensitivity sweep
   --skip-exploration   Skip the PD-versus-Control model exploration
   --skip-matched       Skip the complete matched-cohort sensitivity pipeline
   --env NAME           Conda environment (default: MNE_August2026)
@@ -163,16 +163,14 @@ ordinal_primary_current() {
 }
 
 ordinal_sweep_current() {
-    local dimension delay directory
-    for dimension in 4 6 7; do
-        for delay in 1 5 10; do
-            directory="ordinal_analysis/parameter_sweep/D${dimension}_tau${delay}"
-            [[ -f "${directory}/manifest.json" ]] || return 1
-            header_has_extended_renyi \
-                "${directory}/metrics/subject_electrode_mean_metrics.csv" || return 1
-            header_has_extended_renyi \
-                "${directory}/metrics/band_subject_electrode_mean_metrics.csv" || return 1
-        done
+    local dimension directory
+    for dimension in 3 4 5 6; do
+        directory="ordinal_analysis/parameter_sweep/D${dimension}_tau1"
+        [[ -f "${directory}/manifest.json" ]] || return 1
+        header_has_extended_renyi \
+            "${directory}/metrics/subject_electrode_mean_metrics.csv" || return 1
+        header_has_extended_renyi \
+            "${directory}/metrics/band_subject_electrode_mean_metrics.csv" || return 1
     done
 }
 
@@ -287,7 +285,7 @@ if [[ "$SKIP_SWEEP" == false ]]; then
     if [[ "$NO_PROGRESS" == true ]]; then
         ordinal_sweep_command+=(--no-progress)
     fi
-    printf '\n=== Ordinal D/tau parameter sweep ===\n'
+    printf '\n=== Ordinal embedding-dimension sweep (tau=1) ===\n'
     if [[ "$OVERWRITE" == false ]] && ordinal_sweep_current; then
         printf '  current output found; skipping\n'
     else
@@ -297,7 +295,7 @@ if [[ "$SKIP_SWEEP" == false ]]; then
         execute "${ordinal_sweep_command[@]}"
     fi
 else
-    printf '\n=== Ordinal D/tau parameter sweep ===\n  skipped by request\n'
+    printf '\n=== Ordinal embedding-dimension sweep (tau=1) ===\n  skipped by request\n'
 fi
 
 scale_free_command=(bash scale_free_analysis/run_scale_free_analysis.sh)

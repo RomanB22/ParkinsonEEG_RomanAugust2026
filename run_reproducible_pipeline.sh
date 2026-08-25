@@ -38,7 +38,7 @@ Options:
   --dry-run                  Print downstream commands without executing them
   --no-progress              Disable supported progress bars
   --skip-tests               Skip the downstream repository-test stage
-  --skip-sweep               Skip the D/tau ordinal sweep
+  --skip-sweep               Skip the D={3,4,5,6}, tau=1 ordinal sensitivity sweep
   --skip-exploration         Skip full and demographically matched prediction models
   --skip-matched             Skip the complete matched-cohort sensitivity pipeline
   --skip-manual-ica-review   Explicitly use automatic ICLabel proposals during cleaning

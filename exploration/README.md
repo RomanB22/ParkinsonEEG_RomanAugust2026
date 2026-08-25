@@ -154,7 +154,7 @@ reported validation metrics.
 
 Completed outputs under `ordinal_analysis/parameter_sweep/` are discovered
 automatically. The global H/C/F model is refitted independently for each
-completed combination of `D={4,6,7}` and `tau={1,5,10}`. The nine
+completed embedding dimension in `D={3,4,5,6}`, always at `tau=1`. The four
 representations are never concatenated and the primary `D=6, tau=1` definition
 does not change based on which setting performs best. Missing sweep runs remain
 listed in `ordinal_sweep_status.csv`.

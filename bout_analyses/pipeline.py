@@ -115,6 +115,10 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     validate_ordinal_parameters(
         int(ordinal["embedding_dimension"]), int(ordinal["delay_samples"])
     )
+    if not 3 <= int(ordinal["embedding_dimension"]) <= 6:
+        raise ValueError("Within-bout embedding_dimension must be between 3 and 6")
+    if int(ordinal["delay_samples"]) != 1:
+        raise ValueError("Within-bout ordinal analysis requires tau=1")
     if ordinal.get("tie_precision") is not None:
         raise ValueError("ordinal.tie_precision must be null to preserve full precision")
     if ordinal.get("pooling") != "pool_pattern_counts_without_crossing_bout_or_epoch_boundaries":
@@ -710,4 +714,3 @@ def run_analysis(
         manifest["n_analyzable_ordinal_bouts"],
     )
     return manifest
-

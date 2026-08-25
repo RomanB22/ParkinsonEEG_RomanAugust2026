@@ -23,8 +23,8 @@
     "delay_samples": 1
   },
   "ordinal_sweep": {
-    "expected_dimensions": [4, 6, 7],
-    "expected_delays": [1, 5, 10]
+    "expected_dimensions": [3, 4, 5, 6],
+    "expected_delays": [1]
   },
   "ordinal_model_bands": ["theta", "alpha", "beta"],
   "candidate_features": {

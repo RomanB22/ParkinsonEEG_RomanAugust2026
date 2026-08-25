@@ -20,6 +20,7 @@ class BoutAnalysesTests(unittest.TestCase):
         self.assertEqual(config["psd"], {"fmin_hz": 1.0, "fmax_hz": 50.0})
         self.assertEqual(config["specparam"]["frequency_range_hz"], [1.0, 50.0])
         self.assertEqual(config["ordinal"]["embedding_dimension"], 6)
+        self.assertEqual(config["ordinal"]["delay_samples"], 1)
         self.assertEqual(METRICS, ("entropy", "complexity", "fisher_information"))
         self.assertEqual(config["bands"]["broad_5_15"], [5.0, 15.0])
 

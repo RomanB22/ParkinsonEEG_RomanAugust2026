@@ -1,7 +1,9 @@
 import json
 import itertools
 import math
+import tempfile
 import unittest
+from pathlib import Path
 
 import numpy as np
 import ordpy
@@ -203,6 +205,7 @@ class OrdinalMetricTests(unittest.TestCase):
 
     def test_config_preserves_all_signal_decimals(self):
         config = load_analysis_config("ordinal_analysis/config.json")
+        self.assertEqual(config["ordinal"]["delay_samples"], 1)
         self.assertIsNone(config["ordinal"]["tie_precision"])
         self.assertEqual(
             list(config["bands"]),
@@ -212,6 +215,16 @@ class OrdinalMetricTests(unittest.TestCase):
         self.assertEqual(config["band_filter"]["order"], 4)
         with open("ordinal_analysis/config.json", encoding="utf-8") as stream:
             self.assertIsNone(json.load(stream)["ordinal"]["tie_precision"])
+
+    def test_config_rejects_nonunit_delay(self):
+        with open("ordinal_analysis/config.json", encoding="utf-8") as stream:
+            config = json.load(stream)
+        config["ordinal"]["delay_samples"] = 5
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "config.json"
+            path.write_text(json.dumps(config), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "must be 1"):
+                load_analysis_config(path)
 
 
 if __name__ == "__main__":

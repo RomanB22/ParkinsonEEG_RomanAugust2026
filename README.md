@@ -291,8 +291,8 @@ bash quantitative_behavioral/run_quantitative_behavioral.sh --overwrite
 ## Combined post-cleaning analysis runner
 
 [`run_all_analyses.sh`](run_all_analyses.sh) combines all post-cleaning
-analyses in dependency order: PSD, primary ordinal quantities, the D/tau
-sweep, scale-free bout properties, within-bout ordinal quantities,
+analyses in dependency order: PSD, primary ordinal quantities, the D={3,4,5,6}
+sweep at tau=1, scale-free bout properties, within-bout ordinal quantities,
 PD-versus-Control exploration models, D-specific MOCA inputs, and the final
 quantitative-behavioral analysis. It resumes from valid completed outputs by
 default and detects ordinal tables missing the configured Rényi alpha columns.
