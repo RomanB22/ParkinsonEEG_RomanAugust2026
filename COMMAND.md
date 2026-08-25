@@ -35,6 +35,11 @@ The `run` command includes:
 The matched pipeline runs by default. Do not pass `--skip-matched` when both
 cohorts are required.
 
+The runner is bootstrappable from the source `dataset/`: if the root
+`processed/` directory is absent, dataset inspection first creates
+`processed/metadata/` and `processed/qc/dataset_inspection/` before signal
+cleaning begins.
+
 ## Automatic ICA fallback
 
 To use automatic ICLabel proposals without manual confirmation:

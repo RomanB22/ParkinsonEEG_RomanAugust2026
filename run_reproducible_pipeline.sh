@@ -91,15 +91,37 @@ if [[ "$MODE" == "review" ]]; then
     exec "${command[@]}"
 fi
 
-[[ -f processed/metadata/subjects.csv ]] || {
-    printf 'ERROR: missing processed/metadata/subjects.csv\n' >&2
-    exit 1
-}
+if [[ ! -f processed/metadata/subjects.csv ]]; then
+    printf '\n=== Dataset inspection and metadata bootstrap ===\n'
+    if [[ "$DRY_RUN" == true ]]; then
+        printf '  + conda run -n MNE_Roman python scripts/inspect_dataset.py --config config/preprocessing.yaml\n'
+        # Dry-run must remain read-only. Use the source participant table only
+        # to support the downstream command preview.
+        [[ -f dataset/participants.tsv ]] || {
+            printf 'ERROR: missing source dataset/participants.tsv\n' >&2
+            exit 1
+        }
+        expected_subjects=$(awk -F'\t' 'NR > 1 {count += 1} END {print count + 0}' \
+            dataset/participants.tsv)
+    else
+        conda run --no-capture-output -n MNE_Roman \
+            python scripts/inspect_dataset.py --config config/preprocessing.yaml
+        [[ -f processed/metadata/subjects.csv ]] || {
+            printf 'ERROR: dataset inspection did not create processed/metadata/subjects.csv\n' >&2
+            exit 1
+        }
+    fi
+fi
 
-expected_subjects=$(awk -F, 'NR > 1 {count += 1} END {print count + 0}' \
-    processed/metadata/subjects.csv)
-cleaned_epochs=$(find processed/epochs -maxdepth 1 -type f \
-    -name 'sub-*_task-Rest_desc-cleaned_epo.fif' | wc -l | tr -d ' ')
+if [[ -z "${expected_subjects:-}" ]]; then
+    expected_subjects=$(awk -F, 'NR > 1 {count += 1} END {print count + 0}' \
+        processed/metadata/subjects.csv)
+fi
+cleaned_epochs=0
+if [[ -d processed/epochs ]]; then
+    cleaned_epochs=$(find processed/epochs -maxdepth 1 -type f \
+        -name 'sub-*_task-Rest_desc-cleaned_epo.fif' | wc -l | tr -d ' ')
+fi
 cleaning_current=false
 if [[ "$cleaned_epochs" -eq "$expected_subjects" ]] \
     && [[ -f processed/metadata/preprocessing_qc.csv ]]; then
