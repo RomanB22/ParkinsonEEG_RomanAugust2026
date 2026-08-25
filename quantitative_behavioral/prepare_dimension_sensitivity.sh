@@ -76,6 +76,8 @@ required = {
     "renyi_complexity_alpha_0_5",
     "renyi_entropy_alpha_5",
     "renyi_complexity_alpha_5",
+    "renyi_entropy_alpha_10",
+    "renyi_complexity_alpha_10",
 }
 for filename in sys.argv[1:]:
     with open(filename, newline="", encoding="utf-8") as stream:

@@ -11,6 +11,13 @@
     "ordinal_sweep_root": "ordinal_analysis/parameter_sweep"
   },
   "output_dir": "exploration/processed",
+  "demographic_matching": {
+    "output_dir": "exploration/processed_matched",
+    "exact_variables": ["sex_male"],
+    "distance_variable": "age_years",
+    "algorithm": "optimal_linear_sum_assignment_without_replacement_within_sex",
+    "maximum_age_difference_years": 5.0
+  },
   "primary_ordinal_parameters": {
     "embedding_dimension": 6,
     "delay_samples": 1
@@ -24,8 +31,8 @@
     "renyi_metrics": [
       "renyi_entropy_alpha_0_1",
       "renyi_complexity_alpha_0_1",
-      "renyi_entropy_alpha_5",
-      "renyi_complexity_alpha_5"
+      "renyi_entropy_alpha_10",
+      "renyi_complexity_alpha_10"
     ],
     "renyi_policy": "Prespecified low/high alpha endpoints only; intermediate alphas are excluded from models because of extreme rank redundancy",
     "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],
@@ -57,7 +64,7 @@
     "ordinal_renyi_adjusted": {
       "label": "Ordinal + Rényi endpoints + demographics",
       "role": "renyi_sensitivity",
-      "features": ["age_years", "sex_male", "ordinal_global_entropy", "ordinal_global_complexity", "ordinal_global_fisher_information", "ordinal_global_renyi_entropy_alpha_0_1", "ordinal_global_renyi_complexity_alpha_0_1", "ordinal_global_renyi_entropy_alpha_5", "ordinal_global_renyi_complexity_alpha_5"]
+      "features": ["age_years", "sex_male", "ordinal_global_entropy", "ordinal_global_complexity", "ordinal_global_fisher_information", "ordinal_global_renyi_entropy_alpha_0_1", "ordinal_global_renyi_complexity_alpha_0_1", "ordinal_global_renyi_entropy_alpha_10", "ordinal_global_renyi_complexity_alpha_10"]
     },
     "psd_adjusted": {
       "label": "PSD + demographics",
@@ -77,7 +84,7 @@
     "ordinal_band_renyi_adjusted": {
       "label": "Band ordinal + Rényi endpoints + demographics",
       "role": "renyi_band_sensitivity",
-      "features": ["age_years", "sex_male", "ordinal_theta_entropy", "ordinal_theta_complexity", "ordinal_theta_fisher_information", "ordinal_theta_renyi_entropy_alpha_0_1", "ordinal_theta_renyi_complexity_alpha_0_1", "ordinal_theta_renyi_entropy_alpha_5", "ordinal_theta_renyi_complexity_alpha_5", "ordinal_alpha_entropy", "ordinal_alpha_complexity", "ordinal_alpha_fisher_information", "ordinal_alpha_renyi_entropy_alpha_0_1", "ordinal_alpha_renyi_complexity_alpha_0_1", "ordinal_alpha_renyi_entropy_alpha_5", "ordinal_alpha_renyi_complexity_alpha_5", "ordinal_beta_entropy", "ordinal_beta_complexity", "ordinal_beta_fisher_information", "ordinal_beta_renyi_entropy_alpha_0_1", "ordinal_beta_renyi_complexity_alpha_0_1", "ordinal_beta_renyi_entropy_alpha_5", "ordinal_beta_renyi_complexity_alpha_5"]
+      "features": ["age_years", "sex_male", "ordinal_theta_entropy", "ordinal_theta_complexity", "ordinal_theta_fisher_information", "ordinal_theta_renyi_entropy_alpha_0_1", "ordinal_theta_renyi_complexity_alpha_0_1", "ordinal_theta_renyi_entropy_alpha_10", "ordinal_theta_renyi_complexity_alpha_10", "ordinal_alpha_entropy", "ordinal_alpha_complexity", "ordinal_alpha_fisher_information", "ordinal_alpha_renyi_entropy_alpha_0_1", "ordinal_alpha_renyi_complexity_alpha_0_1", "ordinal_alpha_renyi_entropy_alpha_10", "ordinal_alpha_renyi_complexity_alpha_10", "ordinal_beta_entropy", "ordinal_beta_complexity", "ordinal_beta_fisher_information", "ordinal_beta_renyi_entropy_alpha_0_1", "ordinal_beta_renyi_complexity_alpha_0_1", "ordinal_beta_renyi_entropy_alpha_10", "ordinal_beta_renyi_complexity_alpha_10"]
     },
     "aperiodic_adjusted": {
       "label": "Aperiodic exponent + demographics",

@@ -34,6 +34,8 @@ METRIC_STYLE = {
     "renyi_complexity_alpha_2": ("Rényi complexity (Cα, α=2)", "magma"),
     "renyi_entropy_alpha_5": ("Rényi entropy (Hα, α=5)", "viridis"),
     "renyi_complexity_alpha_5": ("Rényi complexity (Cα, α=5)", "magma"),
+    "renyi_entropy_alpha_10": ("Rényi entropy (Hα, α=10)", "viridis"),
+    "renyi_complexity_alpha_10": ("Rényi complexity (Cα, α=10)", "magma"),
 }
 
 PLANE_PAIRS = (
@@ -74,6 +76,12 @@ PLANE_PAIRS = (
         "renyi_complexity_alpha_5",
         "electrode_renyi_hxc_alpha_5",
         "Rényi Hα × Cα (α=5)",
+    ),
+    (
+        "renyi_entropy_alpha_10",
+        "renyi_complexity_alpha_10",
+        "electrode_renyi_hxc_alpha_10",
+        "Rényi Hα × Cα (α=10)",
     ),
 )
 

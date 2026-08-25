@@ -40,6 +40,47 @@ METRICS: dict[str, Callable[[np.ndarray, np.ndarray], float]] = {
 }
 
 
+def _paired_group_splits(
+    groups: np.ndarray,
+    y: np.ndarray,
+    *,
+    n_splits: int,
+    seed: int,
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Create shuffled folds that keep complete one-Control/one-PD pairs together."""
+    unique_groups = np.unique(groups)
+    if len(unique_groups) < int(n_splits):
+        raise ValueError("Matched pairs must be at least as numerous as CV folds")
+    for group in unique_groups:
+        outcomes = y[groups == group]
+        if len(outcomes) != 2 or set(outcomes) != {0, 1}:
+            raise ValueError("Each cv_group must contain exactly one Control and one PD")
+    shuffled = np.random.default_rng(int(seed)).permutation(unique_groups)
+    test_group_sets = np.array_split(shuffled, int(n_splits))
+    indices = np.arange(len(y))
+    return [
+        (indices[~np.isin(groups, test_groups)], indices[np.isin(groups, test_groups)])
+        for test_groups in test_group_sets
+    ]
+
+
+def _bootstrap_indices(
+    table: pd.DataFrame,
+    truth: np.ndarray,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    """Resample matched pairs together, otherwise resample within outcome class."""
+    if "cv_group" in table:
+        groups = table["cv_group"].astype(str).to_numpy()
+        unique_groups = np.unique(groups)
+        sampled = rng.choice(unique_groups, size=len(unique_groups), replace=True)
+        return np.concatenate([np.flatnonzero(groups == group) for group in sampled])
+    class_indices = [np.flatnonzero(truth == outcome) for outcome in (0, 1)]
+    return np.concatenate(
+        [rng.choice(values, size=len(values), replace=True) for values in class_indices]
+    )
+
+
 def _pipeline(seed: int, c_value: float = 1.0) -> Pipeline:
     return Pipeline(
         [
@@ -129,6 +170,11 @@ def run_nested_validation(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """Run repeated nested CV and return predictions, metrics, and coefficients."""
     y = feature_table["target_pd"].to_numpy(dtype=int)
+    cv_groups = (
+        feature_table["cv_group"].astype(str).to_numpy()
+        if "cv_group" in feature_table
+        else None
+    )
     subject_ids = feature_table["subject_id"].astype(str).to_numpy()
     n_splits = int(validation["outer_folds"])
     n_repeats = int(validation["outer_repeats"])
@@ -146,19 +192,42 @@ def run_nested_validation(
     for model_index, (model_name, specification) in enumerate(models.items()):
         features = [str(value) for value in specification["features"]]
         x = feature_table[features].to_numpy(dtype=float)
-        outer = RepeatedStratifiedKFold(
-            n_splits=n_splits,
-            n_repeats=n_repeats,
-            random_state=seed,
-        )
-        for split_index, (train_indices, test_indices) in enumerate(outer.split(x, y)):
+        if cv_groups is None:
+            outer_splits = list(
+                RepeatedStratifiedKFold(
+                    n_splits=n_splits,
+                    n_repeats=n_repeats,
+                    random_state=seed,
+                ).split(x, y)
+            )
+        else:
+            outer_splits = [
+                split
+                for repeat in range(n_repeats)
+                for split in _paired_group_splits(
+                    cv_groups,
+                    y,
+                    n_splits=n_splits,
+                    seed=seed + repeat,
+                )
+            ]
+        for split_index, (train_indices, test_indices) in enumerate(outer_splits):
             repeat = split_index // n_splits
             fold = split_index % n_splits
             split_seed = seed + 1000 * model_index + split_index
-            inner = StratifiedKFold(
-                n_splits=inner_folds,
-                shuffle=True,
-                random_state=split_seed,
+            inner = (
+                StratifiedKFold(
+                    n_splits=inner_folds,
+                    shuffle=True,
+                    random_state=split_seed,
+                )
+                if cv_groups is None
+                else _paired_group_splits(
+                    cv_groups[train_indices],
+                    y[train_indices],
+                    n_splits=inner_folds,
+                    seed=split_seed,
+                )
             )
             search = GridSearchCV(
                 _pipeline(split_seed),
@@ -197,6 +266,11 @@ def run_nested_validation(
                         "repeat": int(repeat),
                         "fold": int(fold),
                         "subject_id": subject_ids[subject_index],
+                        **(
+                            {"cv_group": str(cv_groups[subject_index])}
+                            if cv_groups is not None
+                            else {}
+                        ),
                         "target_pd": int(y[subject_index]),
                         "predicted_probability_pd": float(probability[row_index]),
                         "predicted_class_pd": int(predicted[row_index]),
@@ -242,9 +316,12 @@ def run_nested_validation(
 
 def average_repeated_predictions(predictions: pd.DataFrame) -> pd.DataFrame:
     """Average repeated out-of-fold probabilities to one prediction per subject/model."""
+    grouping = ["model", "model_label", "model_role", "subject_id", "target_pd"]
+    if "cv_group" in predictions:
+        grouping.append("cv_group")
     result = (
         predictions.groupby(
-            ["model", "model_label", "model_role", "subject_id", "target_pd"],
+            grouping,
             sort=False,
             as_index=False,
         )
@@ -275,12 +352,9 @@ def bootstrap_performance(
         probability = selected["predicted_probability_pd"].to_numpy(dtype=float)
         threshold = float(selected["classification_threshold"].iloc[0])
         point = _classification_metrics(truth, probability, threshold)
-        class_indices = [np.flatnonzero(truth == outcome) for outcome in (0, 1)]
         bootstrap_values = {metric: [] for metric in point}
         for _ in range(int(n_resamples)):
-            indices = np.concatenate(
-                [rng.choice(values, size=len(values), replace=True) for values in class_indices]
-            )
+            indices = _bootstrap_indices(selected, truth, rng)
             values = _classification_metrics(
                 truth[indices], probability[indices], threshold
             )
@@ -312,27 +386,28 @@ def bootstrap_auc_differences(
     seed: int,
 ) -> pd.DataFrame:
     """Return paired subject-bootstrap AUC differences versus a reference model."""
+    index_columns = ["subject_id", "target_pd"]
+    if "cv_group" in averaged_predictions:
+        index_columns.append("cv_group")
     wide = averaged_predictions.pivot(
-        index=["subject_id", "target_pd"],
+        index=index_columns,
         columns="model",
         values="predicted_probability_pd",
     ).reset_index()
     if reference_model not in wide:
         raise ValueError(f"Reference model is unavailable: {reference_model}")
     truth = wide["target_pd"].to_numpy(dtype=int)
-    class_indices = [np.flatnonzero(truth == outcome) for outcome in (0, 1)]
     reference = wide[reference_model].to_numpy(dtype=float)
     reference_auc = float(roc_auc_score(truth, reference))
     rng = np.random.default_rng(int(seed))
     rows = []
-    for model_name in sorted(set(wide.columns) - {"subject_id", "target_pd", reference_model}):
+    non_models = {"subject_id", "target_pd", "cv_group", reference_model}
+    for model_name in sorted(set(wide.columns) - non_models):
         candidate = wide[model_name].to_numpy(dtype=float)
         observed = float(roc_auc_score(truth, candidate) - reference_auc)
         differences = []
         for _ in range(int(n_resamples)):
-            indices = np.concatenate(
-                [rng.choice(values, size=len(values), replace=True) for values in class_indices]
-            )
+            indices = _bootstrap_indices(wide, truth, rng)
             differences.append(
                 roc_auc_score(truth[indices], candidate[indices])
                 - roc_auc_score(truth[indices], reference[indices])
@@ -359,6 +434,11 @@ def fit_final_models(
     """Tune on all subjects, save descriptive final models, and run permutation tests."""
     output_dir.mkdir(parents=True, exist_ok=True)
     y = feature_table["target_pd"].to_numpy(dtype=int)
+    cv_groups = (
+        feature_table["cv_group"].astype(str).to_numpy()
+        if "cv_group" in feature_table
+        else None
+    )
     seed = int(validation["random_seed"])
     inner_folds = int(validation["inner_folds"])
     c_grid = [float(value) for value in validation["c_grid"]]
@@ -369,10 +449,19 @@ def fit_final_models(
         features = [str(value) for value in specification["features"]]
         x = feature_table[features].to_numpy(dtype=float)
         model_seed = seed + 10000 + model_index
-        inner = StratifiedKFold(
-            n_splits=inner_folds,
-            shuffle=True,
-            random_state=model_seed,
+        inner = (
+            StratifiedKFold(
+                n_splits=inner_folds,
+                shuffle=True,
+                random_state=model_seed,
+            )
+            if cv_groups is None
+            else _paired_group_splits(
+                cv_groups,
+                y,
+                n_splits=inner_folds,
+                seed=model_seed,
+            )
         )
         search = GridSearchCV(
             _pipeline(model_seed),
@@ -411,10 +500,19 @@ def fit_final_models(
             )
         )
         if n_permutations > 0:
-            permutation_cv = StratifiedKFold(
-                n_splits=int(validation["outer_folds"]),
-                shuffle=True,
-                random_state=model_seed,
+            permutation_cv = (
+                StratifiedKFold(
+                    n_splits=int(validation["outer_folds"]),
+                    shuffle=True,
+                    random_state=model_seed,
+                )
+                if cv_groups is None
+                else _paired_group_splits(
+                    cv_groups,
+                    y,
+                    n_splits=int(validation["outer_folds"]),
+                    seed=model_seed,
+                )
             )
             score, permutation_scores, p_value = permutation_test_score(
                 _pipeline(model_seed, best_c),
@@ -425,6 +523,7 @@ def fit_final_models(
                 n_permutations=n_permutations,
                 random_state=model_seed,
                 n_jobs=1,
+                groups=cv_groups,
             )
             permutation_rows.append(
                 {

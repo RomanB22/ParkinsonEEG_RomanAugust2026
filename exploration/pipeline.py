@@ -33,13 +33,16 @@ from .modeling import (
     fit_final_models,
     run_nested_validation,
 )
+from .matching import match_control_pd_pairs, remove_demographic_predictors
 from .plots import (
     plot_calibration,
     plot_coefficient_stability,
     plot_confusion_matrices,
+    plot_demographic_matching,
     plot_entropy_complexity_plane,
     plot_feature_correlations,
     plot_feature_distributions,
+    plot_features_vs_age,
     plot_model_performance,
     plot_roc_and_precision_recall,
     plot_sweep_sensitivity,
@@ -60,6 +63,7 @@ def load_exploration_config(path: str | Path) -> dict[str, Any]:
         "models",
         "validation",
         "plots",
+        "demographic_matching",
     }
     missing = sorted(required - set(config))
     if missing:
@@ -83,8 +87,8 @@ def load_exploration_config(path: str | Path) -> dict[str, Any]:
     if candidate.get("renyi_metrics") != [
         "renyi_entropy_alpha_0_1",
         "renyi_complexity_alpha_0_1",
-        "renyi_entropy_alpha_5",
-        "renyi_complexity_alpha_5",
+        "renyi_entropy_alpha_10",
+        "renyi_complexity_alpha_10",
     ]:
         raise ValueError("Exploration Rényi predictors must remain the alpha endpoints")
     if candidate.get("bout_bands") != [
@@ -94,6 +98,13 @@ def load_exploration_config(path: str | Path) -> dict[str, Any]:
         "high_beta",
     ]:
         raise ValueError("Exploration bout bands must match the bout pipeline")
+    matching = config["demographic_matching"]
+    if matching.get("exact_variables") != ["sex_male"]:
+        raise ValueError("Demographic matching must require exact sex")
+    if matching.get("distance_variable") != "age_years":
+        raise ValueError("Demographic matching distance must use age")
+    if float(matching.get("maximum_age_difference_years", 0)) <= 0:
+        raise ValueError("Demographic matching requires a positive age caliper")
     return config
 
 
@@ -122,10 +133,12 @@ def _write_csv(table: pd.DataFrame, path: Path) -> None:
 def _write_revision_report(
     path: Path,
     performance: pd.DataFrame,
-    auc_vs_demographics: pd.DataFrame,
+    auc_vs_demographics: pd.DataFrame | None,
     auc_vs_psd: pd.DataFrame,
     permutation_results: pd.DataFrame,
     models: dict[str, dict[str, Any]],
+    *,
+    cohort_mode: str = "full",
 ) -> None:
     """Write a concise, uncertainty-aware audit of the revised model set."""
     auc = (
@@ -133,7 +146,11 @@ def _write_revision_report(
         .set_index("model")
         .sort_values("estimate", ascending=False)
     )
-    vs_demo = auc_vs_demographics.set_index("model")
+    vs_demo = (
+        auc_vs_demographics.set_index("model")
+        if auc_vs_demographics is not None and not auc_vs_demographics.empty
+        else pd.DataFrame()
+    )
     vs_psd = auc_vs_psd.set_index("model")
     permutation = (
         permutation_results.set_index("model")
@@ -145,6 +162,8 @@ def _write_revision_report(
         return f"{row['estimate']:.3f} [{row['ci_lower']:.3f}, {row['ci_upper']:.3f}]"
 
     def difference(table: pd.DataFrame, model: str) -> str:
+        if table.empty:
+            return "not included"
         if model not in table.index:
             return "reference"
         row = table.loc[model]
@@ -157,7 +176,8 @@ def _write_revision_report(
     lines = [
         "# Exploration model revision",
         "",
-        "This report compares the newly available EEG feature blocks using the same "
+        f"Cohort mode: **{cohort_mode}**. This report compares the newly available EEG "
+        "feature blocks using the same "
         "repeated nested cross-validation splits and ridge-logistic model family. "
         "Values are subject-level out-of-fold ROC AUC with stratified-bootstrap 95% "
         "intervals. A dagger (†) marks a paired AUC-difference interval that excludes zero.",
@@ -186,10 +206,15 @@ def _write_revision_report(
         if model in vs_psd.index and float(vs_psd.loc[model, "ci_lower"]) > 0
     ]
     best_recommendation = (
-        "- PSD + demographics remains the highest-scoring EEG model; retain it as the benchmark."
+        f"- {models[best_eeg]['label']} remains the highest-scoring EEG model; retain it as the benchmark."
         if best_eeg == "psd_adjusted"
         else f"- Retain {models[best_eeg]['label']} as the highest-scoring EEG candidate, "
         "without claiming superiority unless its paired interval versus PSD is positive."
+    )
+    baseline_recommendation = (
+        "- Keep demographics as the baseline and PSD + demographics as the EEG benchmark."
+        if cohort_mode == "full"
+        else "- Age and sex are excluded from every matched-cohort model; PSD is the EEG benchmark."
     )
     lines.extend(
         [
@@ -215,7 +240,7 @@ def _write_revision_report(
     lines.extend(
         [
             "",
-            "Rényi models use only α=0.1 and α=5 as sensitivity endpoints; the intermediate "
+            "Rényi models use only α=0.1 and α=10 as sensitivity endpoints; the intermediate "
             "α values were excluded because they are highly redundant with H, C, F and with "
             "one another. Embedding dimensions remain separate sensitivity analyses and are "
             "never concatenated into a single feature vector.",
@@ -229,7 +254,7 @@ def _write_revision_report(
             "",
             "## Recommended reporting set",
             "",
-            "- Keep demographics as the baseline and PSD + demographics as the EEG benchmark.",
+            baseline_recommendation,
             best_recommendation,
             "- Report within-bout ordinal, bout dynamics, typical-bout shape, aperiodic, and "
             "Rényi models as prespecified sensitivity blocks rather than combining every quantity.",
@@ -374,7 +399,10 @@ def _run_sweep_sensitivity(
                 "fisher_information": feature_names[2],
             }
         )
-        selected = base_table[["subject_id", "target_pd"]].merge(
+        base_columns = ["subject_id", "target_pd"]
+        if "cv_group" in base_table:
+            base_columns.append("cv_group")
+        selected = base_table[base_columns].merge(
             ordinal[["subject_id", *feature_names]],
             on="subject_id",
             how="left",
@@ -421,6 +449,7 @@ def run_analysis(
     quick: bool = False,
     skip_sweep: bool = False,
     skip_permutations: bool = False,
+    matched_demographics: bool = False,
 ) -> dict[str, Any]:
     """Run feature assembly, nested validation, final descriptive fits, and plots."""
     config_path = Path(config_path)
@@ -428,6 +457,8 @@ def run_analysis(
     config = copy.deepcopy(config)
     if output_dir_override is not None:
         config["output_dir"] = str(output_dir_override)
+    elif matched_demographics:
+        config["output_dir"] = str(config["demographic_matching"]["output_dir"])
     if quick:
         config["validation"]["outer_repeats"] = 2
         config["validation"]["bootstrap_resamples"] = 100
@@ -443,7 +474,22 @@ def run_analysis(
     logger = _configure_logger(output_dir, overwrite)
     logger.info("Building one-row-per-subject feature table")
     feature_table, provenance = build_feature_table(config)
-    models = config["models"]
+    pair_table = balance_table = pd.DataFrame()
+    if matched_demographics:
+        feature_table, pair_table, balance_table = match_control_pd_pairs(
+            feature_table,
+            maximum_age_difference_years=float(
+                config["demographic_matching"]["maximum_age_difference_years"]
+            ),
+        )
+        models = remove_demographic_predictors(config["models"])
+        logger.info(
+            "Matched sensitivity cohort | pairs=%d | maximum_age_gap=%.1f years",
+            len(pair_table),
+            float(pair_table["absolute_age_difference_years"].max()),
+        )
+    else:
+        models = config["models"]
     all_features = list(
         dict.fromkeys(
             feature
@@ -467,6 +513,9 @@ def run_analysis(
     figures_dir = output_dir / "figures"
     _write_csv(feature_table, features_dir / "subject_modeling_table.csv")
     _write_csv(provenance, features_dir / "feature_provenance.csv")
+    if matched_demographics:
+        _write_csv(pair_table, features_dir / "demographic_match_pairs.csv")
+        _write_csv(balance_table, features_dir / "demographic_balance.csv")
     _write_csv(
         _feature_summary(feature_table, all_features),
         features_dir / "feature_group_summary.csv",
@@ -492,11 +541,24 @@ def run_analysis(
         n_resamples=int(config["validation"]["bootstrap_resamples"]),
         seed=int(config["validation"]["random_seed"]),
     )
-    auc_differences = bootstrap_auc_differences(
-        averaged_predictions,
-        reference_model="demographics",
-        n_resamples=int(config["validation"]["bootstrap_resamples"]),
-        seed=int(config["validation"]["random_seed"]) + 1,
+    auc_differences = (
+        bootstrap_auc_differences(
+            averaged_predictions,
+            reference_model="demographics",
+            n_resamples=int(config["validation"]["bootstrap_resamples"]),
+            seed=int(config["validation"]["random_seed"]) + 1,
+        )
+        if "demographics" in models
+        else pd.DataFrame(
+            columns=[
+                "model",
+                "reference_model",
+                "auc_difference",
+                "ci_lower",
+                "ci_upper",
+                "bootstrap_resamples",
+            ]
+        )
     )
     auc_differences_vs_psd = bootstrap_auc_differences(
         averaged_predictions,
@@ -506,9 +568,12 @@ def run_analysis(
     )
     coefficient_summary = _coefficient_summary(fold_coefficients)
     first_model = next(iter(models))
+    fold_assignment_columns = ["repeat", "fold", "subject_id", "target_pd"]
+    if "cv_group" in predictions:
+        fold_assignment_columns.append("cv_group")
     fold_assignments = predictions.loc[
         predictions["model"].eq(first_model),
-        ["repeat", "fold", "subject_id", "target_pd"],
+        fold_assignment_columns,
     ].sort_values(["repeat", "fold", "subject_id"])
     _write_csv(predictions, predictions_dir / "repeated_outer_predictions.csv")
     _write_csv(averaged_predictions, predictions_dir / "subject_out_of_fold_predictions.csv")
@@ -536,6 +601,7 @@ def run_analysis(
         auc_differences_vs_psd,
         permutation_results,
         models,
+        cohort_mode="demographically matched" if matched_demographics else "full",
     )
 
     completed_sweeps = discover_completed_sweeps(config)
@@ -581,6 +647,21 @@ def run_analysis(
         figures_dir / "features" / "candidate_feature_distributions.png",
         dpi,
     )
+    plot_features_vs_age(
+        feature_table,
+        all_features,
+        group_order,
+        colors,
+        figures_dir / "features" / "versus_age",
+        dpi,
+    )
+    if matched_demographics:
+        plot_demographic_matching(
+            pair_table,
+            balance_table,
+            figures_dir / "features" / "demographic_matching.png",
+            dpi,
+        )
     plot_entropy_complexity_plane(
         feature_table,
         group_order,
@@ -650,6 +731,7 @@ def run_analysis(
             "skip_sweep": bool(skip_sweep),
             "skip_permutations": bool(skip_permutations),
             "overwrite": bool(overwrite),
+            "matched_demographics": bool(matched_demographics),
         },
         "software": {
             "python": platform.python_version(),
@@ -662,6 +744,26 @@ def run_analysis(
         },
         "n_subjects": int(len(feature_table)),
         "group_counts": feature_table["group"].value_counts().to_dict(),
+        "cohort_mode": "demographically_matched" if matched_demographics else "full",
+        "demographic_matching": (
+            {
+                "n_pairs": int(len(pair_table)),
+                "exact_variables": config["demographic_matching"]["exact_variables"],
+                "distance_variable": config["demographic_matching"]["distance_variable"],
+                "algorithm": config["demographic_matching"]["algorithm"],
+                "maximum_age_difference_years": float(
+                    config["demographic_matching"]["maximum_age_difference_years"]
+                ),
+                "observed_maximum_age_difference_years": float(
+                    pair_table["absolute_age_difference_years"].max()
+                ),
+                "fold_policy": "Matched pairs remain together in every outer and inner fold.",
+                "bootstrap_policy": "Matched pairs are resampled together.",
+                "permutation_policy": "PD/Control labels are permuted within matched pairs.",
+            }
+            if matched_demographics
+            else None
+        ),
         "outcome": "target_pd: PD=1, Control=0",
         "primary_model": "ordinal_adjusted",
         "primary_ordinal_parameters": config["primary_ordinal_parameters"],
@@ -670,7 +772,7 @@ def run_analysis(
             "Every model uses one row per subject. Electrode and bout observations are "
             "aggregated within subject before modeling. PSD predictors are prespecified "
             "log2 ratios against low gamma; overlapping broad_5_15 is excluded. Rényi "
-            "models retain only alpha=0.1 and alpha=5 endpoints because intermediate "
+            "models retain only the prespecified low/high Rényi endpoints because intermediate "
             "alphas are extremely redundant. Typical-bout curves are reduced to peak, "
             "half-height width, temporal asymmetry, and relative-phase consistency."
         ),

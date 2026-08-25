@@ -67,15 +67,15 @@ its own family-specific BH corrections.
 
 The broadband and band-resolved ordinal quantities are analyzed at **D=3, 4,
 5, and 6**, always with **tau=1**. Each D contains regular H/C/F plus Rényi
-entropy and complexity at **alpha=0.1, 0.5, 0.9, 1.1, 2, and 5**. The Rényi values come from
+entropy and complexity at **alpha=0.1, 0.5, 0.9, 1.1, 2, 5, and 10**. The Rényi values come from
 `ordpy.renyi_complexity_entropy`; no separate `renyi_entropy` calculation is
 used.
 
-Each D is a separate 105-feature analysis block: seven signal scopes
+Each D is a separate 119-feature analysis block: seven signal scopes
 (broadband plus six bands) × fifteen quantities. The pipeline writes a distinct
 one-row-per-subject matrix for each D and never concatenates the four D blocks
 into one model feature vector. BH-FDR is controlled separately within each D
-across its 105 features and within each correlation method.
+across its 119 features and within each correlation method.
 
 The D blocks are separate analyses, but they are **not statistically
 independent**: all four reuse the same participants and EEG recordings and
@@ -217,7 +217,7 @@ For the D=3,4,5,6 robustness analysis, use
 statistically significant only when the primary adjusted row has both
 `fdr_reject == True` and `p_fdr_bh < 0.05`. The raw `p_value` is provided for
 transparency, but `p_value < 0.05` by itself is not the decision rule after
-testing 105 features within that D. The `family` column identifies the relevant
+testing 119 features within that D. The `family` column identifies the relevant
 FDR block (`ordinal_D3` through `ordinal_D6`). Bootstrap intervals quantify
 effect uncertainty; a stable direction and magnitude across D strengthens the
 robustness interpretation without making the D blocks statistically

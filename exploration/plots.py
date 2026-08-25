@@ -115,6 +115,151 @@ def plot_feature_distributions(
     _save(fig, path, dpi)
 
 
+def plot_features_vs_age(
+    feature_table: pd.DataFrame,
+    features: list[str],
+    group_order: list[str],
+    colors: dict[str, str],
+    output_dir: Path,
+    dpi: int,
+    *,
+    features_per_page: int = 12,
+) -> None:
+    """Plot every candidate quantity against age as a descriptive visual audit."""
+    selected_features = [
+        feature
+        for feature in features
+        if feature not in {"age_years", "sex_male", "moca"}
+    ]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for old_page in output_dir.glob("age_scatter_page_*.png"):
+        old_page.unlink()
+    for page_index, start in enumerate(
+        range(0, len(selected_features), int(features_per_page)), start=1
+    ):
+        page_features = selected_features[start : start + int(features_per_page)]
+        columns = 3
+        rows = math.ceil(len(page_features) / columns)
+        fig, axes = plt.subplots(
+            rows,
+            columns,
+            figsize=(4.8 * columns, 3.8 * rows),
+            squeeze=False,
+        )
+        for axis, feature in zip(axes.flat, page_features):
+            for group in group_order:
+                selected = feature_table.loc[
+                    feature_table["group"].eq(group), ["age_years", feature]
+                ].dropna()
+                age = selected["age_years"].to_numpy(dtype=float)
+                values = selected[feature].to_numpy(dtype=float)
+                axis.scatter(
+                    age,
+                    values,
+                    color=colors[group],
+                    s=24,
+                    alpha=0.65,
+                    edgecolor="white",
+                    linewidth=0.3,
+                    label=group,
+                )
+                if len(age) >= 3 and np.ptp(age) > 0 and not np.allclose(values, values[0]):
+                    slope, intercept = np.polyfit(age, values, 1)
+                    line_age = np.asarray([age.min(), age.max()])
+                    axis.plot(
+                        line_age,
+                        intercept + slope * line_age,
+                        color=colors[group],
+                        linewidth=1.4,
+                    )
+            axis.set(
+                xlabel="Age (years)",
+                ylabel=feature_label(feature),
+                title=feature_label(feature),
+            )
+            axis.grid(alpha=0.2)
+        for axis in axes.flat[len(page_features) :]:
+            axis.set_visible(False)
+        handles, labels = axes.flat[0].get_legend_handles_labels()
+        fig.legend(handles, labels, frameon=False, loc="upper center", ncol=len(group_order))
+        fig.suptitle(
+            "Candidate quantities versus age (descriptive only; lines are unadjusted visual fits)",
+            fontsize=14,
+        )
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.965))
+        _save(fig, output_dir / f"age_scatter_page_{page_index:03d}.png", dpi)
+
+
+def plot_demographic_matching(
+    pair_table: pd.DataFrame,
+    balance_table: pd.DataFrame,
+    path: Path,
+    dpi: int,
+) -> None:
+    """Show pairwise age differences and full-versus-matched balance."""
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.8))
+    for _, pair in pair_table.iterrows():
+        axes[0].plot(
+            [0, 1],
+            [pair["control_age_years"], pair["pd_age_years"]],
+            color="0.65",
+            alpha=0.45,
+            linewidth=0.8,
+        )
+    axes[0].scatter(
+        np.zeros(len(pair_table)), pair_table["control_age_years"], color="#0072B2", s=16
+    )
+    axes[0].scatter(
+        np.ones(len(pair_table)), pair_table["pd_age_years"], color="#D55E00", s=16
+    )
+    axes[0].set(
+        xticks=[0, 1],
+        xticklabels=["Control", "PD"],
+        ylabel="Age (years)",
+        title="Optimal exact-sex age pairs",
+    )
+
+    gaps = pair_table["absolute_age_difference_years"].to_numpy(dtype=float)
+    axes[1].hist(
+        gaps,
+        bins=np.arange(-0.5, max(5.5, gaps.max() + 1.5), 1.0),
+        color="#009E73",
+        edgecolor="white",
+    )
+    axes[1].set(
+        xlabel="Absolute age difference (years)",
+        ylabel="Matched pairs",
+        title=f"Pair distance (median={np.median(gaps):g}, max={np.max(gaps):g})",
+    )
+
+    x = np.arange(2)
+    width = 0.34
+    for offset, cohort in zip((-width / 2, width / 2), ("full", "matched")):
+        selected = balance_table.loc[balance_table["cohort"].eq(cohort)].set_index(
+            "variable"
+        )
+        values = selected.loc[
+            ["age_years", "sex_male"],
+            "standardized_mean_difference_pd_minus_control",
+        ].to_numpy(dtype=float)
+        axes[2].bar(x + offset, values, width=width, label=cohort.title())
+    axes[2].axhline(0.0, color="black", linewidth=0.8)
+    axes[2].axhline(0.1, color="0.5", linewidth=0.8, linestyle=":")
+    axes[2].axhline(-0.1, color="0.5", linewidth=0.8, linestyle=":")
+    axes[2].set(
+        xticks=x,
+        xticklabels=["Age", "Sex (male)"],
+        ylabel="Standardized mean difference\n(PD − Control)",
+        title="Demographic balance",
+    )
+    axes[2].legend(frameon=False)
+    for axis in axes:
+        axis.grid(axis="y", alpha=0.2)
+    fig.suptitle("Demographically matched sensitivity cohort", fontsize=14)
+    fig.tight_layout()
+    _save(fig, path, dpi)
+
+
 def plot_entropy_complexity_plane(
     feature_table: pd.DataFrame,
     group_order: list[str],

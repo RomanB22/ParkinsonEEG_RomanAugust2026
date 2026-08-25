@@ -14,8 +14,8 @@ and uses `ordpy` 1.2.2 to calculate:
 - normalized permutation entropy, **H**;
 - Jensen-Shannon statistical complexity, **C**;
 - discrete Fisher information, **F**;
-- normalized Rényi permutation entropy, **Hα**, for `α = 0.1, 0.5, 0.9, 1.1, 2, 5`;
-- Rényi statistical complexity, **Cα**, for `α = 0.1, 0.5, 0.9, 1.1, 2, 5`.
+- normalized Rényi permutation entropy, **Hα**, for `α = 0.1, 0.5, 0.9, 1.1, 2, 5, 10`;
+- Rényi statistical complexity, **Cα**, for `α = 0.1, 0.5, 0.9, 1.1, 2, 5, 10`.
 
 Both Rényi quantities come from one vectorized call to
 `ordpy.renyi_complexity_entropy` for each pooled ordinal distribution. The
@@ -59,7 +59,7 @@ The defaults in [`config.json`](config.json) are:
 | `delay_samples` | `1` | Adjacent elements of a pattern are one 120 Hz sample apart (`1/120 ≈ 8.33 ms`). |
 | `tie_precision` | `null` | Uses the `ordpy` default full-precision policy; samples retain their full float64 decimals and are never rounded. |
 
-Rényi alpha values are fixed at `0.1`, `0.5`, `0.9`, `1.1`, `2`, and `5`.
+Rényi alpha values are fixed at `0.1`, `0.5`, `0.9`, `1.1`, `2`, `5`, and `10`.
 Values below and above one provide order-sensitive alternatives around the
 Shannon limit. The low-alpha values emphasize support and rarer patterns,
 whereas the high-alpha values give progressively greater weight to dominant
@@ -78,7 +78,7 @@ pattern. Vectorized NumPy ordering implements the same ordinal symbolization as
 `ordpy.complexity_entropy(..., probs=True)` and
 `ordpy.fisher_shannon(..., probs=True)` receive the resulting pooled
 probability distribution in lexicographic permutation order, as does
-`ordpy.renyi_complexity_entropy(..., alpha=[0.1, 0.5, 0.9, 1.1, 2, 5], probs=True)`.
+`ordpy.renyi_complexity_entropy(..., alpha=[0.1, 0.5, 0.9, 1.1, 2, 5, 10], probs=True)`.
 
 ## Band filtering
 
@@ -203,6 +203,7 @@ renyi_entropy_alpha_1_1       renyi_complexity_alpha_1_1
 renyi_entropy_alpha_2         renyi_complexity_alpha_2
 renyi_entropy_alpha_0_5       renyi_complexity_alpha_0_5
 renyi_entropy_alpha_5         renyi_complexity_alpha_5
+renyi_entropy_alpha_10        renyi_complexity_alpha_10
 ```
 
 Floating-point results are written with 17 significant digits.

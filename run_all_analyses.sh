@@ -28,9 +28,10 @@ Run the complete post-cleaning Parkinson EEG analysis pipeline:
   5. Within-bout ordinal analysis
   6. Specparam fit-QC bout and within-bout sensitivity
   7. Subject-balanced stereotypical bout gallery and detection QC
-  8. Transparent PD-versus-Control exploration models
-  9. D=3,4,5,6 quantitative-behavioral ordinal inputs
- 10. MOCA quantitative-behavioral analysis
+  8. Transparent full-cohort PD-versus-Control exploration models
+  9. Exact-sex/optimal-age matched exploration sensitivity
+ 10. D=3,4,5,6 quantitative-behavioral ordinal inputs
+ 11. MOCA quantitative-behavioral analysis
 
 The default is resumable: a current completed stage is skipped. A stage whose
 outputs predate the requested Rényi columns is automatically rerun.
@@ -129,6 +130,8 @@ header_has_extended_renyi() {
     [[ "$header" == *"renyi_complexity_alpha_0_5"* ]] || return 1
     [[ "$header" == *"renyi_entropy_alpha_5"* ]] || return 1
     [[ "$header" == *"renyi_complexity_alpha_5"* ]] || return 1
+    [[ "$header" == *"renyi_entropy_alpha_10"* ]] || return 1
+    [[ "$header" == *"renyi_complexity_alpha_10"* ]] || return 1
 }
 
 psd_current() {
@@ -194,8 +197,22 @@ exploration_current() {
     [[ -f exploration/processed/MODEL_REVISION.md ]] || return 1
     [[ -f exploration/processed/metrics/auc_differences_vs_psd.csv ]] || return 1
     [[ -f exploration/processed/models/typical_bout_shape_adjusted.joblib ]] || return 1
+    [[ -f exploration/processed/figures/features/versus_age/age_scatter_page_001.png ]] || return 1
     grep -q 'ordinal_global_renyi_entropy_alpha_0_1' \
         exploration/processed/features/subject_modeling_table.csv || return 1
+    grep -q 'ordinal_global_renyi_entropy_alpha_10' \
+        exploration/processed/features/subject_modeling_table.csv || return 1
+}
+
+exploration_matched_current() {
+    [[ -f exploration/processed_matched/manifest.json ]] || return 1
+    [[ -f exploration/processed_matched/MODEL_REVISION.md ]] || return 1
+    [[ -f exploration/processed_matched/features/demographic_match_pairs.csv ]] || return 1
+    [[ -f exploration/processed_matched/features/demographic_balance.csv ]] || return 1
+    [[ -f exploration/processed_matched/figures/features/demographic_matching.png ]] || return 1
+    [[ -f exploration/processed_matched/figures/features/versus_age/age_scatter_page_001.png ]] || return 1
+    grep -q '"cohort_mode": "demographically_matched"' \
+        exploration/processed_matched/manifest.json || return 1
 }
 
 quantitative_current() {
@@ -212,6 +229,8 @@ quantitative_current() {
     grep -q 'renyi_complexity_alpha_0_5' "$dictionary" || return 1
     grep -q 'renyi_entropy_alpha_5' "$dictionary" || return 1
     grep -q 'renyi_complexity_alpha_5' "$dictionary" || return 1
+    grep -q 'renyi_entropy_alpha_10' "$dictionary" || return 1
+    grep -q 'renyi_complexity_alpha_10' "$dictionary" || return 1
 }
 
 run_stage() {
@@ -289,6 +308,9 @@ if [[ "$SKIP_EXPLORATION" == false ]]; then
     run_stage "PD-versus-Control model exploration" exploration_current \
         exploration/processed/manifest.json \
         bash exploration/run_exploration.sh
+    run_stage "Demographically matched model sensitivity" exploration_matched_current \
+        exploration/processed_matched/manifest.json \
+        bash exploration/run_exploration.sh --matched-demographics
 else
     printf '\n=== PD-versus-Control model exploration ===\n  skipped by request\n'
 fi

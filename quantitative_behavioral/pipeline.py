@@ -68,6 +68,8 @@ DIMENSION_METRICS = (
     "renyi_complexity_alpha_2",
     "renyi_entropy_alpha_5",
     "renyi_complexity_alpha_5",
+    "renyi_entropy_alpha_10",
+    "renyi_complexity_alpha_10",
 )
 
 
@@ -120,7 +122,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     if sensitivity.get("metrics") != list(DIMENSION_METRICS):
         raise ValueError(
             "Dimension analysis must include regular H/C/F plus Rényi Hα/Cα at "
-            "alpha=0.1, 0.5, 0.9, 1.1, 2, and 5"
+            "alpha=0.1, 0.5, 0.9, 1.1, 2, 5, and 10"
         )
     if (
         sensitivity.get("analysis_block_policy")
@@ -129,7 +131,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("Each embedding dimension must use a separate feature matrix")
     if (
         sensitivity.get("fdr_scope")
-        != "within_each_dimension_across_all_105_features_per_method"
+        != "within_each_dimension_across_all_119_features_per_method"
     ):
         raise ValueError("Dimension-analysis FDR must be controlled separately within D")
     if int(config["expected"]["shared_electrodes"]) < 1:
@@ -408,13 +410,13 @@ def _write_report(
             "",
             (
                 "Regular ordinal H, C, and F and Rényi entropy/complexity at alpha=0.1, "
-                "0.5, 0.9, 1.1, 2, and 5 were tested at D=3, 4, 5, and 6 with tau=1 for "
+                "0.5, 0.9, 1.1, 2, 5, and 10 were tested at D=3, 4, 5, and 6 with tau=1 for "
                 "broadband and all six ordinal bands."
             ),
             (
-                "Each embedding dimension is a separate 105-feature analysis block and has "
+                "Each embedding dimension is a separate 119-feature analysis block and has "
                 "its own one-row-per-subject feature matrix. BH-FDR is controlled within "
-                "each D across its 105 features and separately by correlation method."
+                "each D across its 119 features and separately by correlation method."
             ),
             (
                 "D=6 is the primary ordinal block; D=3, D=4, and D=5 are sensitivity "
@@ -426,7 +428,7 @@ def _write_report(
             "Adjusted FDR rejections by separate D block:",
             "",
             *[
-                f"- D={dimension}: {rejection_counts[dimension]} of 105"
+                f"- D={dimension}: {rejection_counts[dimension]} of 119"
                 for dimension in dimensions
             ],
             "",
@@ -877,7 +879,7 @@ def run_analysis(
             },
             "n_electrode_tests": len(dimension_electrode_correlations),
             "feature_matrix_policy": (
-                "One separate 105-feature, one-row-per-subject matrix for each D; "
+                "One separate 119-feature, one-row-per-subject matrix for each D; "
                 "embedding dimensions are never concatenated into one model matrix."
             ),
         },

@@ -37,6 +37,14 @@ def main() -> None:
     )
     parser.add_argument("--skip-sweep", action="store_true")
     parser.add_argument("--skip-permutations", action="store_true")
+    parser.add_argument(
+        "--matched-demographics",
+        action="store_true",
+        help=(
+            "Run the exact-sex, optimal-age matched 49-pair sensitivity cohort; "
+            "age and sex are removed from every model"
+        ),
+    )
     args = parser.parse_args()
     manifest = run_analysis(
         args.config,
@@ -45,6 +53,7 @@ def main() -> None:
         quick=args.quick,
         skip_sweep=args.skip_sweep,
         skip_permutations=args.skip_permutations,
+        matched_demographics=args.matched_demographics,
     )
     print(
         f"Completed exploration for {manifest['n_subjects']} subjects; "

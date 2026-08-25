@@ -223,9 +223,14 @@ an explicitly separate MOCA extension using interpretable ridge logistic
 regression. Repeated nested cross-validation, out-of-fold predictions,
 permutation tests, coefficient stability, model comparisons, and all feature
 and validation figures are saved.
+It also provides an exact-sex, optimal-age matched 49-pair sensitivity analysis
+that removes age and sex from the model predictors and keeps pairs intact
+through validation, bootstrap, and permutation inference. Candidate quantities
+are plotted against age in both cohorts as a descriptive visual audit.
 
 ```bash
 bash exploration/run_exploration.sh --overwrite
+bash exploration/run_exploration.sh --matched-demographics --overwrite
 ```
 
 ## Spectral parameterization and oscillatory bouts
@@ -273,7 +278,7 @@ correlations adjusted for age and sex, deterministic bootstrap intervals,
 prespecified family-specific FDR correction, raw-data scatter grids, forest
 plots, sensitivity heatmaps, and secondary spatial maps. Separate D=3,4,5,6
 (tau=1) ordinal blocks include regular H/C/F and Rényi entropy/complexity at
-alpha=0.1, 0.5, 0.9, 1.1, 2, and 5. Each D has its own feature matrix and within-D FDR
+alpha=0.1, 0.5, 0.9, 1.1, 2, 5, and 10. Each D has its own feature matrix and within-D FDR
 correction; D=6 is primary and D=3–5 are sensitivity blocks.
 The exact age/sex-adjusted partial Spearman method is documented in
 [`quantitative_behavioral/METHODS.md`](quantitative_behavioral/METHODS.md).
@@ -300,6 +305,24 @@ Useful controls include `--overwrite`, `--dry-run`, `--no-progress`,
 `--skip-sweep`, and `--skip-exploration`. Cleaning is deliberately not invoked:
 manual ICA confirmation remains an explicit prerequisite through
 `scripts/run_full_cleaning.sh`.
+
+## Complete cleaning-to-report reproduction
+
+[`run_reproducible_pipeline.sh`](run_reproducible_pipeline.sh) is the single
+top-level launcher. It preserves the required manual ICA checkpoint while
+covering signal cleaning, every analysis, both exploration cohorts, figures,
+fit-QC sensitivity, and repository tests:
+
+```bash
+bash run_reproducible_pipeline.sh review --overwrite
+# Review ICA stages 08–10 and confirm the decisions.
+bash run_reproducible_pipeline.sh run --overwrite
+```
+
+For a resumable run, omit `--overwrite`. `--dry-run` prints the complete
+cleaning and downstream commands. The explicitly non-default
+`--skip-manual-ica-review` option applies automatic ICLabel decisions and is
+recorded in preprocessing QC.
 
 ## 60 Hz notch decision
 

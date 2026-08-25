@@ -28,5 +28,6 @@ dataset/
 simpler/
 parameter_sweep/
 /exploration/processed/
+/exploration/processed_matched/
 ds002778-1.0.5
 exploration/revision_quick

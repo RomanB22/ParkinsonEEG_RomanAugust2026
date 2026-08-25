@@ -15,6 +15,7 @@ from exploration.modeling import (
     bootstrap_performance,
     run_nested_validation,
 )
+from exploration.matching import match_control_pd_pairs, remove_demographic_predictors
 from exploration.pipeline import load_exploration_config
 
 
@@ -127,6 +128,58 @@ class ExplorationTests(unittest.TestCase):
             self.assertTrue(
                 table[f"typical_{band}_relative_phase_consistency"].between(0.0, 1.0).all()
             )
+
+    def test_demographic_matching_is_exact_balanced_and_pair_grouped(self):
+        table, _ = build_feature_table(self.config)
+        matched, pairs, balance = match_control_pd_pairs(
+            table,
+            maximum_age_difference_years=5.0,
+        )
+        self.assertEqual(len(pairs), 49)
+        self.assertEqual(len(matched), 98)
+        self.assertEqual(matched["target_pd"].value_counts().to_dict(), {0: 49, 1: 49})
+        self.assertLessEqual(pairs["absolute_age_difference_years"].max(), 5.0)
+        self.assertTrue((matched.groupby("cv_group")["target_pd"].nunique() == 2).all())
+        matched_balance = balance.loc[balance["cohort"].eq("matched")]
+        self.assertTrue(
+            (matched_balance["standardized_mean_difference_pd_minus_control"].abs() < 0.01).all()
+        )
+        models = remove_demographic_predictors(self.config["models"])
+        self.assertNotIn("demographics", models)
+        self.assertFalse(
+            any(
+                feature in {"age_years", "sex_male"}
+                for specification in models.values()
+                for feature in specification["features"]
+            )
+        )
+
+    def test_matched_nested_validation_keeps_pairs_together(self):
+        rng = np.random.default_rng(19)
+        pair_ids = np.repeat([f"pair-{index:02d}" for index in range(20)], 2)
+        truth = np.tile([0, 1], 20)
+        table = pd.DataFrame(
+            {
+                "subject_id": [f"sub-{index:03d}" for index in range(40)],
+                "target_pd": truth,
+                "cv_group": pair_ids,
+                "feature": truth + rng.normal(scale=0.8, size=40),
+            }
+        )
+        models = {"paired": {"label": "Paired", "role": "test", "features": ["feature"]}}
+        validation = {
+            "outer_folds": 4,
+            "outer_repeats": 2,
+            "inner_folds": 3,
+            "c_grid": [0.1, 1.0],
+            "classification_threshold": 0.5,
+            "threshold_policy": "inner_youden",
+            "random_seed": 23,
+            "primary_metric": "roc_auc",
+        }
+        predictions, _, _ = run_nested_validation(table, models, validation)
+        pair_folds = predictions.groupby(["repeat", "cv_group"])["fold"].nunique()
+        self.assertTrue((pair_folds == 1).all())
 
 
 if __name__ == "__main__":

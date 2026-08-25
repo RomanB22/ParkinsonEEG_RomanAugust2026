@@ -218,14 +218,14 @@ primary 55-feature analysis.
 
 ### Separate embedding-dimension analyses
 
-Each embedding dimension is a separate 105-feature analysis block:
+Each embedding dimension is a separate 119-feature analysis block:
 
 ```text
-7 signal scopes × 15 ordinal quantities = 105 tests per D and method
+7 signal scopes × 17 ordinal quantities = 119 tests per D and method
 ```
 
 The fifteen quantities are regular entropy, complexity, and Fisher information,
-plus Rényi entropy and complexity at `alpha=0.1`, `0.5`, `0.9`, `1.1`, `2`, and `5`. BH-FDR is
+plus Rényi entropy and complexity at `alpha=0.1`, `0.5`, `0.9`, `1.1`, `2`, `5`, and `10`. BH-FDR is
 applied separately within `ordinal_D3`, `ordinal_D4`, `ordinal_D5`, and
 `ordinal_D6`.
 

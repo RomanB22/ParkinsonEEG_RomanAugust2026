@@ -28,6 +28,24 @@ Age and sex form the demographic baseline. MOCA is used only in the explicitly
 labeled clinical-extension model because cognitive status can itself carry
 disease-related information.
 
+## Demographically matched sensitivity
+
+The source paper describes the recruited controls as demographically matched,
+but the observed 100:49 cohort is not individually paired. A separate,
+reproducible sensitivity layer therefore retains all 49 Controls and assigns
+one unique PD participant to each Control using optimal linear-sum assignment:
+
+- exact match on sex;
+- minimum cohort-wide absolute age difference;
+- no PD reuse;
+- maximum permitted age difference of five years.
+
+Age and sex are removed from every matched-cohort model. Both subjects in a
+pair remain together in every inner and outer validation fold, bootstrap
+resampling operates on pairs, and permutation tests exchange labels only
+within pairs. This balances measured age and sex; it cannot eliminate
+unmeasured confounding.
+
 ## Feature definitions
 
 The primary ordinal representation is the prespecified default `D=6, tau=1`
@@ -39,7 +57,7 @@ whole-head median H, C, and F output:
 
 The larger band-ordinal sensitivity model uses H, C, and F for theta, alpha,
 and beta. Rényi sensitivity models add entropy and complexity only at the two
-prespecified endpoints, α=0.1 and α=5. Intermediate α values are available in
+prespecified endpoints, α=0.1 and α=10. Intermediate α values are available in
 the source tables but are not model predictors because they are extremely
 rank-redundant. Embedding dimensions are evaluated independently and are never
 concatenated into one feature vector. Delta, low gamma, and the overlapping
@@ -85,7 +103,7 @@ random forest, boosting, or neural network.
 | Demographics | Baseline | Age, sex |
 | Ordinal H/C/F | Primary unadjusted | Global H, C, F |
 | Ordinal H/C/F + demographics | Primary | Age, sex, global H, C, F |
-| Ordinal + Rényi endpoints | Sensitivity | Primary ordinal plus α=0.1/5 entropy and complexity |
+| Ordinal + Rényi endpoints | Sensitivity | Primary ordinal plus α=0.1/10 entropy and complexity |
 | PSD + demographics | Secondary | Age, sex, four PSD log ratios |
 | Ordinal + PSD + demographics | Secondary | Global H/C/F, PSD ratios, age, sex |
 | Band ordinal + demographics | Sensitivity | Theta/alpha/beta H/C/F, age, sex |
@@ -146,6 +164,15 @@ From the repository root:
 bash exploration/run_exploration.sh --overwrite
 ```
 
+Run the independent matched sensitivity layer with:
+
+```bash
+bash exploration/run_exploration.sh --matched-demographics --overwrite
+```
+
+It writes to `exploration/processed_matched/` and does not replace the
+full-cohort result.
+
 A faster integration check is available:
 
 ```bash
@@ -193,6 +220,7 @@ exploration/processed/
 └── figures/
     ├── features/
     │   ├── candidate_feature_distributions.png
+    │   ├── versus_age/age_scatter_page_*.png
     │   ├── ordinal_entropy_complexity_plane.png
     │   └── feature_correlation_heatmap.png
     ├── validation/

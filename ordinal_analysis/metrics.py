@@ -22,6 +22,7 @@ RENYI_ALPHA_METRICS = (
     (1.1, "renyi_entropy_alpha_1_1", "renyi_complexity_alpha_1_1"),
     (2.0, "renyi_entropy_alpha_2", "renyi_complexity_alpha_2"),
     (5.0, "renyi_entropy_alpha_5", "renyi_complexity_alpha_5"),
+    (10.0, "renyi_entropy_alpha_10", "renyi_complexity_alpha_10"),
 )
 RENYI_ALPHAS = tuple(alpha for alpha, _, _ in RENYI_ALPHA_METRICS)
 RENYI_METRICS = tuple(

@@ -25,7 +25,7 @@ class OrdinalMetricTests(unittest.TestCase):
     def test_renyi_alpha_grid_includes_requested_extremes(self):
         self.assertEqual(
             tuple(alpha for alpha, _, _ in RENYI_ALPHA_METRICS),
-            (0.1, 0.5, 0.9, 1.1, 2.0, 5.0),
+            (0.1, 0.5, 0.9, 1.1, 2.0, 5.0, 10.0),
         )
 
     def test_electrode_zscores_pool_groups_within_band_and_electrode(self):
