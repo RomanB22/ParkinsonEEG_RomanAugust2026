@@ -84,6 +84,15 @@ class PipelineResumeTests(unittest.TestCase):
             source = Path(filename).read_text(encoding="utf-8")
             self.assertNotIn("tests.test_simple_pipeline", source)
 
+    def test_conda_bootstrap_preserves_incomplete_prefix_before_recreation(self) -> None:
+        setup = Path("scripts/create_conda_environment.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("conda-meta/history", setup)
+        self.assertIn(".incomplete.", setup)
+        self.assertIn('mv "$prefix" "$backup"', setup)
+        self.assertIn("CONDA_CHANNELS", setup)
+
     def test_master_runner_exposes_parallel_preprocessing_and_progress(self) -> None:
         wrapper = Path("run_reproducible_pipeline.sh").read_text(encoding="utf-8")
         cleaning = Path("scripts/run_full_cleaning.sh").read_text(encoding="utf-8")

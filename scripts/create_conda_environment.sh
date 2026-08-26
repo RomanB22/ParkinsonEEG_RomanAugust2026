@@ -60,6 +60,10 @@ command -v conda >/dev/null 2>&1 || {
     exit 1
 }
 
+# Match Conda's previously implicit channel choice explicitly. This prevents
+# the deprecation warning without changing the package source used by setup.
+export CONDA_CHANNELS="${CONDA_CHANNELS:-defaults}"
+
 cd "$PROJECT_ROOT"
 
 export MNE_DONTWRITE_HOME=true
@@ -77,11 +81,40 @@ environment_exists() {
     '
 }
 
+named_environment_prefix() {
+    printf '%s/envs/%s\n' "$(conda info --base)" "$CONDA_ENV"
+}
+
+backup_incomplete_prefix() {
+    local prefix="$1"
+    local backup
+    backup="${prefix}.incomplete.$(date '+%Y%m%d_%H%M%S')"
+    echo "Found an incomplete environment prefix: $prefix"
+    echo "It will be preserved at: $backup"
+    mv "$prefix" "$backup"
+}
+
 if environment_exists; then
     echo "Using existing conda environment: $CONDA_ENV"
 else
+    environment_prefix="$(named_environment_prefix)"
+    if [[ -e "$environment_prefix" ]]; then
+        # A real Conda environment has both its history and Python executable.
+        # A non-empty orphan prefix makes `conda create --name` fail. Preserve
+        # it under a timestamped name so recovery remains possible.
+        if [[ ! -f "$environment_prefix/conda-meta/history" ]] \
+            || [[ ! -x "$environment_prefix/bin/python" ]]; then
+            backup_incomplete_prefix "$environment_prefix"
+        else
+            echo "ERROR: a valid-looking but unregistered prefix already exists:" >&2
+            echo "  $environment_prefix" >&2
+            echo "Refusing to alter it automatically; inspect Conda's environment registry." >&2
+            exit 1
+        fi
+    fi
     echo "Creating conda environment: $CONDA_ENV (Python $PYTHON_VERSION)"
-    conda create --yes --name "$CONDA_ENV" "python=$PYTHON_VERSION" pip
+    conda create --yes --name "$CONDA_ENV" --channel defaults \
+        "python=$PYTHON_VERSION" pip
 fi
 
 echo "Installing pinned project requirements"

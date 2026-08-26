@@ -169,6 +169,7 @@ elif [[ -n "$PIPELINE_LOG" ]]; then
 fi
 
 export PARKINSON_EEG_CONDA_ENV="$CONDA_ENV"
+export CONDA_CHANNELS="${CONDA_CHANNELS:-defaults}"
 environment_arguments=(--env "$CONDA_ENV")
 if [[ "$DRY_RUN" == true ]]; then environment_arguments+=(--dry-run); fi
 bash scripts/ensure_conda_environment.sh "${environment_arguments[@]}"

@@ -9,7 +9,10 @@ Both entry points check for the default `MNE_August2026` environment. If it is
 missing, they create it with Python 3.14 and install the pinned
 [`requirements.txt`](requirements.txt) stack. An existing environment is reused
 without reinstalling packages. Use `--env NAME` only when an intentional
-override is needed.
+override is needed. If an interrupted Conda creation left a non-environment
+directory at the requested prefix, setup preserves it under a timestamped
+`.incomplete.*` name before creating a clean environment; it never deletes the
+leftover automatically.
 
 Every real `review` or `run` invocation writes the complete stdout/stderr stream
 to a timestamped file under `pipeline_logs/` while continuing to display it in

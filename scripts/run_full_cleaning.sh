@@ -129,6 +129,7 @@ command -v conda >/dev/null 2>&1 || {
 cd "$PROJECT_ROOT"
 
 export PARKINSON_EEG_CONDA_ENV="$CONDA_ENV"
+export CONDA_CHANNELS="${CONDA_CHANNELS:-defaults}"
 bash scripts/ensure_conda_environment.sh --env "$CONDA_ENV"
 
 if [[ ! -f "$CONFIG_PATH" ]]; then

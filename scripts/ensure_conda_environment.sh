@@ -37,6 +37,8 @@ command -v conda >/dev/null 2>&1 || {
     exit 1
 }
 
+export CONDA_CHANNELS="${CONDA_CHANNELS:-defaults}"
+
 environment_exists() {
     conda env list | awk -v environment_name="$CONDA_ENV" '
         $1 == environment_name { found = 1 }
