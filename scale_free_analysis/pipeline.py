@@ -774,8 +774,8 @@ def run_analysis(
     ) and not skip_specparam_gallery
     if gallery_enabled:
         logger.info(
-            "Creating subject/electrode specparam gallery | figures=%d | workers=%d",
-            len(aperiodic_electrodes),
+            "Creating flat all-electrode specparam gallery | subjects=%d | workers=%d",
+            aperiodic_electrodes["subject_id"].nunique(),
             int(config["plots"].get("specparam_gallery_workers", 1)),
         )
         specparam_gallery_index = generate_specparam_gallery(
@@ -792,7 +792,7 @@ def run_analysis(
             metrics_dir / "specparam_figure_index.csv",
         )
     else:
-        logger.info("Skipping subject/electrode specparam gallery")
+        logger.info("Skipping all-electrode specparam gallery")
     if spectral_example is not None:
         example_metrics = aperiodic_electrodes.loc[
             aperiodic_electrodes["subject_id"].eq(spectral_example["subject_id"])
@@ -937,10 +937,11 @@ def run_analysis(
         },
         "specparam_gallery_enabled": bool(gallery_enabled),
         "specparam_gallery_policy": (
-            "One primary all-electrode overview per subject, plus detailed "
-            "subject/electrode decomposition PNGs and HTML indexes. Figures reuse "
-            "saved fitted spectral curves and do not refit specparam."
+            "Flat single-folder layout with exactly one all-electrode PNG per subject "
+            "and one root HTML index. No individual-electrode PNGs or subject folders. "
+            "Figures reuse saved fitted spectral curves and do not refit specparam."
         ),
+        "specparam_gallery_layout": "flat_single_folder_one_all_electrode_png_per_subject",
         "epoch_boundary_policy": (
             "Only accepted cleaned epochs are analyzed. PSD periodograms are pooled, while "
             "wavelets, bout detection, and bycycle are applied independently within each "

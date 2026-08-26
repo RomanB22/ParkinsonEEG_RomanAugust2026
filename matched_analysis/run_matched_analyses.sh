@@ -21,7 +21,7 @@ Usage: bash matched_analysis/run_matched_analyses.sh [options]
 
 Prepare one canonical exact-sex/optimal-age matched cohort, then run matched:
 PSD, ordinal quantities/planes/topomaps, ordinal D={3,4,5,6} inputs at tau=1,
-scale-free, bouts, the eight-electrode non-progression sensitivity battery,
+scale-free, independent bycycle bursts, bouts, the eight-electrode non-progression sensitivity battery,
 fit-QC sensitivity, typical bouts, prediction models, MOCA, the whole-head
 UPDRS/MOCA severity analysis, and the at-least-60-second
 accepted-duration sensitivity.
@@ -84,6 +84,22 @@ has_eight_electrodes() {
     done
 }
 
+flat_specparam_gallery_current() {
+    local output_root="$1"
+    local root="$output_root/figures/specparam_decomposition"
+    local metrics="$output_root/metrics/electrode_aperiodic_metrics.csv"
+    local manifest="$output_root/manifest.json"
+    [[ -f "$manifest" && -f "$metrics" && -f "$root/index.html" \
+        && -f "$root/figure_index.csv" ]] || return 1
+    grep -q 'flat_single_folder_one_all_electrode_png_per_subject' "$manifest" \
+        || return 1
+    [[ -z "$(find "$root" -mindepth 1 -type d -print -quit)" ]] || return 1
+    local expected actual
+    expected=$(awk -F, 'NR > 1 { subjects[$1] = 1 } END { print length(subjects) }' "$metrics")
+    actual=$(find "$root" -maxdepth 1 -type f -name 'sub-*_all_electrodes.png' | wc -l | tr -d ' ')
+    [[ "$actual" -eq "$expected" ]]
+}
+
 run_stage() {
     local label="$1"
     local sentinel="$2"
@@ -120,6 +136,13 @@ stage_current() {
                 && [[ -f scale_free_analysis/processed_matched/metrics/group_subject_statistics_aperiodic.csv ]] \
                 && [[ -f scale_free_analysis/processed_matched/metrics/group_electrode_statistics_periodic_bout.csv ]] \
                 && [[ -f scale_free_analysis/processed_matched/figures/group_statistics/aperiodic/aperiodic_exponent_group_statistics.png ]]
+            ;;
+        bycycle_burst_analysis/processed_matched/manifest.json)
+            grep -q '"broad_5_15"' "$sentinel" \
+                && [[ -f bycycle_burst_analysis/processed_matched/metrics/group_subject_statistics.csv ]] \
+                && [[ -f bycycle_burst_analysis/processed_matched/metrics/group_electrode_statistics.csv ]] \
+                && [[ -f bycycle_burst_analysis/processed_matched/metrics/detector_event_agreement.csv ]] \
+                && [[ -f bycycle_burst_analysis/processed_matched/figures/agreement/event_mask_dice.png ]]
             ;;
         bout_analyses/processed_matched/manifest.json)
             grep -q '"broad_5_15"' "$sentinel" \
@@ -239,6 +262,23 @@ if [[ "$OVERWRITE" == false \
 fi
 run_stage "scale-free and bout-property analysis" \
     scale_free_analysis/processed_matched/manifest.json "${scale_command[@]}"
+
+printf '\n=== Matched: flat all-electrode specparam gallery ===\n'
+if flat_specparam_gallery_current scale_free_analysis/processed_matched; then
+    printf '  current output found; skipping\n'
+else
+    execute bash scale_free_analysis/generate_specparam_figures.sh \
+        --config "$CONFIG_ROOT/scale_free.json" --overwrite
+fi
+
+bycycle_burst_command=(
+    bash bycycle_burst_analysis/run_bycycle_burst_analysis.sh
+    --config "$CONFIG_ROOT/bycycle_burst.json"
+)
+if [[ "$NO_PROGRESS" == true ]]; then bycycle_burst_command+=(--no-progress); fi
+run_stage "independent bycycle burst-detection sensitivity" \
+    bycycle_burst_analysis/processed_matched/manifest.json \
+    "${bycycle_burst_command[@]}"
 
 bout_command=(
     bash bout_analyses/run_bout_analyses.sh

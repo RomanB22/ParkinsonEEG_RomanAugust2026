@@ -1,7 +1,8 @@
 # PD-versus-Control group statistics
 
 PSD, broadband and band-resolved ordinal quantities, scale-free/periodic/bout
-properties, and within-bout ordinal quantities use one shared inference policy.
+properties, independent bycycle burst properties, and within-bout ordinal
+quantities use one shared inference policy.
 The subject is always the independent biological unit; electrodes and bouts are
 never treated as independent participants.
 
@@ -24,7 +25,9 @@ test. These are not substituted for the primary model.
 The primary p-values receive Benjamini–Hochberg FDR correction across all
 metric-by-band tests in their declared analysis domain. Broadband ordinal,
 band-resolved ordinal, aperiodic, periodic/bout, PSD, and within-bout analyses
-are separate, scientifically interpretable domains. The overlapping 5–15 Hz
+are separate, scientifically interpretable domains. Independent bycycle burst
+tests are also one separate sensitivity domain and are not pooled with eBOSC
+p-values. The overlapping 5–15 Hz
 band remains in descriptive plots and tables but is excluded from formal group
 inference because it overlaps the canonical bands.
 
@@ -53,6 +56,7 @@ passes FDR.
 - `psd_analysis/processed/metrics/group_{subject,electrode}_statistics.csv`
 - `ordinal_analysis/processed/metrics/group_*_statistics_*.csv`
 - `scale_free_analysis/processed/metrics/group_*_statistics_*.csv`
+- `bycycle_burst_analysis/processed/metrics/group_{subject,electrode}_statistics.csv`
 - `bout_analyses/processed/metrics/group_{subject,electrode}_statistics.csv`
 
 Matched results use the corresponding `processed_matched/` directories. Figures

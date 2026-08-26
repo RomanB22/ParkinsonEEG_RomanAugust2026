@@ -20,8 +20,8 @@ from scale_free_analysis.specparam_gallery import generate_specparam_gallery
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Render one all-electrode overview per subject plus detailed "
-            "subject/electrode specparam decompositions from saved intermediates."
+            "Render exactly one all-electrode specparam overview per subject "
+            "in one flat folder from saved intermediates."
         )
     )
     parser.add_argument("--config", default="scale_free_analysis/config.json")
@@ -36,7 +36,7 @@ def main() -> None:
     parser.add_argument(
         "--overwrite-subject-overviews",
         action="store_true",
-        help="Regenerate only the all-electrode subject overviews",
+        help="Backward-compatible alias to regenerate the all-electrode figures",
     )
     args = parser.parse_args()
     with Path(args.config).open(encoding="utf-8") as stream:
@@ -81,21 +81,20 @@ def main() -> None:
         )
         manifest["specparam_gallery_enabled"] = True
         manifest["specparam_gallery_policy"] = (
-            "One primary all-electrode overview per subject, with detailed "
-            "subject/electrode decomposition PNGs generated from saved fitted "
-            "spectral curves without refitting specparam."
+            "Flat single-folder layout with exactly one all-electrode PNG per subject "
+            "and one root HTML index; no electrode PNGs or subject folders. Figures "
+            "reuse saved fitted spectral curves without refitting specparam."
+        )
+        manifest["specparam_gallery_layout"] = (
+            "flat_single_folder_one_all_electrode_png_per_subject"
         )
         manifest_path.write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
         )
     rendered = int(index["rendered_this_run"].sum())
-    rendered_overviews = int(
-        index.loc[index["subject_overview_rendered_this_run"], "subject_id"].nunique()
-    )
     print(
-        f"Specparam gallery ready: {index['subject_id'].nunique()} subject overviews "
-        f"and {len(index)} detailed electrode figures ({rendered_overviews} overviews "
-        f"and {rendered} details rendered now); "
+        f"Specparam gallery ready: {len(index)} all-electrode subject figures "
+        f"in one folder ({rendered} rendered now); "
         f"open {output_dir / 'figures' / 'specparam_decomposition' / 'index.html'}"
     )
 

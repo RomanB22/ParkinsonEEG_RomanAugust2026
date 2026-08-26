@@ -204,6 +204,11 @@ class ExplorationTests(unittest.TestCase):
                         config["demographic_matching"]["precomputed_pairs_file"],
                         str(Path(directory) / "demographic_match_pairs.csv"),
                     )
+                if Path(config_path).name == "bycycle_burst.json":
+                    self.assertEqual(
+                        config["input"]["reference_ebosc_output_dir"],
+                        "scale_free_analysis/processed_matched",
+                    )
 
     def test_precomputed_pairs_are_validated_without_double_matching(self):
         table, _ = build_feature_table(self.config)

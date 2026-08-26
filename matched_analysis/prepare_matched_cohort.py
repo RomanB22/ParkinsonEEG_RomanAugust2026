@@ -28,6 +28,10 @@ CONFIG_OUTPUTS = {
         "scale_free_analysis/config.json",
         "scale_free_analysis/processed_matched",
     ),
+    "bycycle_burst": (
+        "bycycle_burst_analysis/config.json",
+        "bycycle_burst_analysis/processed_matched",
+    ),
     "bout": ("bout_analyses/config.json", "bout_analyses/processed_matched"),
     "exploration": (
         "exploration/config.json",
@@ -123,7 +127,11 @@ def prepare_matched_cohort(
         config = _load_json(Path(source_name))
         config["input"]["participants_file"] = str(metadata_path)
         config["output_dir"] = analysis_output
-        if name == "exploration":
+        if name == "bycycle_burst":
+            config["input"]["reference_ebosc_output_dir"] = (
+                "scale_free_analysis/processed_matched"
+            )
+        elif name == "exploration":
             config["input"].update(
                 {
                     "ordinal_global_file": "ordinal_analysis/processed_matched/metrics/subject_electrode_mean_metrics.csv",

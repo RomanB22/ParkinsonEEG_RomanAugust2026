@@ -32,6 +32,15 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertIn("ordinal_sweep_command+=(--overwrite)", full)
         self.assertIn("sweep_command+=(--overwrite)", matched)
 
+    def test_independent_bycycle_stage_is_in_full_and_matched_runs(self) -> None:
+        full = Path("run_all_analyses.sh").read_text(encoding="utf-8")
+        matched = Path("matched_analysis/run_matched_analyses.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("bycycle_burst_analysis/run_bycycle_burst_analysis.sh", full)
+        self.assertIn("bycycle_burst_analysis/run_bycycle_burst_analysis.sh", matched)
+        self.assertIn("$CONFIG_ROOT/bycycle_burst.json", matched)
+
 
 if __name__ == "__main__":
     unittest.main()

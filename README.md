@@ -254,6 +254,18 @@ bash scale_free_analysis/run_scale_free_analysis.sh --overwrite
 bash scale_free_analysis/generate_typical_bouts.sh
 ```
 
+An orthogonal sensitivity workflow in
+[`bycycle_burst_analysis/`](bycycle_burst_analysis/README.md) detects bursts
+directly from cycle-to-cycle amplitude, period, and monotonicity consistency.
+It does not use the eBOSC mask or a specparam power threshold. It saves the
+independent events and cycle features, repeats subject- and electrode-level
+PD-versus-Control inference, and plots event-mask and subject-metric agreement
+with eBOSC. The overlapping 5–15 Hz band remains descriptive only.
+
+```bash
+bash bycycle_burst_analysis/run_bycycle_burst_analysis.sh --overwrite
+```
+
 ## Ordinal analysis inside detected bouts
 
 The independent workflow in [`bout_analyses/`](bout_analyses/README.md) detects
@@ -269,7 +281,7 @@ bash bout_analyses/run_bout_analyses.sh --overwrite
 
 ## PD-versus-Control inference across analyses
 
-PSD, ordinal, scale-free/bout, and within-bout ordinal pipelines share a
+PSD, ordinal, scale-free/bout, independent-bycycle-burst, and within-bout ordinal pipelines share a
 subject-level inferential layer. Full-cohort models adjust for age and sex;
 matched-cohort models preserve `match_pair_id`. Exploratory electrode-wise
 tests include both feature-wise spatial FDR and a stricter domain-wide FDR,

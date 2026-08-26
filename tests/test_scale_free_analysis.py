@@ -230,7 +230,7 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
         self.assertAlmostEqual(summary["cycle_frequency_mean_hz"], 10.0, delta=0.5)
         self.assertAlmostEqual(summary["rise_decay_symmetry_mean"], 0.5, delta=0.1)
 
-    def test_specparam_gallery_renders_every_subject_electrode(self):
+    def test_specparam_gallery_renders_one_flat_all_electrode_figure_per_subject(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
             spectra_dir = root / "spectra"
@@ -260,6 +260,10 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
                 }
             )
             gallery_root = root / "gallery"
+            legacy = gallery_root / "PD" / "sub-001"
+            legacy.mkdir(parents=True)
+            (legacy / "Fz.png").touch()
+            (gallery_root / "sub-999_PD_all_electrodes.png").touch()
             index = generate_specparam_gallery(
                 spectra_dir,
                 metrics,
@@ -267,14 +271,17 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
                 dpi=60,
                 workers=1,
             )
-            self.assertEqual(len(index), 2)
+            self.assertEqual(len(index), 1)
             self.assertTrue(
-                (gallery_root / "PD" / "sub-001" / "all_electrodes.png").exists()
+                (gallery_root / "sub-001_PD_all_electrodes.png").exists()
             )
             self.assertEqual(index["subject_figure_path"].nunique(), 1)
-            self.assertTrue((gallery_root / "PD" / "sub-001" / "Fz.png").exists())
-            self.assertTrue((gallery_root / "PD" / "sub-001" / "Cz.png").exists())
-            self.assertTrue((gallery_root / "PD" / "sub-001" / "index.html").exists())
+            self.assertEqual(index.loc[0, "n_electrodes"], 2)
+            self.assertFalse((gallery_root / "PD").exists())
+            self.assertEqual(
+                sorted(path.name for path in gallery_root.glob("*.png")),
+                ["sub-001_PD_all_electrodes.png"],
+            )
             self.assertTrue((gallery_root / "index.html").exists())
 
 

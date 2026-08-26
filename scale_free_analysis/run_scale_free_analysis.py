@@ -44,7 +44,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-specparam-gallery",
         action="store_true",
-        help="Skip the per-subject/electrode decomposition PNG gallery",
+        help="Skip the flat one-all-electrode-figure-per-subject gallery",
     )
     args = parser.parse_args()
     manifest = run_analysis(

@@ -27,16 +27,17 @@ Run the complete post-cleaning Parkinson EEG analysis pipeline:
   2. Primary ordinal analysis
   3. Ordinal embedding-dimension sweep at tau=1
   4. Scale-free/specparam and bout-property analysis
-  5. Within-bout ordinal analysis
-  6. Eight-electrode non-progression sensitivity battery
-  7. Specparam fit-QC bout and within-bout sensitivity
-  8. Subject-balanced stereotypical bout gallery and detection QC
-  9. Transparent full-cohort PD-versus-Control exploration models
- 10. D=3,4,5,6 quantitative-behavioral ordinal inputs
- 11. MOCA quantitative-behavioral analysis
- 12. Whole-head UPDRS/MOCA disease-severity analysis
- 13. Accepted-duration sensitivity requiring at least 60 seconds
- 14. The same complete battery on one canonical age/sex-matched cohort
+  5. Independent bycycle cycle-consistency burst sensitivity analysis
+  6. Within-bout ordinal analysis
+  7. Eight-electrode non-progression sensitivity battery
+  8. Specparam fit-QC bout and within-bout sensitivity
+  9. Subject-balanced stereotypical bout gallery and detection QC
+ 10. Transparent full-cohort PD-versus-Control exploration models
+ 11. D=3,4,5,6 quantitative-behavioral ordinal inputs
+ 12. MOCA quantitative-behavioral analysis
+ 13. Whole-head UPDRS/MOCA disease-severity analysis
+ 14. Accepted-duration sensitivity requiring at least 60 seconds
+ 15. The same complete battery on one canonical age/sex-matched cohort
 
 The default is resumable: a current completed stage is skipped. A stage whose
 outputs predate the requested Rényi columns is automatically rerun.
@@ -205,6 +206,32 @@ scale_free_current() {
     [[ -f scale_free_analysis/processed/figures/group_statistics/aperiodic/aperiodic_exponent_group_statistics.png ]] || return 1
 }
 
+specparam_gallery_current() {
+    local root="scale_free_analysis/processed/figures/specparam_decomposition"
+    local metrics="scale_free_analysis/processed/metrics/electrode_aperiodic_metrics.csv"
+    local manifest="scale_free_analysis/processed/manifest.json"
+    [[ -f "$manifest" && -f "$metrics" && -f "$root/index.html" \
+        && -f "$root/figure_index.csv" ]] || return 1
+    grep -q 'flat_single_folder_one_all_electrode_png_per_subject' "$manifest" \
+        || return 1
+    [[ -z "$(find "$root" -mindepth 1 -type d -print -quit)" ]] || return 1
+    local expected actual
+    expected=$(awk -F, 'NR > 1 { subjects[$1] = 1 } END { print length(subjects) }' "$metrics")
+    actual=$(find "$root" -maxdepth 1 -type f -name 'sub-*_all_electrodes.png' | wc -l | tr -d ' ')
+    [[ "$actual" -eq "$expected" ]]
+}
+
+bycycle_burst_current() {
+    [[ -f bycycle_burst_analysis/processed/manifest.json ]] || return 1
+    [[ -f bycycle_burst_analysis/processed/metrics/subject_electrode_band_metrics.csv ]] || return 1
+    [[ -f bycycle_burst_analysis/processed/metrics/group_subject_statistics.csv ]] || return 1
+    [[ -f bycycle_burst_analysis/processed/metrics/group_electrode_statistics.csv ]] || return 1
+    [[ -f bycycle_burst_analysis/processed/metrics/detector_event_agreement.csv ]] || return 1
+    [[ -f bycycle_burst_analysis/processed/figures/qc/independent_detection_example.png ]] || return 1
+    [[ -f bycycle_burst_analysis/processed/figures/agreement/event_mask_dice.png ]] || return 1
+    grep -q '"broad_5_15"' bycycle_burst_analysis/processed/manifest.json
+}
+
 bout_current() {
     [[ -f bout_analyses/processed/manifest.json ]] || return 1
     grep -q '"broad_5_15"' bout_analyses/processed/manifest.json || return 1
@@ -367,6 +394,20 @@ if [[ "$OVERWRITE" == false \
 fi
 run_stage "Scale-free and bout-property analysis" scale_free_current \
     scale_free_analysis/processed/manifest.json "${scale_free_command[@]}"
+
+printf '\n=== Flat all-electrode specparam gallery ===\n'
+if specparam_gallery_current; then
+    printf '  current output found; skipping\n'
+else
+    execute bash scale_free_analysis/generate_specparam_figures.sh --overwrite
+fi
+
+bycycle_burst_command=(bash bycycle_burst_analysis/run_bycycle_burst_analysis.sh)
+if [[ "$NO_PROGRESS" == true ]]; then
+    bycycle_burst_command+=(--no-progress)
+fi
+run_stage "Independent bycycle burst-detection sensitivity" bycycle_burst_current \
+    bycycle_burst_analysis/processed/manifest.json "${bycycle_burst_command[@]}"
 
 bout_command=(bash bout_analyses/run_bout_analyses.sh)
 if [[ "$NO_PROGRESS" == true ]]; then

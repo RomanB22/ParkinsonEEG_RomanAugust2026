@@ -1,10 +1,11 @@
-"""Generate browsable per-subject/electrode specparam decomposition figures."""
+"""Generate one flat, browsable all-electrode specparam figure per subject."""
 
 from __future__ import annotations
 
 import html
 import logging
 import re
+import shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -20,18 +21,12 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
-from .plots import plot_spectral_example
-
-
 CURVE_NAMES = (
     "observed_psd_uv2_hz",
     "modeled_psd_uv2_hz",
     "aperiodic_psd_uv2_hz",
     "periodic_psd_uv2_hz",
 )
-
-SUBJECT_OVERVIEW_FILENAME = "all_electrodes.png"
-
 
 def _safe_name(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("._")
@@ -155,9 +150,8 @@ def _render_subject(
     gallery_root: str,
     dpi: int,
     overwrite: bool,
-    overwrite_subject_overview: bool,
 ) -> list[dict[str, Any]]:
-    """Worker that renders every electrode for one subject."""
+    """Worker that renders exactly one all-electrode figure for one subject."""
     spectra_path_object = Path(spectra_path)
     if not spectra_path_object.exists():
         raise FileNotFoundError(f"Missing subject spectra: {spectra_path_object}")
@@ -180,14 +174,14 @@ def _render_subject(
             )
 
     first_row = subject_rows[0]
-    subject_directory = (
-        Path(gallery_root)
-        / _safe_name(str(first_row["group"]))
-        / str(first_row["subject_id"])
+    subject_id = str(first_row["subject_id"])
+    group = str(first_row["group"])
+    filename = (
+        f"{_safe_name(subject_id)}_{_safe_name(group)}_all_electrodes.png"
     )
-    overview_path = subject_directory / SUBJECT_OVERVIEW_FILENAME
-    overview_rendered = overwrite_subject_overview or not overview_path.exists()
-    if overview_rendered:
+    overview_path = Path(gallery_root) / filename
+    rendered = overwrite or not overview_path.exists()
+    if rendered:
         _plot_subject_overview(
             subject_rows,
             electrodes,
@@ -197,61 +191,38 @@ def _render_subject(
             overview_path,
             int(dpi),
         )
-
-    output_rows = []
-    used_filenames: set[str] = set()
-    for metric_row in subject_rows:
-        electrode = str(metric_row["electrode"])
-        if electrode not in electrode_indices:
-            raise ValueError(f"{spectra_path_object}: missing electrode {electrode}")
-        electrode_filename = _safe_name(electrode) + ".png"
-        if electrode_filename in used_filenames:
-            raise ValueError(f"Electrode filename collision for {electrode}")
-        used_filenames.add(electrode_filename)
-        group = str(metric_row["group"])
-        subject_id = str(metric_row["subject_id"])
-        relative_path = Path(_safe_name(group)) / subject_id / electrode_filename
-        output_path = Path(gallery_root) / relative_path
-        rendered = overwrite or not output_path.exists()
-        if rendered:
-            index = electrode_indices[electrode]
-            example = {
-                "subject_id": subject_id,
-                "group": group,
-                "electrode": electrode,
-                "frequencies_hz": frequencies,
-                "aperiodic_exponent": float(metric_row["aperiodic_exponent"]),
-                "specparam_r_squared": float(metric_row["specparam_r_squared"]),
-                "specparam_error_mae": float(metric_row["specparam_error_mae"]),
-                "specparam_fit_qc_pass": metric_row.get("specparam_fit_qc_pass"),
-                "specparam_fit_qc_reasons": metric_row.get(
-                    "specparam_fit_qc_reasons", "not_assessed"
-                ),
-                **{name: values[index] for name, values in arrays.items()},
-            }
-            plot_spectral_example(example, output_path, int(dpi))
-        output_rows.append(
-            {
-                "subject_id": subject_id,
-                "group": group,
-                "electrode": electrode,
-                "figure_path": relative_path.as_posix(),
-                "subject_figure_path": (
-                    Path(_safe_name(group)) / subject_id / SUBJECT_OVERVIEW_FILENAME
-                ).as_posix(),
-                "rendered_this_run": bool(rendered),
-                "subject_overview_rendered_this_run": bool(overview_rendered),
-                "aperiodic_offset": float(metric_row["aperiodic_offset"]),
-                "aperiodic_exponent": float(metric_row["aperiodic_exponent"]),
-                "specparam_r_squared": float(metric_row["specparam_r_squared"]),
-                "specparam_error_mae": float(metric_row["specparam_error_mae"]),
-                "specparam_fit_qc_pass": metric_row.get("specparam_fit_qc_pass"),
-                "specparam_fit_qc_reasons": str(
-                    metric_row.get("specparam_fit_qc_reasons", "not_assessed")
-                ),
-            }
-        )
-    return output_rows
+    qc_values = [
+        row.get("specparam_fit_qc_pass")
+        for row in subject_rows
+        if isinstance(row.get("specparam_fit_qc_pass"), (bool, np.bool_))
+    ]
+    r_squared = np.asarray(
+        [float(row["specparam_r_squared"]) for row in subject_rows], dtype=float
+    )
+    exponents = np.asarray(
+        [float(row["aperiodic_exponent"]) for row in subject_rows], dtype=float
+    )
+    errors = np.asarray(
+        [float(row["specparam_error_mae"]) for row in subject_rows], dtype=float
+    )
+    return [
+        {
+            "subject_id": subject_id,
+            "group": group,
+            "figure_path": filename,
+            "subject_figure_path": filename,
+            "rendered_this_run": bool(rendered),
+            "subject_overview_rendered_this_run": bool(rendered),
+            "n_electrodes": int(len(subject_rows)),
+            "n_qc_pass": int(sum(bool(value) for value in qc_values)),
+            "qc_pass_fraction": (
+                float(np.mean(qc_values)) if len(qc_values) else np.nan
+            ),
+            "median_aperiodic_exponent": float(np.median(exponents)),
+            "median_specparam_r_squared": float(np.median(r_squared)),
+            "median_specparam_error_mae": float(np.median(errors)),
+        }
+    ]
 
 
 def _write_html_indexes(index: pd.DataFrame, gallery_root: Path) -> None:
@@ -267,67 +238,36 @@ a { color: #0067a5; }
 """.strip()
     root_sections = []
     for group, group_table in index.groupby("group", sort=False):
-        subject_links = []
-        for subject_id in group_table["subject_id"].drop_duplicates():
-            selected = group_table.loc[group_table["subject_id"].eq(subject_id)]
-            overview = str(selected["subject_figure_path"].iloc[0])
-            subject_links.append(
-                f'<li><strong>{html.escape(subject_id)}</strong>: '
-                f'<a href="{html.escape(overview)}">all-electrode figure</a> · '
-                f'<a href="{html.escape(str(group))}/{html.escape(subject_id)}/index.html">'
-                "individual fits and residuals</a></li>"
+        cards = []
+        for _, row in group_table.sort_values("subject_id").iterrows():
+            figure = str(row["figure_path"])
+            qc_fraction = row.get("qc_pass_fraction")
+            qc_text = (
+                f'{int(row["n_qc_pass"])}/{int(row["n_electrodes"])} fits pass QC'
+                if np.isfinite(qc_fraction)
+                else "fit QC not available"
+            )
+            cards.append(
+                '<div class="card">'
+                f'<a href="{html.escape(figure)}"><img loading="lazy" '
+                f'src="{html.escape(figure)}" alt="{html.escape(str(row["subject_id"]))}"></a>'
+                f'<div class="meta"><strong>{html.escape(str(row["subject_id"]))}</strong> — '
+                f'{qc_text}; median exponent={row["median_aperiodic_exponent"]:.3f}, '
+                f'median R²={row["median_specparam_r_squared"]:.3f}</div></div>'
             )
         root_sections.append(
-            f"<h2>{html.escape(str(group))}</h2><ul>{''.join(subject_links)}</ul>"
+            f"<h2>{html.escape(str(group))}</h2>"
+            f'<div class="grid">{"".join(cards)}</div>'
         )
     root_document = (
         "<!doctype html><html><head><meta charset=\"utf-8\"><title>Specparam gallery</title>"
         f"<style>{style}</style></head><body>"
         "<h1>Subject specparam decompositions</h1>"
-        f"<p>{index['subject_id'].nunique()} all-electrode subject figures; "
-        f"{len(index)} detailed electrode figures.</p>"
+        f"<p>{len(index)} subjects; one all-electrode figure per subject. "
+        "Every PNG is stored directly in this folder.</p>"
         f"{''.join(root_sections)}</body></html>"
     )
     (gallery_root / "index.html").write_text(root_document, encoding="utf-8")
-
-    for (group, subject_id), selected in index.groupby(
-        ["group", "subject_id"], sort=False
-    ):
-        cards = []
-        for _, row in selected.iterrows():
-            filename = Path(row["figure_path"]).name
-            qc_value = row.get("specparam_fit_qc_pass")
-            if isinstance(qc_value, (bool, np.bool_)):
-                qc_class = "pass" if bool(qc_value) else "fail"
-                qc_text = "QC PASS" if bool(qc_value) else "QC FAIL"
-                qc_html = f' — <span class="{qc_class}">{qc_text}</span>'
-            else:
-                qc_html = ""
-            cards.append(
-                '<div class="card">'
-                f'<a href="{html.escape(filename)}"><img loading="lazy" '
-                f'src="{html.escape(filename)}" alt="{html.escape(str(row["electrode"]))}"></a>'
-                f'<div class="meta"><strong>{html.escape(str(row["electrode"]))}</strong> — '
-                f'exponent={row["aperiodic_exponent"]:.3f}, R²={row["specparam_r_squared"]:.3f}, '
-                f'MAE={row["specparam_error_mae"]:.3f}{qc_html}'
-                "</div></div>"
-            )
-        subject_directory = gallery_root / _safe_name(str(group)) / str(subject_id)
-        subject_document = (
-            "<!doctype html><html><head><meta charset=\"utf-8\">"
-            f"<title>{html.escape(str(subject_id))} specparam</title><style>{style}</style>"
-            "</head><body>"
-            '<p><a href="../../index.html">← All subjects</a></p>'
-            f"<h1>{html.escape(str(subject_id))} — {html.escape(str(group))}</h1>"
-            f'<p><a href="{SUBJECT_OVERVIEW_FILENAME}">Open the all-electrode figure at full size</a></p>'
-            f'<a href="{SUBJECT_OVERVIEW_FILENAME}"><img src="{SUBJECT_OVERVIEW_FILENAME}" '
-            'alt="All-electrode spectral fits" style="width:100%;height:auto"></a>'
-            "<h2>Individual fits and signed residuals</h2>"
-            f'<div class="grid">{"".join(cards)}</div></body></html>'
-        )
-        (subject_directory / "index.html").write_text(
-            subject_document, encoding="utf-8"
-        )
 
 
 def generate_specparam_gallery(
@@ -341,7 +281,7 @@ def generate_specparam_gallery(
     overwrite_subject_overviews: bool = False,
     logger: logging.Logger | None = None,
 ) -> pd.DataFrame:
-    """Render every subject/electrode fit and write browsable HTML indexes."""
+    """Render one flat all-electrode figure per subject and write one HTML index."""
     spectra_dir = Path(spectra_dir)
     gallery_root = Path(gallery_root)
     gallery_root.mkdir(parents=True, exist_ok=True)
@@ -371,7 +311,6 @@ def generate_specparam_gallery(
                 selected.to_dict(orient="records"),
                 str(gallery_root),
                 int(dpi),
-                bool(overwrite),
                 bool(overwrite or overwrite_subject_overviews),
             )
         )
@@ -420,10 +359,20 @@ def generate_specparam_gallery(
                         Path(task[0]).stem.removesuffix("_specparam_spectra"),
                     )
     index = pd.DataFrame.from_records(rows).sort_values(
-        ["group", "subject_id", "electrode"]
+        ["group", "subject_id"]
     ).reset_index(drop=True)
     index.to_csv(
         gallery_root / "figure_index.csv", index=False, float_format="%.17g"
     )
     _write_html_indexes(index, gallery_root)
+    # Remove only the legacy group directories that this generator created.
+    # The new layout deliberately contains no per-group or per-subject folders.
+    for group in aperiodic_metrics["group"].astype(str).unique():
+        legacy_directory = gallery_root / _safe_name(group)
+        if legacy_directory.is_dir():
+            shutil.rmtree(legacy_directory)
+    expected_figures = set(index["figure_path"].astype(str))
+    for stale_figure in gallery_root.glob("sub-*_all_electrodes.png"):
+        if stale_figure.name not in expected_figures:
+            stale_figure.unlink()
     return index

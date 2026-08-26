@@ -10,6 +10,7 @@ parameter_sweep/
 /ordinal_analysis/processed_matched/
 /ordinal_analysis/parameter_sweep_matched/
 /scale_free_analysis/processed_matched/
+/bycycle_burst_analysis/processed_matched/
 /bout_analyses/processed_matched/
 /quantitative_behavioral/processed_matched/
 /duration_qc_analysis/processed/

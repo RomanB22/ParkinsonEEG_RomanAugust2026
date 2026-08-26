@@ -191,9 +191,9 @@ Run the full cohort and all shared electrodes:
 bash scale_free_analysis/run_scale_free_analysis.sh --overwrite
 ```
 
-If the scale-free analysis already exists, generate or resume the primary
-all-electrode subject figures and detailed electrode decomposition gallery
-without rerunning eBOSC or bycycle:
+If the scale-free analysis already exists, generate or resume the flat gallery
+containing exactly one all-electrode figure per subject without rerunning eBOSC
+or bycycle:
 
 ```bash
 bash scale_free_analysis/generate_specparam_figures.sh
@@ -201,8 +201,8 @@ bash scale_free_analysis/generate_specparam_figures.sh
 
 Use `--overwrite` to regenerate existing images. The defaults use four worker
 processes and 100 DPI; both can be overridden with `--workers` and `--dpi`.
-Use `--overwrite-subject-overviews` to refresh only the combined subject
-figures while retaining the existing detailed electrode images.
+The legacy `--overwrite-subject-overviews` option remains as an alias for
+regenerating these combined figures.
 
 Fit QC and all four range-sensitivity analyses can be regenerated from the
 saved spectra without rerunning eBOSC or bycycle:
@@ -303,16 +303,15 @@ scale_free_analysis/processed/
     └── specparam_decomposition/
         ├── index.html
         ├── figure_index.csv
-        ├── PD/sub-*/all_electrodes.png + index.html + <electrode>.png
-        └── Control/sub-*/all_electrodes.png + index.html + <electrode>.png
+        └── sub-*_<{PD,Control}>_all_electrodes.png
 ```
 
-The root gallery links first to one overview figure per subject. Each overview
+The single flat gallery contains one overview figure per subject. Each overview
 contains every shared electrode on the same linear-frequency/log-power canvas:
 observed PSD in black, the full specparam model in blue, and the aperiodic
-component in orange. Red electrode labels indicate formal QC failures. The
-per-electrode figures remain available below each overview for signed-residual
-inspection; poor fits are flagged rather than hidden or tuned independently.
+component in orange. Red electrode labels indicate formal QC failures. No
+individual-electrode PNGs or per-subject folders are generated; poor fits stay
+visible in the combined figure rather than being hidden.
 
 The compressed intermediate files preserve individual bout and cycle rows, the
 frequency-specific aperiodic background and threshold, and observed/fitted
