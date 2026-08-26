@@ -6,7 +6,8 @@ import json
 import logging
 import platform
 import re
-from concurrent.futures import ProcessPoolExecutor
+import time
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
@@ -361,6 +362,56 @@ def _metric_agreement(
     return paired, pd.DataFrame.from_records(rows)
 
 
+def _collect_subject_results(
+    iterator: Any,
+    *,
+    total: int,
+    show_progress: bool,
+    logger: logging.Logger,
+) -> list[dict[str, Any]]:
+    """Collect worker results with a live bar and log-file heartbeats."""
+    results: list[dict[str, Any]] = []
+    started = time.monotonic()
+    heartbeat_step = max(1, int(np.ceil(total / 20.0)))
+    progress = tqdm(
+        iterator,
+        total=total,
+        disable=not show_progress,
+        desc="independent bycycle bursts",
+        unit="subject",
+        dynamic_ncols=True,
+        mininterval=0.5,
+    )
+    for completed, result in enumerate(progress, start=1):
+        results.append(result)
+        subject_id = str(result["input"]["subject_id"])
+        if show_progress:
+            progress.set_postfix_str(subject_id, refresh=False)
+        elapsed = time.monotonic() - started
+        remaining = elapsed / completed * (total - completed)
+        logger.debug(
+            "bycycle progress %d/%d | subject=%s | elapsed=%.1fs | eta=%.1fs",
+            completed,
+            total,
+            subject_id,
+            elapsed,
+            remaining,
+        )
+        if not show_progress and (
+            completed == 1 or completed % heartbeat_step == 0 or completed == total
+        ):
+            logger.info(
+                "bycycle progress %d/%d (%.1f%%) | last=%s | ETA %.1f min",
+                completed,
+                total,
+                100.0 * completed / total,
+                subject_id,
+                remaining / 60.0,
+            )
+    progress.close()
+    return results
+
+
 def run_analysis(
     config_path: str | Path = "bycycle_burst_analysis/config.json",
     *,
@@ -436,23 +487,36 @@ def run_analysis(
     worker_count = min(int(config["detector"]["workers"]), len(tasks))
     if worker_count == 1:
         iterator = map(_process_subject, tasks)
-        results = list(tqdm(iterator, total=len(tasks), disable=not show_progress, desc="bycycle bursts", unit="subject"))
+        results = _collect_subject_results(
+            iterator,
+            total=len(tasks),
+            show_progress=show_progress,
+            logger=logger,
+        )
     else:
         try:
             with ProcessPoolExecutor(max_workers=worker_count) as executor:
-                iterator = executor.map(_process_subject, tasks)
-                results = list(tqdm(iterator, total=len(tasks), disable=not show_progress, desc="bycycle bursts", unit="subject"))
+                futures = [executor.submit(_process_subject, task) for task in tasks]
+                iterator = (future.result() for future in as_completed(futures))
+                results = _collect_subject_results(
+                    iterator,
+                    total=len(tasks),
+                    show_progress=show_progress,
+                    logger=logger,
+                )
         except PermissionError as error:
             logger.warning(
                 "Process workers are unavailable on this system (%s); falling back to one worker",
                 error,
             )
-            results = list(
-                tqdm(
-                    map(_process_subject, tasks), total=len(tasks),
-                    disable=not show_progress, desc="bycycle bursts", unit="subject",
-                )
+            results = _collect_subject_results(
+                map(_process_subject, tasks),
+                total=len(tasks),
+                show_progress=show_progress,
+                logger=logger,
             )
+    subject_order = {subject_id: index for index, subject_id in enumerate(expected_subjects)}
+    results.sort(key=lambda result: subject_order[str(result["input"]["subject_id"])])
     electrode = pd.DataFrame.from_records([row for result in results for row in result["metrics"]])
     subject = _subject_means(electrode)
     inputs = pd.DataFrame.from_records([result["input"] for result in results])
