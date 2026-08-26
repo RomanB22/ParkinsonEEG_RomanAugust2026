@@ -316,9 +316,10 @@ run_stage() {
         printf '  current output found; skipping\n'
         return
     fi
-    if [[ "$OVERWRITE" == true || -e "$sentinel" ]]; then
-        command+=(--overwrite)
-    fi
+    # Reaching this point means the stage is absent, partial, or stale. Always
+    # allow the stage runner to replace remnants, even when its manifest was
+    # never written (for example after an interrupted analysis).
+    command+=(--overwrite)
     execute "${command[@]}"
 }
 
@@ -345,9 +346,9 @@ if [[ "$SKIP_SWEEP" == false ]]; then
     if [[ "$OVERWRITE" == false ]] && ordinal_sweep_current; then
         printf '  current output found; skipping\n'
     else
-        if [[ "$OVERWRITE" == true ]]; then
-            ordinal_sweep_command+=(--overwrite)
-        fi
+        # A non-current sweep can contain partial D directories without their
+        # manifests; rebuild the sweep rather than treating those files as new.
+        ordinal_sweep_command+=(--overwrite)
         execute "${ordinal_sweep_command[@]}"
     fi
 else

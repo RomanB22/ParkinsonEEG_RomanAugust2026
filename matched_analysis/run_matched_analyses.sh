@@ -94,9 +94,9 @@ run_stage() {
         printf '  current output found; skipping\n'
         return
     fi
-    if [[ "$OVERWRITE" == true || -e "$sentinel" ]]; then
-        command+=(--overwrite)
-    fi
+    # A failed stage may leave metric files but no manifest. Since the stage is
+    # not current, explicitly replace any partial or stale remnants.
+    command+=(--overwrite)
     execute "${command[@]}"
 }
 
@@ -210,7 +210,7 @@ if [[ "$SKIP_SWEEP" == false ]]; then
     if [[ "$OVERWRITE" == false ]] && matched_sweep_current; then
         printf '  current output found; skipping\n'
     else
-        if [[ "$OVERWRITE" == true ]]; then sweep_command+=(--overwrite); fi
+        sweep_command+=(--overwrite)
         print_command env \
             ORDINAL_BASE_CONFIG="$CONFIG_ROOT/ordinal.json" \
             ORDINAL_SWEEP_OUTPUT_ROOT=ordinal_analysis/parameter_sweep_matched \
