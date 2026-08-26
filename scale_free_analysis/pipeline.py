@@ -25,6 +25,8 @@ from tqdm.auto import tqdm
 
 from psd_analysis.metrics import compute_subject_electrode_psd
 from src.dataset import ordered_channel_inventory
+from src.group_statistics import compute_group_statistics
+from src.group_statistics_plots import plot_electrode_group_statistics
 
 from .aperiodic_diagnostics import run_aperiodic_diagnostics
 from .metrics import (
@@ -132,6 +134,16 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("typical_bouts.confidence_level must be between zero and one")
     if int(typical["workers"]) < 1:
         raise ValueError("typical_bouts.workers must be positive")
+    statistics = config["statistics"]
+    if not 0.0 < float(statistics["fdr_alpha"]) < 1.0:
+        raise ValueError("statistics.fdr_alpha must be between zero and one")
+    if not 0.0 < float(statistics["confidence_level"]) < 1.0:
+        raise ValueError("statistics.confidence_level must be between zero and one")
+    if statistics.get("subject_aggregation") != "mean":
+        raise ValueError("Scale-free statistics.subject_aggregation must be mean")
+    unknown_exclusions = sorted(set(statistics.get("exclude_bands", [])) - set(bands))
+    if unknown_exclusions:
+        raise ValueError(f"Unknown statistics.exclude_bands: {unknown_exclusions}")
     return config
 
 
@@ -685,6 +697,35 @@ def run_analysis(
         band_subjects,
         fdr_alpha=float(config["statistics"]["fdr_alpha"]),
     )
+    statistics_config = config["statistics"]
+    aperiodic_subject_statistics, aperiodic_electrode_statistics = (
+        compute_group_statistics(
+            aperiodic_electrodes,
+            participant_table,
+            metrics=APERIODIC_FEATURES,
+            domain="scale_free_aperiodic",
+            subject_aggregation=str(statistics_config["subject_aggregation"]),
+            confidence_level=float(statistics_config["confidence_level"]),
+            fdr_alpha=float(statistics_config["fdr_alpha"]),
+        )
+    )
+    inferential_bands = [
+        band for band in band_order
+        if band not in set(statistics_config.get("exclude_bands", []))
+    ]
+    inferential_band_electrodes = band_electrodes.loc[
+        band_electrodes["band"].isin(inferential_bands)
+    ].copy()
+    band_subject_statistics, band_electrode_statistics = compute_group_statistics(
+        inferential_band_electrodes,
+        participant_table,
+        metrics=BAND_FEATURES,
+        strata=("band",),
+        domain="scale_free_periodic_and_bouts",
+        subject_aggregation=str(statistics_config["subject_aggregation"]),
+        confidence_level=float(statistics_config["confidence_level"]),
+        fdr_alpha=float(statistics_config["fdr_alpha"]),
+    )
 
     metrics_dir = output_dir / "metrics"
     _write_csv(pd.DataFrame.from_records(input_rows), metrics_dir / "analyzed_inputs.csv")
@@ -695,6 +736,22 @@ def run_analysis(
     _write_csv(group_aperiodic, metrics_dir / "group_aperiodic_summary.csv")
     _write_csv(group_bands, metrics_dir / "group_band_summary.csv")
     _write_csv(comparisons, metrics_dir / "pd_control_comparisons.csv")
+    _write_csv(
+        aperiodic_subject_statistics,
+        metrics_dir / "group_subject_statistics_aperiodic.csv",
+    )
+    _write_csv(
+        aperiodic_electrode_statistics,
+        metrics_dir / "group_electrode_statistics_aperiodic.csv",
+    )
+    _write_csv(
+        band_subject_statistics,
+        metrics_dir / "group_subject_statistics_periodic_bout.csv",
+    )
+    _write_csv(
+        band_electrode_statistics,
+        metrics_dir / "group_electrode_statistics_periodic_bout.csv",
+    )
 
     common_info = next(iter(subject_infos.values())).copy()
     configured_groups = [str(group) for group in config["plots"]["group_order"]]
@@ -796,8 +853,26 @@ def run_analysis(
             figures_dir / "topomaps",
             dpi,
         )
+        logger.info("Creating electrode-wise PD-Control statistical maps")
+        aperiodic_statistical_figures = plot_electrode_group_statistics(
+            aperiodic_electrode_statistics,
+            common_info,
+            strata=(),
+            output_dir=figures_dir / "group_statistics" / "aperiodic",
+            dpi=dpi,
+        )
+        band_statistical_figures = plot_electrode_group_statistics(
+            band_electrode_statistics,
+            common_info,
+            strata=("band",),
+            output_dir=figures_dir / "group_statistics" / "periodic_bout",
+            dpi=dpi,
+            stratum_labels={band: band_labels[band] for band in inferential_bands},
+        )
     else:
         logger.info("Skipping topomaps because fewer than four electrodes were selected")
+        aperiodic_statistical_figures = []
+        band_statistical_figures = []
     if {"PD", "Control"}.issubset(present_groups):
         plot_effect_sizes(
             comparisons,
@@ -887,11 +962,26 @@ def run_analysis(
             "when the configured fraction of the trough-to-trough cycle overlaps an eBOSC "
             "band-bout mask."
         ),
-        "statistics_policy": (
-            "Electrode metrics are averaged to one value per subject before PD/Control tests. "
-            "Welch t tests, Mann-Whitney tests, Hedges g, and Benjamini-Hochberg correction "
-            "across all reported Welch tests are saved."
-        ),
+        "statistics_policy": {
+            "primary_unit": "subject",
+            "full_cohort_model": "OLS adjusted for age and sex with HC3 robust SE",
+            "matched_cohort_model": "paired t test by match_pair_id; paired Wilcoxon saved as sensitivity",
+            "subject_fdr_scope": "separate aperiodic and canonical periodic/bout domains",
+            "electrode_status": "exploratory localization; electrodes are not independent observations",
+            "formal_electrode_fdr": "BH across every electrode-by-metric test in each domain",
+            "legacy_table": "pd_control_comparisons.csv retains unadjusted Welch/Mann-Whitney results for compatibility",
+            "excluded_bands": list(statistics_config.get("exclude_bands", [])),
+            "exclusion_reason": "Overlapping visualization-only bands are excluded from formal inference",
+            "n_subject_tests": int(
+                len(aperiodic_subject_statistics) + len(band_subject_statistics)
+            ),
+            "n_electrode_tests": int(
+                len(aperiodic_electrode_statistics) + len(band_electrode_statistics)
+            ),
+            "n_statistical_figures": int(
+                len(aperiodic_statistical_figures) + len(band_statistical_figures)
+            ),
+        },
     }
     (output_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"

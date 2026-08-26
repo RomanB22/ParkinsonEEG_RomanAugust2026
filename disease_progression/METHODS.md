@@ -1,0 +1,70 @@
+# Disease-severity association methods
+
+## Cohort and interpretation
+
+The analysis is restricted to participants labeled PD with complete UPDRS,
+MOCA, age, and sex metadata. UPDRS is the prespecified primary motor-severity
+axis and MOCA is a complementary cognitive axis. Because the dataset is
+cross-sectional, this is a disease-severity analysis—not a longitudinal rate
+of progression, prognostic model, or causal analysis.
+
+## Electrode restriction
+
+Every feature is recalculated from exactly these eight electrodes, in the
+prespecified order: F4, P4, O2, P6, CP2, CP1, PO7, and P8. The pipeline fails
+if any requested subject/source/band does not contain the complete set.
+
+Ordinal, aperiodic, bout, and within-bout ordinal features are averaged across
+the eight electrodes. Relative PSD band power uses the median, matching the
+primary PSD analysis. A QC-qualified exponent is reported only when at least
+7/8 selected electrodes pass the formal specparam fit QC.
+
+The primary ordinal block is D=6, tau=1. It contains regular H/C/F and Rényi
+entropy/complexity for alpha=0.1, 0.5, 0.9, 1.1, 2, 5, and 10, both broadband
+and in the five canonical ordinal bands. PSD, bout properties, and within-bout
+H/C/F use their canonical non-overlapping bands. Broad 5–15 Hz remains
+descriptive and never enters this inferential feature matrix.
+
+## Statistical model
+
+For each EEG feature and outcome, the primary estimate is an age/sex-adjusted
+partial Spearman correlation:
+
+1. Rank the EEG feature, clinical outcome, age, and binary sex covariate using
+   average ranks for ties.
+2. Regress the ranked EEG feature on ranked age and sex and retain residuals.
+3. Regress the ranked clinical outcome on the same covariates and retain
+   residuals.
+4. Pearson-correlate the two residual vectors. The resulting coefficient is
+   the partial Spearman rho.
+
+The p-value uses the residual-correlation t statistic and its covariate-adjusted
+degrees of freedom. A deterministic subject bootstrap supplies percentile 95%
+confidence intervals. Unadjusted Spearman correlations are saved as
+sensitivity analyses.
+
+For UPDRS, positive rho means the quantity increases with worse motor
+severity. MOCA has the opposite clinical direction, so the output also contains
+`progression_aligned_estimate = -rho` for MOCA. This sign alignment aids visual
+comparison and is not a new statistical test or composite clinical score.
+
+## Multiplicity
+
+Benjamini–Hochberg FDR is controlled separately within each combination of:
+
+- clinical outcome (UPDRS or MOCA);
+- prespecified feature family (ordinal, PSD, aperiodic, bout, within-bout
+  ordinal); and
+- method (adjusted primary or unadjusted sensitivity).
+
+Use `fdr_reject == True` and `p_fdr_bh < 0.05` for corrected significance in
+that declared family. Raw p-values and all non-significant results remain in
+the output to avoid selective reporting.
+
+## Full and matched cohorts
+
+The full analysis uses all PD participants. The matched sensitivity uses only
+the PD participants retained by the canonical PD/Control demographic match.
+The Control members and match-pair IDs do not enter a within-PD severity
+correlation; therefore this analysis is not paired. Its value is sensitivity to
+the smaller, demographically restricted PD sample.

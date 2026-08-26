@@ -14,6 +14,8 @@ from typing import Any
 
 from src.runtime import configure_runtime
 from src.dataset import ordered_channel_inventory
+from src.group_statistics import compute_group_statistics
+from src.group_statistics_plots import plot_electrode_group_statistics
 
 configure_runtime()
 
@@ -57,7 +59,9 @@ SUBJECT_PATTERN = re.compile(r"(sub-\d+)")
 def load_analysis_config(path: str | Path) -> dict[str, Any]:
     with Path(path).open(encoding="utf-8") as stream:
         config = json.load(stream)
-    required = {"input", "output_dir", "ordinal", "bands", "band_filter", "plots"}
+    required = {
+        "input", "output_dir", "ordinal", "bands", "band_filter", "statistics", "plots"
+    }
     missing = sorted(required - set(config))
     if missing:
         raise ValueError(f"Missing ordinal-analysis config sections: {missing}")
@@ -102,6 +106,16 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     filter_order = filter_config.get("order")
     if not isinstance(filter_order, int) or filter_order < 1:
         raise ValueError("band_filter.order must be a positive integer")
+    statistics = config["statistics"]
+    if not 0.0 < float(statistics["fdr_alpha"]) < 1.0:
+        raise ValueError("statistics.fdr_alpha must be between zero and one")
+    if not 0.0 < float(statistics["confidence_level"]) < 1.0:
+        raise ValueError("statistics.confidence_level must be between zero and one")
+    if statistics.get("subject_aggregation") != "mean":
+        raise ValueError("Ordinal statistics.subject_aggregation must be mean")
+    unknown_exclusions = sorted(set(statistics.get("exclude_bands", [])) - set(bands))
+    if unknown_exclusions:
+        raise ValueError(f"Unknown statistics.exclude_bands: {unknown_exclusions}")
     return config
 
 
@@ -338,6 +352,36 @@ def run_analysis(
     )
     input_table = pd.DataFrame.from_records(input_rows)
 
+    statistics_config = config["statistics"]
+    broadband_subject_statistics, broadband_electrode_statistics = (
+        compute_group_statistics(
+            electrode_metrics,
+            participant_table,
+            metrics=METRICS,
+            domain="ordinal_broadband",
+            subject_aggregation=str(statistics_config["subject_aggregation"]),
+            confidence_level=float(statistics_config["confidence_level"]),
+            fdr_alpha=float(statistics_config["fdr_alpha"]),
+        )
+    )
+    inferential_bands = [
+        band for band in bands
+        if band not in set(statistics_config.get("exclude_bands", []))
+    ]
+    inferential_band_metrics = band_electrode_metrics.loc[
+        band_electrode_metrics["band"].isin(inferential_bands)
+    ].copy()
+    band_subject_statistics, band_electrode_statistics = compute_group_statistics(
+        inferential_band_metrics,
+        participant_table,
+        metrics=METRICS,
+        strata=("band",),
+        domain="ordinal_band",
+        subject_aggregation=str(statistics_config["subject_aggregation"]),
+        confidence_level=float(statistics_config["confidence_level"]),
+        fdr_alpha=float(statistics_config["fdr_alpha"]),
+    )
+
     metrics_dir = output_dir / "metrics"
     _write_csv(electrode_metrics, metrics_dir / "electrode_metrics.csv")
     _write_csv(subject_means, metrics_dir / "subject_electrode_mean_metrics.csv")
@@ -357,6 +401,22 @@ def run_analysis(
         metrics_dir / "group_band_subject_mean_summary.csv",
     )
     _write_csv(input_table, metrics_dir / "analyzed_inputs.csv")
+    _write_csv(
+        broadband_subject_statistics,
+        metrics_dir / "group_subject_statistics_broadband.csv",
+    )
+    _write_csv(
+        broadband_electrode_statistics,
+        metrics_dir / "group_electrode_statistics_broadband.csv",
+    )
+    _write_csv(
+        band_subject_statistics,
+        metrics_dir / "group_subject_statistics_by_band.csv",
+    )
+    _write_csv(
+        band_electrode_statistics,
+        metrics_dir / "group_electrode_statistics_by_band.csv",
+    )
 
     common_payload = {
         "common_electrodes": common_channels,
@@ -414,6 +474,17 @@ def run_analysis(
                 "Each accepted epoch and electrode is independently band-pass filtered with "
                 f"a {filter_order}th-order Butterworth SOS and scipy.signal.sosfiltfilt."
             ),
+            "statistical_inference": {
+                "primary_unit": "subject",
+                "figures_generated": False,
+                "excluded_bands": list(statistics_config.get("exclude_bands", [])),
+                "n_subject_tests": int(
+                    len(broadband_subject_statistics) + len(band_subject_statistics)
+                ),
+                "n_electrode_tests": int(
+                    len(broadband_electrode_statistics) + len(band_electrode_statistics)
+                ),
+            },
         }
         (output_dir / "manifest.json").write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
@@ -423,6 +494,27 @@ def run_analysis(
 
     electrode_order = list(common_channels)
     common_info = next(iter(subject_infos.values())).copy()
+
+    logger.info("Creating electrode-wise PD-Control statistical maps")
+    broadband_statistical_figures = plot_electrode_group_statistics(
+        broadband_electrode_statistics,
+        common_info,
+        strata=(),
+        output_dir=output_dir / "figures" / "group_statistics" / "broadband",
+        dpi=int(config["plots"]["dpi"]),
+    )
+    statistical_band_labels = {
+        band: str(config["plots"]["band_display_names"].get(band, band))
+        for band in inferential_bands
+    }
+    band_statistical_figures = plot_electrode_group_statistics(
+        band_electrode_statistics,
+        common_info,
+        strata=("band",),
+        output_dir=output_dir / "figures" / "group_statistics" / "bands",
+        dpi=int(config["plots"]["dpi"]),
+        stratum_labels=statistical_band_labels,
+    )
 
     configured_groups = [str(group) for group in config["plots"]["group_order"]]
     present_groups = set(electrode_metrics["group"].unique())
@@ -744,6 +836,25 @@ def run_analysis(
             "is zero-phase and never crosses epoch boundaries or rejected-data gaps. Ordinal "
             "patterns are then pooled across epochs with boundary-crossing embeddings excluded."
         ),
+        "statistical_inference": {
+            "primary_unit": "subject",
+            "full_cohort_model": "OLS adjusted for age and sex with HC3 robust SE",
+            "matched_cohort_model": "paired t test by match_pair_id; paired Wilcoxon saved as sensitivity",
+            "subject_fdr_scope": "separate broadband and canonical-band ordinal domains",
+            "electrode_status": "exploratory localization; electrodes are not independent observations",
+            "formal_electrode_fdr": "BH across every electrode-by-metric test in each domain",
+            "excluded_bands": list(statistics_config.get("exclude_bands", [])),
+            "exclusion_reason": "Overlapping visualization-only bands are excluded from formal inference",
+            "n_subject_tests": int(
+                len(broadband_subject_statistics) + len(band_subject_statistics)
+            ),
+            "n_electrode_tests": int(
+                len(broadband_electrode_statistics) + len(band_electrode_statistics)
+            ),
+            "n_statistical_figures": int(
+                len(broadband_statistical_figures) + len(band_statistical_figures)
+            ),
+        },
         "subject_average_definition": (
             "Arithmetic mean of every subject's electrode-level Shannon, Fisher, and Rényi "
             "quantities across the electrodes shared by every analyzed subject; the average-"

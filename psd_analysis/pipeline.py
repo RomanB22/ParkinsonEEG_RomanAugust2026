@@ -12,6 +12,8 @@ from typing import Any
 
 from src.runtime import configure_runtime
 from src.dataset import ordered_channel_inventory
+from src.group_statistics import compute_group_statistics
+from src.group_statistics_plots import plot_electrode_group_statistics
 
 configure_runtime()
 
@@ -42,7 +44,9 @@ SUBJECT_PATTERN = re.compile(r"(sub-\d+)")
 def load_psd_config(path: str | Path) -> dict[str, Any]:
     with Path(path).open(encoding="utf-8") as stream:
         config = json.load(stream)
-    required = {"input", "output_dir", "psd", "bands", "bootstrap", "plots"}
+    required = {
+        "input", "output_dir", "psd", "bands", "bootstrap", "statistics", "plots"
+    }
     missing = sorted(required - set(config))
     if missing:
         raise ValueError(f"Missing PSD-analysis config sections: {missing}")
@@ -65,6 +69,18 @@ def load_psd_config(path: str | Path) -> dict[str, Any]:
         low, high = (float(value) for value in limits)
         if not fmin <= low < high <= fmax:
             raise ValueError(f"Band {name} must be contained in the PSD interval")
+    statistics = config["statistics"]
+    if not 0.0 < float(statistics["fdr_alpha"]) < 1.0:
+        raise ValueError("statistics.fdr_alpha must be between zero and one")
+    if not 0.0 < float(statistics["confidence_level"]) < 1.0:
+        raise ValueError("statistics.confidence_level must be between zero and one")
+    if statistics.get("subject_aggregation") != "median":
+        raise ValueError("PSD statistics.subject_aggregation must be median")
+    unknown_exclusions = sorted(
+        set(statistics.get("exclude_bands", [])) - set(config["bands"])
+    )
+    if unknown_exclusions:
+        raise ValueError(f"Unknown statistics.exclude_bands: {unknown_exclusions}")
     return config
 
 
@@ -326,6 +342,25 @@ def run_analysis(
         )
     group_band_table = pd.DataFrame.from_records(group_band_rows)
 
+    statistics_config = config["statistics"]
+    inferential_bands = [
+        band for band in bands
+        if band not in set(statistics_config.get("exclude_bands", []))
+    ]
+    inferential_band_table = subject_band_table.loc[
+        subject_band_table["band"].isin(inferential_bands)
+    ].copy()
+    subject_statistics, electrode_statistics = compute_group_statistics(
+        inferential_band_table,
+        participant_table,
+        metrics=("relative_band_power",),
+        strata=("band",),
+        domain="psd_relative_band_power",
+        subject_aggregation=str(statistics_config["subject_aggregation"]),
+        confidence_level=float(statistics_config["confidence_level"]),
+        fdr_alpha=float(statistics_config["fdr_alpha"]),
+    )
+
     metrics_dir = output_dir / "metrics"
     metrics_dir.mkdir(parents=True, exist_ok=True)
     _write_csv(pd.DataFrame.from_records(input_rows), metrics_dir / "analyzed_inputs.csv")
@@ -334,6 +369,8 @@ def run_analysis(
     _write_csv(subject_band_table, metrics_dir / "subject_electrode_band_power.csv")
     _write_csv(subject_band_summary, metrics_dir / "subject_band_power.csv")
     _write_csv(group_band_table, metrics_dir / "group_electrode_band_power.csv")
+    _write_csv(subject_statistics, metrics_dir / "group_subject_statistics.csv")
+    _write_csv(electrode_statistics, metrics_dir / "group_electrode_statistics.csv")
     np.savez_compressed(
         metrics_dir / "subject_electrode_psd.npz",
         subject_ids=np.asarray(expected_subjects),
@@ -384,6 +421,15 @@ def run_analysis(
         group_order,
         output_dir / "figures" / "group_median_band_power_topomaps.png",
         dpi,
+    )
+    logger.info("Creating electrode-wise PD-Control statistical maps")
+    statistical_figures = plot_electrode_group_statistics(
+        electrode_statistics,
+        common_info,
+        strata=("band",),
+        output_dir=output_dir / "figures" / "group_statistics",
+        dpi=dpi,
+        stratum_labels={band: band_labels[band] for band in inferential_bands},
     )
 
     electrode_payload = {
@@ -445,6 +491,19 @@ def run_analysis(
             f"power across the {len(common_channels)} electrodes shared by every analyzed "
             "subject. Electrode rows are never treated as independent group observations."
         ),
+        "statistical_inference": {
+            "primary_unit": "subject",
+            "full_cohort_model": "OLS adjusted for age and sex with HC3 robust SE",
+            "matched_cohort_model": "paired t test by match_pair_id; paired Wilcoxon saved as sensitivity",
+            "subject_fdr_scope": "all included band tests in the PSD domain",
+            "electrode_status": "exploratory localization; electrodes are not independent observations",
+            "formal_electrode_fdr": "BH across every electrode-by-band test in the PSD domain",
+            "excluded_bands": list(statistics_config.get("exclude_bands", [])),
+            "exclusion_reason": "Overlapping visualization-only bands are excluded from formal inference",
+            "n_subject_tests": int(len(subject_statistics)),
+            "n_electrode_tests": int(len(electrode_statistics)),
+            "n_statistical_figures": int(len(statistical_figures)),
+        },
         "topomap_relative_power_percent_limits": {
             band: [float(value) for value in limits] for band, limits in topomap_limits.items()
         },

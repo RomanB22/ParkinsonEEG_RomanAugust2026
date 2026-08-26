@@ -64,7 +64,10 @@
     "representations": ["amplitude_envelope", "relative_phase_and_resultant_length", "phase_aligned_shape"]
   },
   "statistics": {
-    "fdr_alpha": 0.05
+    "fdr_alpha": 0.05,
+    "confidence_level": 0.95,
+    "subject_aggregation": "mean",
+    "exclude_bands": ["broad_5_15"]
   },
   "plots": {
     "dpi": 150,

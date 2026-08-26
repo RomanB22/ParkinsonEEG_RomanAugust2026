@@ -71,6 +71,13 @@ subject and band. Each violin therefore contains one independent observation
 per subject, with the individual subject values shown as points. PD and Control
 are displayed side by side for every configured frequency band.
 
+Formal PD-versus-Control inference is saved at both the subject and electrode
+levels. The primary subject test is age/sex-adjusted in the full cohort and
+paired by demographic match in the matched cohort. Electrode tests are
+exploratory spatial localization and use a strict domain-wide FDR flag. The
+overlapping 5–15 Hz display band is not included in these tests. See
+[`../GROUP_STATISTICS.md`](../GROUP_STATISTICS.md) for the complete policy.
+
 ## Run
 
 From the repository root:
@@ -79,8 +86,8 @@ From the repository root:
 bash psd_analysis/run_psd_analysis.sh --overwrite
 ```
 
-Selected participants can be used for a development run, but at least two per
-included group are needed for bootstrap confidence intervals:
+Selected participants can be used for a development run, but at least three per
+included group are needed for the group statistics:
 
 ```bash
 bash psd_analysis/run_psd_analysis.sh \
@@ -106,11 +113,14 @@ psd_analysis/processed/
 │   ├── subject_electrode_band_power.csv
 │   ├── subject_band_power.csv
 │   ├── group_electrode_band_power.csv
+│   ├── group_subject_statistics.csv
+│   ├── group_electrode_statistics.csv
 │   └── electrode_sets.json
 └── figures/
     ├── group_median_psd_with_ci.png
     ├── group_median_band_power_topomaps.png
-    └── group_relative_band_power_violins.png
+    ├── group_relative_band_power_violins.png
+    └── group_statistics/relative_band_power_group_statistics.png
 ```
 
 `subject_electrode_psd.npz` is the compact lossless spectral array. It contains

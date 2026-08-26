@@ -37,6 +37,10 @@ CONFIG_OUTPUTS = {
         "quantitative_behavioral/config.json",
         "quantitative_behavioral/processed_matched",
     ),
+    "disease_progression": (
+        "disease_progression/config.json",
+        "disease_progression/processed_matched",
+    ),
 }
 
 
@@ -154,6 +158,17 @@ def prepare_matched_cohort(
             )
             config["dimension_sensitivity"]["ordinal_output_root"] = (
                 "ordinal_analysis/parameter_sweep_matched"
+            )
+        elif name == "disease_progression":
+            config["input"].update(
+                {
+                    "ordinal_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/electrode_metrics.csv",
+                    "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/band_electrode_metrics.csv",
+                    "psd_electrode_file": "psd_analysis/processed_matched/metrics/subject_electrode_band_power.csv",
+                    "aperiodic_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_aperiodic_metrics.csv",
+                    "bout_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_band_metrics.csv",
+                    "bout_ordinal_electrode_file": "bout_analyses/processed_matched/metrics/subject_electrode_band_metrics.csv",
+                }
             )
         config_path = configs_dir / f"{name}.json"
         _write_json(config, config_path)

@@ -22,7 +22,8 @@ Usage: bash matched_analysis/run_matched_analyses.sh [options]
 Prepare one canonical exact-sex/optimal-age matched cohort, then run matched:
 PSD, ordinal quantities/planes/topomaps, ordinal D={3,4,5,6} inputs at tau=1,
 scale-free, bouts, fit-QC sensitivity, typical bouts, prediction models, MOCA,
-and the at-least-60-second accepted-duration sensitivity.
+the selected-electrode UPDRS/MOCA severity analysis, and the at-least-60-second
+accepted-duration sensitivity.
 
 Options:
   --overwrite          Regenerate every matched result
@@ -74,6 +75,14 @@ execute() {
     fi
 }
 
+has_progression_electrodes() {
+    local filename="$1" electrode
+    [[ -f "$filename" ]] || return 1
+    for electrode in F4 P4 O2 P6 CP2 CP1 PO7 P8; do
+        grep -q "^${electrode}," "$filename" || return 1
+    done
+}
+
 run_stage() {
     local label="$1"
     local sentinel="$2"
@@ -94,10 +103,30 @@ stage_current() {
     local sentinel="$1"
     [[ -f "$sentinel" ]] || return 1
     case "$sentinel" in
-        ordinal_analysis/processed_matched/manifest.json)
-            [[ -f ordinal_analysis/processed_matched/figures/topomaps/renyi_alpha_10/group_mean_topomaps.png ]]
+        psd_analysis/processed_matched/manifest.json)
+            [[ -f psd_analysis/processed_matched/metrics/group_subject_statistics.csv ]] \
+                && [[ -f psd_analysis/processed_matched/metrics/group_electrode_statistics.csv ]] \
+                && [[ -f psd_analysis/processed_matched/figures/group_statistics/relative_band_power_group_statistics.png ]]
             ;;
-        scale_free_analysis/processed_matched/manifest.json|bout_analyses/processed_matched/manifest.json|scale_free_analysis/processed_matched/typical_bouts_manifest.json)
+        ordinal_analysis/processed_matched/manifest.json)
+            [[ -f ordinal_analysis/processed_matched/figures/topomaps/renyi_alpha_10/group_mean_topomaps.png ]] \
+                && [[ -f ordinal_analysis/processed_matched/metrics/group_subject_statistics_broadband.csv ]] \
+                && [[ -f ordinal_analysis/processed_matched/metrics/group_electrode_statistics_by_band.csv ]] \
+                && [[ -f ordinal_analysis/processed_matched/figures/group_statistics/broadband/entropy_group_statistics.png ]]
+            ;;
+        scale_free_analysis/processed_matched/manifest.json)
+            grep -q '"broad_5_15"' "$sentinel" \
+                && [[ -f scale_free_analysis/processed_matched/metrics/group_subject_statistics_aperiodic.csv ]] \
+                && [[ -f scale_free_analysis/processed_matched/metrics/group_electrode_statistics_periodic_bout.csv ]] \
+                && [[ -f scale_free_analysis/processed_matched/figures/group_statistics/aperiodic/aperiodic_exponent_group_statistics.png ]]
+            ;;
+        bout_analyses/processed_matched/manifest.json)
+            grep -q '"broad_5_15"' "$sentinel" \
+                && [[ -f bout_analyses/processed_matched/metrics/group_subject_statistics.csv ]] \
+                && [[ -f bout_analyses/processed_matched/metrics/group_electrode_statistics.csv ]] \
+                && [[ -f bout_analyses/processed_matched/figures/group_statistics/entropy_group_statistics.png ]]
+            ;;
+        scale_free_analysis/processed_matched/typical_bouts_manifest.json)
             grep -q '"broad_5_15"' "$sentinel"
             ;;
         scale_free_analysis/processed_matched/fit_qc_sensitivity_manifest.json)
@@ -116,6 +145,16 @@ stage_current() {
                 && ! grep -q 'broad_5_15' \
                     quantitative_behavioral/processed_matched/metrics/feature_dictionary.csv
             ;;
+        disease_progression/processed_matched/manifest.json)
+            [[ -f disease_progression/processed_matched/REPORT.md ]] \
+                && [[ -f disease_progression/processed_matched/metrics/progression_correlations.csv ]] \
+                && [[ -f disease_progression/processed_matched/figures/electrode_selection.png ]] \
+                && [[ -f disease_progression/processed_matched/figures/scatter/updrs/updrs_scatter_page_001.png ]] \
+                && has_progression_electrodes \
+                    disease_progression/processed_matched/metrics/electrode_selection.csv \
+                && ! grep -q 'broad_5_15' \
+                    disease_progression/processed_matched/metrics/feature_dictionary.csv
+            ;;
         duration_qc_analysis/processed_matched/manifest.json)
             grep -q '"minimum_accepted_duration_seconds": 60' "$sentinel" \
                 && [[ -f duration_qc_analysis/processed_matched/REPORT.md ]] \
@@ -133,6 +172,8 @@ matched_sweep_current() {
         [[ -f "$directory/manifest.json" ]] || return 1
         grep -q 'renyi_entropy_alpha_10' \
             "$directory/metrics/subject_electrode_mean_metrics.csv" || return 1
+        [[ -f "$directory/metrics/group_subject_statistics_broadband.csv" ]] || return 1
+        [[ -f "$directory/metrics/group_electrode_statistics_by_band.csv" ]] || return 1
     done
 }
 
@@ -254,6 +295,10 @@ if [[ "$SKIP_SWEEP" == false ]]; then
         quantitative_behavioral/processed_matched/manifest.json \
         bash quantitative_behavioral/run_quantitative_behavioral.sh \
         --config "$CONFIG_ROOT/quantitative_behavioral.json"
+    run_stage "selected-electrode UPDRS/MOCA disease-severity analysis" \
+        disease_progression/processed_matched/manifest.json \
+        bash disease_progression/run_disease_progression.sh \
+        --config "$CONFIG_ROOT/disease_progression.json"
 fi
 
 if [[ "$SKIP_SWEEP" == false && "$SKIP_EXPLORATION" == false ]]; then

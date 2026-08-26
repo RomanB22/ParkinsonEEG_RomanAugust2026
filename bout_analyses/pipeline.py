@@ -35,6 +35,8 @@ from scale_free_analysis.metrics import (
     summarize_bouts,
 )
 from src.dataset import ordered_channel_inventory
+from src.group_statistics import compute_group_statistics
+from src.group_statistics_plots import plot_electrode_group_statistics
 
 from .metrics import (
     METRICS,
@@ -55,6 +57,13 @@ from .plots import (
 
 
 SUBJECT_PATTERN = re.compile(r"(sub-\d+)")
+GROUP_METRICS = (
+    *METRICS,
+    "oscillatory_occupancy",
+    "bouts_per_minute",
+    "bout_duration_mean_s",
+    "bout_duration_median_s",
+)
 
 
 def load_analysis_config(path: str | Path) -> dict[str, Any]:
@@ -69,6 +78,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "ebosc",
         "ordinal",
         "band_filter",
+        "statistics",
         "plots",
     }
     missing = sorted(required - set(config))
@@ -135,6 +145,16 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("band_filter.order must be a positive integer")
     if int(config["plots"].get("dpi", 150)) < 50:
         raise ValueError("plots.dpi must be at least 50")
+    statistics = config["statistics"]
+    if not 0.0 < float(statistics["fdr_alpha"]) < 1.0:
+        raise ValueError("statistics.fdr_alpha must be between zero and one")
+    if not 0.0 < float(statistics["confidence_level"]) < 1.0:
+        raise ValueError("statistics.confidence_level must be between zero and one")
+    if statistics.get("subject_aggregation") != "mean":
+        raise ValueError("Bout statistics.subject_aggregation must be mean")
+    unknown_exclusions = sorted(set(statistics.get("exclude_bands", [])) - set(bands))
+    if unknown_exclusions:
+        raise ValueError(f"Unknown statistics.exclude_bands: {unknown_exclusions}")
     return config
 
 
@@ -556,12 +576,32 @@ def run_analysis(
         if diagnostic_episode_tables
         else pd.DataFrame(columns=["subject_id", "group", "electrode", "band", "duration_s"])
     )
+    statistics_config = config["statistics"]
+    inferential_bands = [
+        band for band in band_order
+        if band not in set(statistics_config.get("exclude_bands", []))
+    ]
+    inferential_metrics = electrode_metrics.loc[
+        electrode_metrics["band"].isin(inferential_bands)
+    ].copy()
+    subject_statistics, electrode_statistics = compute_group_statistics(
+        inferential_metrics,
+        participant_table,
+        metrics=GROUP_METRICS,
+        strata=("band",),
+        domain="bout_detection_and_within_bout_ordinal",
+        subject_aggregation=str(statistics_config["subject_aggregation"]),
+        confidence_level=float(statistics_config["confidence_level"]),
+        fdr_alpha=float(statistics_config["fdr_alpha"]),
+    )
     metrics_dir = output_dir / "metrics"
     _write_csv(electrode_metrics, metrics_dir / "subject_electrode_band_metrics.csv")
     _write_csv(subject_metrics, metrics_dir / "subject_band_metrics.csv")
     _write_csv(group_summary, metrics_dir / "group_band_summary.csv")
     _write_csv(pd.DataFrame.from_records(input_rows), metrics_dir / "analyzed_inputs.csv")
     _write_csv(diagnostic_episodes, metrics_dir / "bout_duration_records.csv.gz")
+    _write_csv(subject_statistics, metrics_dir / "group_subject_statistics.csv")
+    _write_csv(electrode_statistics, metrics_dir / "group_electrode_statistics.csv")
     electrode_payload = {
         "common_electrodes": common_channels,
         "n_common_electrodes": len(common_channels),
@@ -646,6 +686,14 @@ def run_analysis(
         dpi,
     )
     common_info = next(iter(subject_infos.values())).copy()
+    statistical_figures = plot_electrode_group_statistics(
+        electrode_statistics,
+        common_info,
+        strata=("band",),
+        output_dir=figures_dir / "group_statistics",
+        dpi=dpi,
+        stratum_labels={band: band_labels[band] for band in inferential_bands},
+    )
     plot_group_topomaps(
         electrode_metrics,
         common_info,
@@ -703,6 +751,20 @@ def run_analysis(
         "electrode_policy": (
             "Only the electrode intersection shared by every analyzed subject contributes."
         ),
+        "statistical_inference": {
+            "tested_metrics": list(GROUP_METRICS),
+            "primary_unit": "subject",
+            "full_cohort_model": "OLS adjusted for age and sex with HC3 robust SE",
+            "matched_cohort_model": "paired t test by match_pair_id; paired Wilcoxon saved as sensitivity",
+            "subject_fdr_scope": "all canonical band-by-metric tests in the bout domain",
+            "electrode_status": "exploratory localization; electrodes are not independent observations",
+            "formal_electrode_fdr": "BH across every electrode-by-band-by-metric test in the bout domain",
+            "excluded_bands": list(statistics_config.get("exclude_bands", [])),
+            "exclusion_reason": "Overlapping visualization-only bands are excluded from formal inference",
+            "n_subject_tests": int(len(subject_statistics)),
+            "n_electrode_tests": int(len(electrode_statistics)),
+            "n_statistical_figures": int(len(statistical_figures)),
+        },
     }
     (output_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"

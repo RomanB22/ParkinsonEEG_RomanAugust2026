@@ -4,6 +4,14 @@ This folder is a standalone downstream analysis of the accepted, cleaned EEG
 epochs. It does not modify the source dataset, ICA solutions, cleaned FIF files,
 or preprocessing decisions.
 
+PD-versus-Control tests are generated for every broadband and canonical-band
+Shannon, Fisher, and Rényi quantity. Primary tests use one shared-electrode
+aggregate per subject; full-cohort models adjust for age and sex, matched runs
+preserve pairs, and electrode maps are exploratory with strict domain-wide
+FDR. The overlapping 5–15 Hz band remains descriptive only. The complete
+policy and output-column definitions are in
+[`../GROUP_STATISTICS.md`](../GROUP_STATISTICS.md).
+
 ## Scientific scope
 
 Before calculating metrics, the pipeline inventories the EEG electrodes in

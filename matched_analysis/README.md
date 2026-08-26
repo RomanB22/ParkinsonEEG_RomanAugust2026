@@ -4,6 +4,11 @@ This layer repeats the downstream analysis battery on one deterministic cohort
 matched on the measured demographics age and sex. It does not alter or replace
 the full-cohort results.
 
+The matched battery also includes the selected-electrode PD-only UPDRS/MOCA
+severity analysis under `disease_progression/processed_matched/`. It uses the
+PD members retained by the canonical match; within-PD correlations are not
+pairwise tests.
+
 ## Matching method
 
 Every Control is paired to one unique PD participant of the same recorded sex.

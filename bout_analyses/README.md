@@ -29,6 +29,13 @@ present in every analyzed subject. Its sequence is:
    subject/shared-electrode/band. Electrode metrics are then averaged to one
    value per subject/band for descriptive PD/Control figures and summaries.
 
+The same subject summaries also receive formal group inference for H, C, F,
+occupancy, rate, and bout duration. Full-cohort models adjust for age and sex;
+matched-cohort models preserve the demographic pairs. Electrode-wise models
+are exploratory localization with both within-feature and strict domain-wide
+FDR. Broad 5–15 Hz remains descriptive only. See
+[`../GROUP_STATISTICS.md`](../GROUP_STATISTICS.md).
+
 After this primary all-electrode analysis, the fit-QC sensitivity stage can
 exclude failed specparam electrodes and re-aggregate H, C, and F. Formal
 QC-qualified summaries require at least 48/60 passing electrodes per subject.
@@ -101,6 +108,8 @@ bout_analyses/processed/
 │   ├── subject_electrode_band_metrics.csv
 │   ├── subject_band_metrics.csv
 │   ├── group_band_summary.csv
+│   ├── group_subject_statistics.csv
+│   ├── group_electrode_statistics.csv
 │   ├── subject_electrode_band_metrics_fit_qc.csv
 │   ├── subject_band_metrics_fit_qc_all_subjects.csv
 │   ├── subject_band_metrics_fit_qc.csv
@@ -124,6 +133,7 @@ bout_analyses/processed/
     │   ├── subject_metric_violins.png
     │   └── subject_ordinal_planes.png
     ├── electrodes/<band>_electrode_violins.png
+    ├── group_statistics/<metric>_group_statistics.png
     └── topomaps/
         ├── group_mean_topomaps.png
         └── subjects/sub-*_bout_ordinal_topomaps.png
@@ -148,6 +158,6 @@ the probability distribution supplied to `ordpy`.
 - Electrode violins preserve spatial detail; group and per-subject topomaps
   make spatial patterns inspectable.
 
-These are descriptive outputs. The pipeline deliberately does not turn every
-bout into an independent group-statistical observation, which would
-pseudoreplicate participants.
+Bout-level displays are descriptive. Formal tests use one aggregate per
+subject, so the pipeline does not turn every bout or electrode into an
+independent group-statistical observation.

@@ -4,6 +4,14 @@ This standalone downstream pipeline implements [`ScaleFree.md`](../ScaleFree.md)
 with MNE-Python, `specparam`, the eBOSC Morlet and detection definitions, and
 `bycycle`. It never modifies preprocessing results.
 
+Formal PD-versus-Control tests cover aperiodic, canonical periodic, bout, and
+cycle quantities. They use subject-level shared-electrode aggregates; the full
+cohort adjusts for age and sex and the matched cohort preserves its pairs.
+Electrode-wise results are exploratory localization with strict domain-wide
+FDR. The overlapping 5–15 Hz band remains descriptive only. See
+[`../GROUP_STATISTICS.md`](../GROUP_STATISTICS.md) for the common inference
+policy.
+
 ## Scientific sequence
 
 The input is the set of accepted four-second cleaned EEG epochs. Using accepted

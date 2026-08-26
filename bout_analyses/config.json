@@ -46,6 +46,12 @@
     "phase": "zero_phase",
     "boundary_policy": "filter_each_accepted_epoch_before_slicing_bouts"
   },
+  "statistics": {
+    "fdr_alpha": 0.05,
+    "confidence_level": 0.95,
+    "subject_aggregation": "mean",
+    "exclude_bands": ["broad_5_15"]
+  },
   "plots": {
     "dpi": 150,
     "group_order": ["PD", "Control"],

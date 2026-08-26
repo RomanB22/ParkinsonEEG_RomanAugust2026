@@ -33,8 +33,9 @@ Run the complete post-cleaning Parkinson EEG analysis pipeline:
   8. Transparent full-cohort PD-versus-Control exploration models
   9. D=3,4,5,6 quantitative-behavioral ordinal inputs
  10. MOCA quantitative-behavioral analysis
- 11. Accepted-duration sensitivity requiring at least 60 seconds
- 12. The same complete battery on one canonical age/sex-matched cohort
+ 11. Eight-electrode UPDRS/MOCA disease-severity analysis
+ 12. Accepted-duration sensitivity requiring at least 60 seconds
+ 13. The same complete battery on one canonical age/sex-matched cohort
 
 The default is resumable: a current completed stage is skipped. A stage whose
 outputs predate the requested Rényi columns is automatically rerun.
@@ -148,8 +149,19 @@ header_has_extended_renyi() {
     [[ "$header" == *"renyi_complexity_alpha_10"* ]] || return 1
 }
 
+has_progression_electrodes() {
+    local filename="$1" electrode
+    [[ -f "$filename" ]] || return 1
+    for electrode in F4 P4 O2 P6 CP2 CP1 PO7 P8; do
+        grep -q "^${electrode}," "$filename" || return 1
+    done
+}
+
 psd_current() {
-    [[ -f psd_analysis/processed/manifest.json ]]
+    [[ -f psd_analysis/processed/manifest.json ]] || return 1
+    [[ -f psd_analysis/processed/metrics/group_subject_statistics.csv ]] || return 1
+    [[ -f psd_analysis/processed/metrics/group_electrode_statistics.csv ]] || return 1
+    [[ -f psd_analysis/processed/figures/group_statistics/relative_band_power_group_statistics.png ]]
 }
 
 ordinal_primary_current() {
@@ -161,6 +173,9 @@ ordinal_primary_current() {
     [[ -f ordinal_analysis/processed/figures/topomaps/renyi_alpha_0_1/group_mean_topomaps.png ]] || return 1
     [[ -f ordinal_analysis/processed/figures/topomaps/renyi_alpha_10/group_mean_zscored_topomaps.png ]] || return 1
     [[ -f ordinal_analysis/processed/figures/bands/topomaps/renyi_alpha_10/group_means/alpha_group_mean_topomaps.png ]] || return 1
+    [[ -f ordinal_analysis/processed/metrics/group_subject_statistics_broadband.csv ]] || return 1
+    [[ -f ordinal_analysis/processed/metrics/group_electrode_statistics_by_band.csv ]] || return 1
+    [[ -f ordinal_analysis/processed/figures/group_statistics/broadband/entropy_group_statistics.png ]] || return 1
 }
 
 ordinal_sweep_current() {
@@ -172,6 +187,8 @@ ordinal_sweep_current() {
             "${directory}/metrics/subject_electrode_mean_metrics.csv" || return 1
         header_has_extended_renyi \
             "${directory}/metrics/band_subject_electrode_mean_metrics.csv" || return 1
+        [[ -f "${directory}/metrics/group_subject_statistics_broadband.csv" ]] || return 1
+        [[ -f "${directory}/metrics/group_electrode_statistics_by_band.csv" ]] || return 1
     done
 }
 
@@ -182,11 +199,17 @@ scale_free_current() {
     [[ -f scale_free_analysis/processed/metrics/subject_aperiodic_range_sensitivity.csv ]] || return 1
     [[ -f scale_free_analysis/processed/figures/aperiodic_diagnostics/group_median_decomposition_and_residuals.png ]] || return 1
     grep -q 'specparam_fit_qc' scale_free_analysis/processed/manifest.json || return 1
+    [[ -f scale_free_analysis/processed/metrics/group_subject_statistics_aperiodic.csv ]] || return 1
+    [[ -f scale_free_analysis/processed/metrics/group_electrode_statistics_periodic_bout.csv ]] || return 1
+    [[ -f scale_free_analysis/processed/figures/group_statistics/aperiodic/aperiodic_exponent_group_statistics.png ]] || return 1
 }
 
 bout_current() {
     [[ -f bout_analyses/processed/manifest.json ]] || return 1
-    grep -q '"broad_5_15"' bout_analyses/processed/manifest.json
+    grep -q '"broad_5_15"' bout_analyses/processed/manifest.json || return 1
+    [[ -f bout_analyses/processed/metrics/group_subject_statistics.csv ]] || return 1
+    [[ -f bout_analyses/processed/metrics/group_electrode_statistics.csv ]] || return 1
+    [[ -f bout_analyses/processed/figures/group_statistics/entropy_group_statistics.png ]]
 }
 
 fit_qc_sensitivity_current() {
@@ -247,6 +270,18 @@ quantitative_current() {
     grep -q 'bout_alpha_bouts_per_minute' "$primary_dictionary" || return 1
     ! grep -q 'broad_5_15' "$primary_dictionary" || return 1
     ! grep -q 'broad_5_15' "$dictionary" || return 1
+}
+
+disease_progression_current() {
+    [[ -f disease_progression/processed/manifest.json ]] || return 1
+    [[ -f disease_progression/processed/REPORT.md ]] || return 1
+    [[ -f disease_progression/processed/metrics/progression_correlations.csv ]] || return 1
+    [[ -f disease_progression/processed/figures/electrode_selection.png ]] || return 1
+    [[ -f disease_progression/processed/figures/scatter/updrs/updrs_scatter_page_001.png ]] || return 1
+    has_progression_electrodes \
+        disease_progression/processed/metrics/electrode_selection.csv || return 1
+    ! grep -q 'broad_5_15' \
+        disease_progression/processed/metrics/feature_dictionary.csv || return 1
 }
 
 duration_qc_current() {
@@ -354,6 +389,10 @@ execute "${dimension_input_command[@]}"
 run_stage "MOCA quantitative-behavioral analysis" quantitative_current \
     quantitative_behavioral/processed/manifest.json \
     bash quantitative_behavioral/run_quantitative_behavioral.sh
+
+run_stage "Selected-electrode UPDRS/MOCA disease-severity analysis" \
+    disease_progression_current disease_progression/processed/manifest.json \
+    bash disease_progression/run_disease_progression.sh
 
 if [[ "$SKIP_EXPLORATION" == false ]]; then
     run_stage "accepted-duration QC sensitivity (at least 60 seconds)" \
