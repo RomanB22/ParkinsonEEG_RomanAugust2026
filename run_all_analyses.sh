@@ -28,14 +28,15 @@ Run the complete post-cleaning Parkinson EEG analysis pipeline:
   3. Ordinal embedding-dimension sweep at tau=1
   4. Scale-free/specparam and bout-property analysis
   5. Within-bout ordinal analysis
-  6. Specparam fit-QC bout and within-bout sensitivity
-  7. Subject-balanced stereotypical bout gallery and detection QC
-  8. Transparent full-cohort PD-versus-Control exploration models
-  9. D=3,4,5,6 quantitative-behavioral ordinal inputs
- 10. MOCA quantitative-behavioral analysis
- 11. Eight-electrode UPDRS/MOCA disease-severity analysis
- 12. Accepted-duration sensitivity requiring at least 60 seconds
- 13. The same complete battery on one canonical age/sex-matched cohort
+  6. Eight-electrode non-progression sensitivity battery
+  7. Specparam fit-QC bout and within-bout sensitivity
+  8. Subject-balanced stereotypical bout gallery and detection QC
+  9. Transparent full-cohort PD-versus-Control exploration models
+ 10. D=3,4,5,6 quantitative-behavioral ordinal inputs
+ 11. MOCA quantitative-behavioral analysis
+ 12. Whole-head UPDRS/MOCA disease-severity analysis
+ 13. Accepted-duration sensitivity requiring at least 60 seconds
+ 14. The same complete battery on one canonical age/sex-matched cohort
 
 The default is resumable: a current completed stage is skipped. A stage whose
 outputs predate the requested Rényi columns is automatically rerun.
@@ -149,7 +150,7 @@ header_has_extended_renyi() {
     [[ "$header" == *"renyi_complexity_alpha_10"* ]] || return 1
 }
 
-has_progression_electrodes() {
+has_eight_electrodes() {
     local filename="$1" electrode
     [[ -f "$filename" ]] || return 1
     for electrode in F4 P4 O2 P6 CP2 CP1 PO7 P8; do
@@ -278,10 +279,20 @@ disease_progression_current() {
     [[ -f disease_progression/processed/metrics/progression_correlations.csv ]] || return 1
     [[ -f disease_progression/processed/figures/electrode_selection.png ]] || return 1
     [[ -f disease_progression/processed/figures/scatter/updrs/updrs_scatter_page_001.png ]] || return 1
-    has_progression_electrodes \
-        disease_progression/processed/metrics/electrode_selection.csv || return 1
+    [[ "$(($(wc -l < disease_progression/processed/metrics/electrode_selection.csv) - 1))" -eq 60 ]] || return 1
     ! grep -q 'broad_5_15' \
         disease_progression/processed/metrics/feature_dictionary.csv || return 1
+}
+
+eight_electrode_current() {
+    [[ -f eight_electrode_analysis/processed/manifest.json ]] || return 1
+    [[ -f eight_electrode_analysis/processed/REPORT.md ]] || return 1
+    [[ -f eight_electrode_analysis/processed/metrics/group_subject_statistics.csv ]] || return 1
+    [[ -f eight_electrode_analysis/processed/metrics/group_electrode_statistics.csv ]] || return 1
+    has_eight_electrodes \
+        eight_electrode_analysis/processed/metrics/electrode_selection.csv || return 1
+    ! grep -q 'broad_5_15' \
+        eight_electrode_analysis/processed/metrics/feature_dictionary.csv || return 1
 }
 
 duration_qc_current() {
@@ -363,6 +374,10 @@ fi
 run_stage "Within-bout ordinal analysis" bout_current \
     bout_analyses/processed/manifest.json "${bout_command[@]}"
 
+run_stage "Eight-electrode non-progression sensitivity battery" \
+    eight_electrode_current eight_electrode_analysis/processed/manifest.json \
+    bash eight_electrode_analysis/run_eight_electrode_analysis.sh
+
 run_stage "Specparam fit-QC bout sensitivity" fit_qc_sensitivity_current \
     scale_free_analysis/processed/fit_qc_sensitivity_manifest.json \
     bash scale_free_analysis/run_fit_qc_sensitivity.sh
@@ -390,7 +405,7 @@ run_stage "MOCA quantitative-behavioral analysis" quantitative_current \
     quantitative_behavioral/processed/manifest.json \
     bash quantitative_behavioral/run_quantitative_behavioral.sh
 
-run_stage "Selected-electrode UPDRS/MOCA disease-severity analysis" \
+run_stage "Whole-head UPDRS/MOCA disease-severity analysis" \
     disease_progression_current disease_progression/processed/manifest.json \
     bash disease_progression/run_disease_progression.sh
 

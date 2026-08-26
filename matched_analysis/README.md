@@ -4,10 +4,13 @@ This layer repeats the downstream analysis battery on one deterministic cohort
 matched on the measured demographics age and sex. It does not alter or replace
 the full-cohort results.
 
-The matched battery also includes the selected-electrode PD-only UPDRS/MOCA
-severity analysis under `disease_progression/processed_matched/`. It uses the
-PD members retained by the canonical match; within-PD correlations are not
-pairwise tests.
+The matched battery also includes the whole-head PD-only UPDRS/MOCA severity
+analysis under `disease_progression/processed_matched/`, plus a distinct
+eight-electrode group-comparison sensitivity under
+`eight_electrode_analysis/processed_matched/`. Disease progression uses all
+cohort-shared electrodes and the PD members retained by the canonical match;
+within-PD correlations are not pairwise tests. The eight-electrode group
+comparison preserves Control–PD pairing.
 
 ## Matching method
 
@@ -49,7 +52,8 @@ bash run_reproducible_pipeline.sh run
 
 Matched outputs are kept alongside full outputs in `processed_matched/` folders,
 including PSD, ordinal metrics/planes/topomaps, scale-free fits and bouts,
-within-bout ordinal analyses, prediction exploration, and behavioral analyses.
+within-bout ordinal analyses, the eight-electrode sensitivity battery,
+prediction exploration, and behavioral analyses.
 The matched ordinal sensitivity grid is stored in
 `ordinal_analysis/parameter_sweep_matched/`.
 

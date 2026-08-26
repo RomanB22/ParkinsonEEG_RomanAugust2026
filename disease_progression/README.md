@@ -1,10 +1,11 @@
-# Selected-electrode Parkinson severity analysis
+# Whole-head Parkinson severity analysis
 
-This pipeline relates EEG quantities from exactly **F4, P4, O2, P6, CP2, CP1,
-PO7, and P8** to clinical severity within Parkinson disease. UPDRS is primary;
-MOCA is a complementary cognitive axis. It generates every raw scatter page,
-family forest plots, an electrode-selection diagram, complete feature and
-correlation tables, and a readable report.
+This pipeline relates EEG quantities averaged over **all electrodes shared by
+every subject in the analysis cohort** to clinical severity within Parkinson
+disease. The canonical full and matched cohorts currently each have 60 shared
+electrodes. The actual list is resolved from the ordinal `electrode_sets.json`
+provenance file and recorded in every manifest; it is not hard-coded. UPDRS is
+primary and MOCA is a complementary cognitive axis.
 
 The analysis is cross-sectional. “Progression axis” means ordering participants
 by current severity and does not imply measured change over time.
@@ -43,5 +44,7 @@ disease_progression/processed/
     └── forest/{updrs,moca}/*_forest_page_*.png
 ```
 
-Matched sensitivity results are written to `processed_matched/`. Statistical
-details and FDR families are defined in [`METHODS.md`](METHODS.md).
+Matched sensitivity results are written to `processed_matched/`. The separate
+eight-electrode group-comparison battery lives in
+[`eight_electrode_analysis/`](../eight_electrode_analysis/README.md).
+Statistical details and FDR families are defined in [`METHODS.md`](METHODS.md).

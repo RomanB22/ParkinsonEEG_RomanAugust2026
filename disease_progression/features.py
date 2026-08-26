@@ -1,7 +1,9 @@
-"""Build one value per PD subject from the prespecified eight electrodes."""
+"""Build one value per PD subject from all cohort-shared electrodes."""
 
 from __future__ import annotations
 
+import json
+import math
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -9,6 +11,26 @@ import numpy as np
 import pandas as pd
 
 from quantitative_behavioral.features import BAND_LABELS, METRIC_LABELS, METRIC_UNITS
+
+
+def resolve_shared_electrodes(config: dict[str, Any]) -> list[str]:
+    """Read the canonical cohort-shared electrode set from ordinal provenance."""
+    scope = config["electrode_scope"]
+    if scope.get("policy") != "all_cohort_shared_electrodes":
+        raise ValueError("Disease progression must use all cohort-shared electrodes")
+    source = Path(config["input"]["ordinal_electrode_sets_file"])
+    if not source.exists():
+        raise FileNotFoundError(f"Missing disease-progression electrode set: {source}")
+    payload = json.loads(source.read_text(encoding="utf-8"))
+    electrodes = [str(value) for value in payload.get("common_electrodes", [])]
+    if not electrodes or len(electrodes) != len(set(electrodes)):
+        raise ValueError("common_electrodes must be a non-empty unique list")
+    expected = int(scope["expected_count"])
+    if len(electrodes) != expected:
+        raise ValueError(
+            f"Expected {expected} cohort-shared electrodes, found {len(electrodes)}"
+        )
+    return electrodes
 
 
 def _read_csv(path: str | Path, required: set[str]) -> pd.DataFrame:
@@ -144,19 +166,19 @@ def _append_features(
                     "band": band_token,
                     "metric": metric,
                     "unit": _metric_unit(metric),
-                    "aggregation": f"{aggregation} across selected electrodes",
+                    "aggregation": f"{aggregation} across cohort-shared electrodes",
                     "source_file": str(Path(source_file).resolve()),
                 }
             )
 
 
-def build_selected_electrode_features(
+def build_shared_electrode_features(
     config: dict[str, Any], cohort: pd.DataFrame
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """Return long subject features and their complete provenance dictionary."""
     inputs = config["input"]
     requested = config["features"]
-    electrodes = [str(value) for value in config["electrodes"]]
+    electrodes = resolve_shared_electrodes(config)
     ordinal_metrics = [str(value) for value in requested["ordinal_metrics"]]
     ordinal_bands = [str(value) for value in requested["ordinal_bands"]]
     psd_bands = [str(value) for value in requested["psd_bands"]]
@@ -253,7 +275,9 @@ def build_selected_electrode_features(
         .agg(value="mean", n_electrodes_contributing="count")
         .reset_index()
     )
-    minimum_qc = int(requested["minimum_aperiodic_qc_electrodes"])
+    minimum_qc = math.ceil(
+        float(requested["minimum_aperiodic_qc_fraction"]) * len(electrodes)
+    )
     qc_summary.loc[qc_summary["n_electrodes_contributing"].lt(minimum_qc), "value"] = np.nan
     missing_subjects = set(cohort["subject_id"]) - set(qc_summary["subject_id"])
     if missing_subjects:
@@ -273,7 +297,10 @@ def build_selected_electrode_features(
             "band": "broadband",
             "metric": "aperiodic_exponent_qc",
             "unit": "dimensionless",
-            "aggregation": f"mean across at least {minimum_qc} of 8 QC-passing electrodes",
+            "aggregation": (
+                f"mean across at least {minimum_qc} of {len(electrodes)} "
+                "QC-passing cohort-shared electrodes"
+            ),
             "source_file": str(Path(inputs["aperiodic_electrode_file"]).resolve()),
         }
     )
@@ -306,7 +333,11 @@ def build_selected_electrode_features(
     expected = len(cohort) * len(dictionary)
     if len(features) != expected:
         raise RuntimeError(f"Expected {expected} subject-feature rows, found {len(features)}")
-    return features.sort_values(["feature_id", "subject_id"]).reset_index(drop=True), dictionary
+    return (
+        features.sort_values(["feature_id", "subject_id"]).reset_index(drop=True),
+        dictionary,
+        electrodes,
+    )
 
 
 def subject_feature_matrix(cohort: pd.DataFrame, features: pd.DataFrame) -> pd.DataFrame:

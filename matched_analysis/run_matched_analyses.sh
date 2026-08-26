@@ -21,8 +21,9 @@ Usage: bash matched_analysis/run_matched_analyses.sh [options]
 
 Prepare one canonical exact-sex/optimal-age matched cohort, then run matched:
 PSD, ordinal quantities/planes/topomaps, ordinal D={3,4,5,6} inputs at tau=1,
-scale-free, bouts, fit-QC sensitivity, typical bouts, prediction models, MOCA,
-the selected-electrode UPDRS/MOCA severity analysis, and the at-least-60-second
+scale-free, bouts, the eight-electrode non-progression sensitivity battery,
+fit-QC sensitivity, typical bouts, prediction models, MOCA, the whole-head
+UPDRS/MOCA severity analysis, and the at-least-60-second
 accepted-duration sensitivity.
 
 Options:
@@ -75,7 +76,7 @@ execute() {
     fi
 }
 
-has_progression_electrodes() {
+has_eight_electrodes() {
     local filename="$1" electrode
     [[ -f "$filename" ]] || return 1
     for electrode in F4 P4 O2 P6 CP2 CP1 PO7 P8; do
@@ -150,10 +151,18 @@ stage_current() {
                 && [[ -f disease_progression/processed_matched/metrics/progression_correlations.csv ]] \
                 && [[ -f disease_progression/processed_matched/figures/electrode_selection.png ]] \
                 && [[ -f disease_progression/processed_matched/figures/scatter/updrs/updrs_scatter_page_001.png ]] \
-                && has_progression_electrodes \
-                    disease_progression/processed_matched/metrics/electrode_selection.csv \
+                && [[ "$(($(wc -l < disease_progression/processed_matched/metrics/electrode_selection.csv) - 1))" -eq 60 ]] \
                 && ! grep -q 'broad_5_15' \
                     disease_progression/processed_matched/metrics/feature_dictionary.csv
+            ;;
+        eight_electrode_analysis/processed_matched/manifest.json)
+            [[ -f eight_electrode_analysis/processed_matched/REPORT.md ]] \
+                && [[ -f eight_electrode_analysis/processed_matched/metrics/group_subject_statistics.csv ]] \
+                && [[ -f eight_electrode_analysis/processed_matched/metrics/group_electrode_statistics.csv ]] \
+                && has_eight_electrodes \
+                    eight_electrode_analysis/processed_matched/metrics/electrode_selection.csv \
+                && ! grep -q 'broad_5_15' \
+                    eight_electrode_analysis/processed_matched/metrics/feature_dictionary.csv
             ;;
         duration_qc_analysis/processed_matched/manifest.json)
             grep -q '"minimum_accepted_duration_seconds": 60' "$sentinel" \
@@ -239,6 +248,11 @@ if [[ "$NO_PROGRESS" == true ]]; then bout_command+=(--no-progress); fi
 run_stage "within-bout ordinal analysis" \
     bout_analyses/processed_matched/manifest.json "${bout_command[@]}"
 
+run_stage "eight-electrode non-progression sensitivity battery" \
+    eight_electrode_analysis/processed_matched/manifest.json \
+    bash eight_electrode_analysis/run_eight_electrode_analysis.sh \
+    --config "$CONFIG_ROOT/eight_electrode_analysis.json"
+
 run_stage "specparam fit-QC bout sensitivity" \
     scale_free_analysis/processed_matched/fit_qc_sensitivity_manifest.json \
     bash scale_free_analysis/run_fit_qc_sensitivity.sh \
@@ -295,7 +309,7 @@ if [[ "$SKIP_SWEEP" == false ]]; then
         quantitative_behavioral/processed_matched/manifest.json \
         bash quantitative_behavioral/run_quantitative_behavioral.sh \
         --config "$CONFIG_ROOT/quantitative_behavioral.json"
-    run_stage "selected-electrode UPDRS/MOCA disease-severity analysis" \
+    run_stage "whole-head UPDRS/MOCA disease-severity analysis" \
         disease_progression/processed_matched/manifest.json \
         bash disease_progression/run_disease_progression.sh \
         --config "$CONFIG_ROOT/disease_progression.json"

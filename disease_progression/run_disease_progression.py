@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run the selected-electrode Parkinson severity-axis analysis."""
+"""Run the whole-head Parkinson severity-axis analysis."""
 
 from __future__ import annotations
 

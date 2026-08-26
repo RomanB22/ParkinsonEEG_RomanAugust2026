@@ -16,6 +16,8 @@ parameter_sweep/
 /duration_qc_analysis/processed_matched/
 /disease_progression/processed/
 /disease_progression/processed_matched/
+/eight_electrode_analysis/processed/
+/eight_electrode_analysis/processed_matched/
 ds002778-1.0.5
 exploration/revision_quick
 __pycache__/

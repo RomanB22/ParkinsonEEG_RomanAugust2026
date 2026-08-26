@@ -36,9 +36,13 @@ The `run` command includes:
 - PSD and relative band-power analyses;
 - primary and D={3,4,5,6} ordinal sensitivity analyses, all at tau=1;
 - scale-free/specparam, bout, within-bout ordinal, and fit-QC analyses;
+- a separate eight-electrode sensitivity battery using F4, P4, O2, P6, CP2,
+  CP1, PO7, and P8 for non-progression group analyses;
 - typical-bout and other diagnostic figures;
 - PD-versus-Control exploration models;
 - MOCA quantitative-behavioral analyses;
+- whole-head UPDRS/MOCA disease-severity associations using all
+  cohort-shared electrodes;
 - an accepted-duration sensitivity requiring at least 60 seconds (15 retained
   four-second epochs), including group, MOCA, and prediction-model checks;
 - the complete downstream battery for both the full cohort and the canonical

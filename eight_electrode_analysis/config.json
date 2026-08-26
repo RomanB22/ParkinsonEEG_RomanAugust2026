@@ -1,0 +1,28 @@
+{
+  "input": {
+    "participants_file": "processed/metadata/subjects.csv",
+    "psd_electrode_file": "psd_analysis/processed/metrics/subject_electrode_band_power.csv",
+    "ordinal_electrode_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/electrode_metrics.csv",
+    "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/band_electrode_metrics.csv",
+    "aperiodic_electrode_file": "scale_free_analysis/processed/metrics/electrode_aperiodic_metrics.csv",
+    "bout_electrode_file": "scale_free_analysis/processed/metrics/electrode_band_metrics.csv",
+    "bout_ordinal_electrode_file": "bout_analyses/processed/metrics/subject_electrode_band_metrics.csv",
+    "epoch_example_glob": "processed/epochs/sub-*_task-Rest_desc-cleaned_epo.fif"
+  },
+  "output_dir": "eight_electrode_analysis/processed",
+  "electrodes": ["F4", "P4", "O2", "P6", "CP2", "CP1", "PO7", "P8"],
+  "bands": {
+    "psd": ["delta", "theta", "alpha", "beta", "low_gamma"],
+    "ordinal": ["delta", "theta", "alpha", "beta", "low_gamma"],
+    "bout": ["theta", "alpha", "low_beta", "high_beta"],
+    "descriptive_only_excluded": ["broad_5_15"]
+  },
+  "statistics": {
+    "confidence_level": 0.95,
+    "fdr_alpha": 0.05
+  },
+  "plots": {
+    "dpi": 150,
+    "rows_per_page": 35
+  }
+}

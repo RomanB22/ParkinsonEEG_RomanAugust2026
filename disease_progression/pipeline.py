@@ -1,4 +1,4 @@
-"""End-to-end selected-electrode Parkinson severity-axis analysis."""
+"""End-to-end whole-head Parkinson severity-axis analysis."""
 
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ import pandas as pd
 import scipy
 
 from .features import (
-    build_selected_electrode_features,
+    build_shared_electrode_features,
     load_pd_cohort,
     subject_feature_matrix,
 )
@@ -34,17 +34,19 @@ from .plots import (
 from .statistics import clinical_axis_association, correlate_progression_features
 
 
-EXPECTED_ELECTRODES = ["F4", "P4", "O2", "P6", "CP2", "CP1", "PO7", "P8"]
-
-
 def load_analysis_config(path: str | Path) -> dict[str, Any]:
     config = json.loads(Path(path).read_text(encoding="utf-8"))
-    required = {"input", "output_dir", "electrodes", "analysis", "features", "plots"}
+    required = {
+        "input", "output_dir", "electrode_scope", "analysis", "features", "plots"
+    }
     missing = sorted(required - set(config))
     if missing:
         raise ValueError(f"Missing disease-progression config sections: {missing}")
-    if config["electrodes"] != EXPECTED_ELECTRODES:
-        raise ValueError(f"electrodes must be exactly {EXPECTED_ELECTRODES}")
+    scope = config["electrode_scope"]
+    if scope.get("policy") != "all_cohort_shared_electrodes":
+        raise ValueError("Disease progression must use all cohort-shared electrodes")
+    if int(scope.get("expected_count", 0)) < 1:
+        raise ValueError("electrode_scope.expected_count must be positive")
     analysis = config["analysis"]
     if analysis.get("group") != "PD":
         raise ValueError("Disease-progression analysis must be restricted to PD")
@@ -74,8 +76,8 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("The overlapping 5–15 Hz band cannot enter progression inference")
     if int(features["embedding_dimension"]) != 6 or int(features["delay_samples"]) != 1:
         raise ValueError("Disease progression uses the primary D=6, tau=1 ordinal block")
-    if int(features["minimum_aperiodic_qc_electrodes"]) not in range(1, 9):
-        raise ValueError("minimum_aperiodic_qc_electrodes must be between 1 and 8")
+    if not 0.0 < float(features["minimum_aperiodic_qc_fraction"]) <= 1.0:
+        raise ValueError("minimum_aperiodic_qc_fraction must be in (0, 1]")
     if int(config["plots"]["dpi"]) < 50:
         raise ValueError("plots.dpi must be at least 50")
     return config
@@ -103,15 +105,15 @@ def _write_csv(table: pd.DataFrame, path: Path) -> None:
     table.to_csv(path, index=False, float_format="%.17g")
 
 
-def _topographic_info(config: dict[str, Any]) -> mne.Info:
+def _topographic_info(config: dict[str, Any], electrodes: list[str]) -> mne.Info:
     files = sorted(Path().glob(str(config["input"]["epoch_example_glob"])))
     if not files:
         raise FileNotFoundError("No epoch file is available for electrode positions")
     epochs = mne.read_epochs(files[0], preload=False, verbose="ERROR")
-    missing = sorted(set(config["electrodes"]) - set(epochs.ch_names))
+    missing = sorted(set(electrodes) - set(epochs.ch_names))
     if missing:
         raise ValueError(f"Topographic reference is missing electrodes: {missing}")
-    picks = [epochs.ch_names.index(name) for name in config["electrodes"]]
+    picks = [epochs.ch_names.index(name) for name in electrodes]
     info = mne.pick_info(epochs.info, picks, copy=True)
     info["bads"] = []
     return info
@@ -128,6 +130,7 @@ def _write_report(
     correlations: pd.DataFrame,
     clinical_axes: pd.DataFrame,
     config: dict[str, Any],
+    electrodes: list[str],
 ) -> None:
     adjusted = correlations.loc[
         correlations["method"].eq("partial_spearman_age_sex")
@@ -137,7 +140,7 @@ def _write_report(
         clinical_axes["method"].eq("partial_spearman_age_sex")
     ].iloc[0]
     lines = [
-        "# Selected-electrode Parkinson disease severity report",
+        "# Whole-head Parkinson disease severity report",
         "",
         "## Scope",
         "",
@@ -152,7 +155,8 @@ def _write_report(
         f"UPDRS range: {cohort['updrs'].min():g}–{cohort['updrs'].max():g}.",
         f"MOCA range: {cohort['moca'].min():g}–{cohort['moca'].max():g}.",
         f"Prespecified EEG features: {len(dictionary)}.",
-        "Selected electrodes: " + ", ".join(config["electrodes"]) + ".",
+        f"Cohort-shared electrodes: {len(electrodes)}.",
+        "Electrodes: " + ", ".join(electrodes) + ".",
         "Primary estimates are partial Spearman correlations adjusted for age and sex.",
         (
             "BH-FDR is controlled separately within outcome, feature family, and method. "
@@ -226,9 +230,9 @@ def run_analysis(
     if sentinel.exists() and not overwrite:
         raise FileExistsError(f"Disease-progression outputs exist at {sentinel}")
     logger = _logger(output_dir, overwrite)
-    logger.info("Loading PD cohort and aggregating exactly eight electrodes")
+    logger.info("Loading PD cohort and resolving all cohort-shared electrodes")
     cohort = load_pd_cohort(config)
-    features, dictionary = build_selected_electrode_features(config, cohort)
+    features, dictionary, electrodes = build_shared_electrode_features(config, cohort)
     wide = subject_feature_matrix(cohort, features)
     logger.info("Computing UPDRS-primary and MOCA-secondary correlations")
     correlations = correlate_progression_features(features, dictionary, config)
@@ -244,15 +248,15 @@ def run_analysis(
     _write_csv(
         pd.DataFrame(
             {
-                "electrode": config["electrodes"],
-                "selection_order": np.arange(1, len(config["electrodes"]) + 1),
-                "role": "prespecified disease-progression subset",
+                "electrode": electrodes,
+                "selection_order": np.arange(1, len(electrodes) + 1),
+                "role": "all electrodes shared by every subject in the analysis cohort",
             }
         ),
         metrics_dir / "electrode_selection.csv",
     )
 
-    info = _topographic_info(config)
+    info = _topographic_info(config, electrodes)
     figures_dir = output_dir / "figures"
     dpi = int(config["plots"]["dpi"])
     plot_electrode_selection(info, figures_dir / "electrode_selection.png", dpi)
@@ -283,7 +287,8 @@ def run_analysis(
             )
         )
     _write_report(
-        output_dir / "REPORT.md", cohort, dictionary, correlations, clinical_axes, config
+        output_dir / "REPORT.md", cohort, dictionary, correlations, clinical_axes,
+        config, electrodes
     )
 
     adjusted = correlations.loc[
@@ -305,8 +310,8 @@ def run_analysis(
         "n_pd_subjects": int(len(cohort)),
         "updrs_range": [float(cohort["updrs"].min()), float(cohort["updrs"].max())],
         "moca_range": [float(cohort["moca"].min()), float(cohort["moca"].max())],
-        "electrodes": list(config["electrodes"]),
-        "n_electrodes": int(len(config["electrodes"])),
+        "electrodes": electrodes,
+        "n_electrodes": int(len(electrodes)),
         "n_features": int(len(dictionary)),
         "n_adjusted_tests": int(len(adjusted)),
         "adjusted_fdr_rejections": {

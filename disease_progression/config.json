@@ -3,6 +3,7 @@
     "participants_file": "processed/metadata/subjects.csv",
     "ordinal_electrode_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/electrode_metrics.csv",
     "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/band_electrode_metrics.csv",
+    "ordinal_electrode_sets_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/electrode_sets.json",
     "psd_electrode_file": "psd_analysis/processed/metrics/subject_electrode_band_power.csv",
     "aperiodic_electrode_file": "scale_free_analysis/processed/metrics/electrode_aperiodic_metrics.csv",
     "bout_electrode_file": "scale_free_analysis/processed/metrics/electrode_band_metrics.csv",
@@ -10,7 +11,10 @@
     "epoch_example_glob": "processed/epochs/sub-*_task-Rest_desc-cleaned_epo.fif"
   },
   "output_dir": "disease_progression/processed",
-  "electrodes": ["F4", "P4", "O2", "P6", "CP2", "CP1", "PO7", "P8"],
+  "electrode_scope": {
+    "policy": "all_cohort_shared_electrodes",
+    "expected_count": 60
+  },
   "analysis": {
     "group": "PD",
     "primary_outcome": "updrs",
@@ -38,7 +42,7 @@
     "psd_metric": "relative_band_power",
     "psd_bands": ["delta", "theta", "alpha", "beta", "low_gamma"],
     "aperiodic_metrics": ["aperiodic_exponent", "aperiodic_exponent_qc"],
-    "minimum_aperiodic_qc_electrodes": 7,
+    "minimum_aperiodic_qc_fraction": 0.8,
     "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],
     "bout_properties": [
       "oscillatory_occupancy", "bouts_per_minute", "bout_duration_mean_s",

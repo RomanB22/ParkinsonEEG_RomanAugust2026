@@ -8,16 +8,19 @@ axis and MOCA is a complementary cognitive axis. Because the dataset is
 cross-sectional, this is a disease-severity analysis—not a longitudinal rate
 of progression, prognostic model, or causal analysis.
 
-## Electrode restriction
+## Electrode scope
 
-Every feature is recalculated from exactly these eight electrodes, in the
-prespecified order: F4, P4, O2, P6, CP2, CP1, PO7, and P8. The pipeline fails
-if any requested subject/source/band does not contain the complete set.
+Every feature is recalculated from the complete electrode intersection across
+the analysis cohort. The ordered list is read from the D=6, tau=1 ordinal
+`electrode_sets.json` provenance file. The pipeline fails if any requested
+subject, source, or band does not contain that complete set. There are
+currently 60 electrodes in both canonical cohorts.
 
 Ordinal, aperiodic, bout, and within-bout ordinal features are averaged across
-the eight electrodes. Relative PSD band power uses the median, matching the
+the shared electrodes. Relative PSD band power uses the median, matching the
 primary PSD analysis. A QC-qualified exponent is reported only when at least
-7/8 selected electrodes pass the formal specparam fit QC.
+80% of shared electrodes pass formal specparam fit QC (48/60 in the current
+cohorts).
 
 The primary ordinal block is D=6, tau=1. It contains regular H/C/F and Rényi
 entropy/complexity for alpha=0.1, 0.5, 0.9, 1.1, 2, 5, and 10, both broadband

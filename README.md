@@ -301,10 +301,10 @@ bash quantitative_behavioral/prepare_dimension_sensitivity.sh
 bash quantitative_behavioral/run_quantitative_behavioral.sh --overwrite
 ```
 
-## Selected-electrode disease-severity axes
+## Whole-head disease-severity axes
 
 [`disease_progression/`](disease_progression/README.md) recomputes 141 EEG
-features from exactly F4, P4, O2, P6, CP2, CP1, PO7, and P8 within PD. UPDRS is
+features over all electrodes shared by the analysis cohort within PD. UPDRS is
 the primary motor-severity axis and MOCA is complementary. Age/sex-adjusted
 partial Spearman estimates, unadjusted sensitivities, family-specific FDR,
 raw scatter pages, forest plots, and full/matched reports are generated. This
@@ -313,6 +313,16 @@ is cross-sectional severity analysis, not measured longitudinal progression.
 ```bash
 bash disease_progression/run_disease_progression.sh --overwrite
 ```
+
+## Eight-electrode sensitivity battery
+
+[`eight_electrode_analysis/`](eight_electrode_analysis/README.md) adds a
+separate full/matched sensitivity analysis for PSD, ordinal, aperiodic,
+periodic/bout, and within-bout ordinal quantities using exactly F4, P4, O2, P6,
+CP2, CP1, PO7, and P8. It recomputes the subject aggregate and electrode-wise
+PD-versus-Control inference from stored electrode-level estimates; the
+whole-head primary analyses remain unchanged. The overlapping 5–15 Hz band is
+excluded from this inferential battery.
 
 ## Accepted-duration sensitivity
 
@@ -328,9 +338,9 @@ results.
 [`run_all_analyses.sh`](run_all_analyses.sh) combines all post-cleaning
 analyses in dependency order: PSD, primary ordinal quantities, the D={3,4,5,6}
 sweep at tau=1, scale-free bout properties, within-bout ordinal quantities,
-PD-versus-Control exploration models, D-specific MOCA inputs, the final
-quantitative-behavioral analysis, and the selected-electrode UPDRS/MOCA
-disease-severity analysis. It then reports a sensitivity layer requiring
+the eight-electrode sensitivity battery, PD-versus-Control exploration models,
+D-specific MOCA inputs, the final quantitative-behavioral analysis, and the
+whole-head UPDRS/MOCA disease-severity analysis. It then reports a sensitivity layer requiring
 at least 60 seconds (15 retained four-second epochs) without changing the
 primary feature definitions. It resumes from valid completed outputs by default
 and detects ordinal tables missing the configured Rényi alpha columns.

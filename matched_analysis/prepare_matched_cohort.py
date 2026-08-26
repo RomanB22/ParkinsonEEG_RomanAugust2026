@@ -41,6 +41,10 @@ CONFIG_OUTPUTS = {
         "disease_progression/config.json",
         "disease_progression/processed_matched",
     ),
+    "eight_electrode_analysis": (
+        "eight_electrode_analysis/config.json",
+        "eight_electrode_analysis/processed_matched",
+    ),
 }
 
 
@@ -164,7 +168,19 @@ def prepare_matched_cohort(
                 {
                     "ordinal_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/electrode_metrics.csv",
                     "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/band_electrode_metrics.csv",
+                    "ordinal_electrode_sets_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/electrode_sets.json",
                     "psd_electrode_file": "psd_analysis/processed_matched/metrics/subject_electrode_band_power.csv",
+                    "aperiodic_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_aperiodic_metrics.csv",
+                    "bout_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_band_metrics.csv",
+                    "bout_ordinal_electrode_file": "bout_analyses/processed_matched/metrics/subject_electrode_band_metrics.csv",
+                }
+            )
+        elif name == "eight_electrode_analysis":
+            config["input"].update(
+                {
+                    "psd_electrode_file": "psd_analysis/processed_matched/metrics/subject_electrode_band_power.csv",
+                    "ordinal_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/electrode_metrics.csv",
+                    "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/band_electrode_metrics.csv",
                     "aperiodic_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_aperiodic_metrics.csv",
                     "bout_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_band_metrics.csv",
                     "bout_ordinal_electrode_file": "bout_analyses/processed_matched/metrics/subject_electrode_band_metrics.csv",

@@ -1,4 +1,4 @@
-"""Transparent figures for the selected-electrode severity-axis analysis."""
+"""Transparent figures for the whole-head severity-axis analysis."""
 
 from __future__ import annotations
 
@@ -26,7 +26,7 @@ def plot_electrode_selection(info: mne.Info, output: Path, dpi: int) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     fig, ax = plt.subplots(figsize=(6.4, 6.0))
     mne.viz.plot_sensors(info, kind="topomap", show_names=True, axes=ax, show=False)
-    ax.set_title("Prespecified eight-electrode disease-progression subset")
+    ax.set_title("All cohort-shared disease-progression electrodes")
     fig.tight_layout()
     fig.savefig(output, dpi=dpi, bbox_inches="tight")
     plt.close(fig)
@@ -126,7 +126,7 @@ def plot_feature_scatter_pages(
         for axis in axes.flat[len(page) :]:
             axis.axis("off")
         fig.suptitle(
-            f"Selected-electrode EEG quantities along {outcome.upper()} "
+            f"Whole-head shared-electrode EEG quantities along {outcome.upper()} "
             "(circles=female, triangles=male; ★ family FDR)",
             fontsize=13,
         )
@@ -188,7 +188,7 @@ def plot_forest_pages(
             ax.axvline(0.0, color="0.2", linewidth=1.0)
             ax.set_xlim(-1.02, 1.02)
             ax.set_xlabel(f"Age/sex-adjusted partial Spearman ρ with {outcome.upper()}")
-            ax.set_title(f"{family}: selected-electrode severity associations")
+            ax.set_title(f"{family}: whole-head severity associations")
             ax.grid(axis="x", alpha=0.2)
             fig.tight_layout()
             page_number = page_start // rows_per_page + 1
