@@ -76,6 +76,14 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertNotIn("embedding_dimensions=(3 4 5 6)", sweep)
         self.assertIn("feature_source_sweep_root", sweep)
 
+    def test_preprocessing_validation_does_not_require_absent_optional_workflow(self) -> None:
+        for filename in (
+            "scripts/run_full_cleaning.sh",
+            "scripts/create_conda_environment.sh",
+        ):
+            source = Path(filename).read_text(encoding="utf-8")
+            self.assertNotIn("tests.test_simple_pipeline", source)
+
 
 if __name__ == "__main__":
     unittest.main()

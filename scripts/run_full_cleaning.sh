@@ -164,8 +164,7 @@ run_python -m unittest -v \
     tests.test_cleaning \
     tests.test_config \
     tests.test_dataset \
-    tests.test_ica \
-    tests.test_simple_pipeline
+    tests.test_ica
 
 echo
 case "$MODE" in

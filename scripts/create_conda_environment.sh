@@ -133,8 +133,7 @@ if [[ "$RUN_TESTS" == true ]]; then
         tests.test_cleaning \
         tests.test_config \
         tests.test_dataset \
-        tests.test_ica \
-        tests.test_simple_pipeline
+        tests.test_ica
 fi
 
 echo

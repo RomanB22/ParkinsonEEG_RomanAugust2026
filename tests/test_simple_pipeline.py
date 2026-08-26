@@ -3,6 +3,7 @@ import unittest
 import mne
 import numpy as np
 
+SIMPLER_AVAILABLE = True
 try:
     from simpler.pipeline import (
         detrend_filter_resample,
@@ -12,9 +13,13 @@ try:
 except ModuleNotFoundError as error:
     if error.name != "simpler":
         raise
-    raise unittest.SkipTest("Optional untracked simpler/ workflow is not installed")
+    SIMPLER_AVAILABLE = False
+    detrend_filter_resample = None
+    extract_scale_and_mask_windows = None
+    load_simple_config = None
 
 
+@unittest.skipUnless(SIMPLER_AVAILABLE, "Optional simpler/ workflow is not installed")
 class SimplePipelineTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
