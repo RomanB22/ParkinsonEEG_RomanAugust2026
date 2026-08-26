@@ -135,19 +135,21 @@ stage_current() {
     [[ -f "$sentinel" ]] || return 1
     case "$sentinel" in
         psd_analysis/processed_matched/manifest.json)
-            [[ -f psd_analysis/processed_matched/metrics/group_subject_statistics.csv ]] \
+            ! grep -q 'broad_5_15' "$sentinel" \
+                && [[ -f psd_analysis/processed_matched/metrics/group_subject_statistics.csv ]] \
                 && [[ -f psd_analysis/processed_matched/metrics/group_electrode_statistics.csv ]] \
                 && [[ -f psd_analysis/processed_matched/figures/group_statistics/relative_band_power_group_statistics.png ]]
             ;;
         ordinal_analysis/processed_matched/manifest.json)
-            grep -q '"mode": "filtered_subject_level_reuse"' "$sentinel" \
+            ! grep -q 'broad_5_15' "$sentinel" \
+                && grep -q '"mode": "filtered_subject_level_reuse"' "$sentinel" \
                 && [[ -f ordinal_analysis/processed_matched/figures/topomaps/renyi_alpha_10/group_mean_topomaps.png ]] \
                 && [[ -f ordinal_analysis/processed_matched/metrics/group_subject_statistics_broadband.csv ]] \
                 && [[ -f ordinal_analysis/processed_matched/metrics/group_electrode_statistics_by_band.csv ]] \
                 && [[ -f ordinal_analysis/processed_matched/figures/group_statistics/broadband/entropy_group_statistics.png ]]
             ;;
         scale_free_analysis/processed_matched/manifest.json)
-            grep -q '"broad_5_15"' "$sentinel" \
+            ! grep -q 'broad_5_15' "$sentinel" \
                 && grep -q '"specparam_primary_fit_range_id": "4_35Hz"' "$sentinel" \
                 && grep -q '"raw_cycle_tables_saved": false' "$sentinel" \
                 && grep -q '"mode": "filtered_subject_level_reuse"' "$sentinel" \
@@ -156,14 +158,14 @@ stage_current() {
                 && [[ -f scale_free_analysis/processed_matched/figures/group_statistics/aperiodic/aperiodic_exponent_group_statistics.png ]]
             ;;
         bycycle_burst_analysis/processed_matched/manifest.json)
-            grep -q '"broad_5_15"' "$sentinel" \
+            ! grep -q 'broad_5_15' "$sentinel" \
                 && [[ -f bycycle_burst_analysis/processed_matched/metrics/group_subject_statistics.csv ]] \
                 && [[ -f bycycle_burst_analysis/processed_matched/metrics/group_electrode_statistics.csv ]] \
                 && [[ -f bycycle_burst_analysis/processed_matched/metrics/detector_event_agreement.csv ]] \
                 && [[ -f bycycle_burst_analysis/processed_matched/figures/agreement/event_mask_dice.png ]]
             ;;
         bout_analyses/processed_matched/manifest.json)
-            grep -q '"broad_5_15"' "$sentinel" \
+            ! grep -q 'broad_5_15' "$sentinel" \
                 && grep -q '"specparam_primary_fit_range_id": "4_35Hz"' "$sentinel" \
                 && grep -q '"scale_free_manifest"' "$sentinel" \
                 && grep -q '"legacy_episode_threshold_paths_are_symlinks": true' "$sentinel" \
@@ -172,11 +174,11 @@ stage_current() {
                 && [[ -f bout_analyses/processed_matched/figures/group_statistics/entropy_group_statistics.png ]]
             ;;
         scale_free_analysis/processed_matched/typical_bouts_manifest.json)
-            grep -q '"broad_5_15"' "$sentinel"
+            ! grep -q 'broad_5_15' "$sentinel"
             ;;
         scale_free_analysis/processed_matched/fit_qc_sensitivity_manifest.json)
-            grep -q 'broad_5_15' scale_free_analysis/processed_matched/metrics/subject_band_metrics_fit_qc.csv \
-                && grep -q 'broad_5_15' bout_analyses/processed_matched/metrics/subject_band_metrics_fit_qc.csv
+            ! grep -q 'broad_5_15' scale_free_analysis/processed_matched/metrics/subject_band_metrics_fit_qc.csv \
+                && ! grep -q 'broad_5_15' bout_analyses/processed_matched/metrics/subject_band_metrics_fit_qc.csv
             ;;
         exploration/processed_matched/manifest.json)
             grep -q 'bout_alpha_oscillatory_occupancy' \
@@ -223,6 +225,7 @@ matched_sweep_current() {
     for dimension in 3 4 5; do
         directory="ordinal_analysis/parameter_sweep_matched/D${dimension}_tau1"
         [[ -f "$directory/manifest.json" ]] || return 1
+        ! grep -q 'broad_5_15' "$directory/manifest.json" || return 1
         grep -q 'renyi_entropy_alpha_10' \
             "$directory/metrics/subject_electrode_mean_metrics.csv" || return 1
         [[ -f "$directory/metrics/group_subject_statistics_broadband.csv" ]] || return 1

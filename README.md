@@ -181,8 +181,8 @@ The independent downstream workflow in [`ordinal_analysis/`](ordinal_analysis/RE
 uses the accepted cleaned epochs to calculate `ordpy` permutation entropy,
 statistical complexity, and Fisher information for every participant/electrode
 and each participant's mean across electrodes. The full workflow is applied to
-the broadband signal and to delta, theta, alpha, beta, low gamma, and the
-overlapping 5–15 Hz range. It generates PD/Control violins, H×C and H×F planes,
+the broadband signal and to delta, theta, alpha, beta, and low gamma. It
+generates PD/Control violins, H×C and H×F planes,
 individual scalp maps, group-mean scalp maps, complete CSV tables, logs, and a
 machine-readable provenance manifest.
 
@@ -196,7 +196,7 @@ The separate workflow in [`psd_analysis/`](psd_analysis/README.md) estimates
 subject-balanced median Welch spectra, pointwise 95% bootstrap confidence bands
 for PD and Control, and group median relative-power topographies normalized to
 each subject/electrode's total 1–50 Hz power for delta,
-theta, alpha, beta, 30–50 Hz low gamma, and an additional broad 5–15 Hz band.
+theta, alpha, beta, and 30–50 Hz low gamma.
 It also plots subject-level PD-versus-Control relative-power violins for every
 band after taking each subject's median across shared electrodes.
 
@@ -246,7 +246,7 @@ directly from cycle-to-cycle amplitude, period, and monotonicity consistency.
 It does not use the eBOSC mask or a specparam power threshold. It saves the
 independent events and cycle features, repeats subject- and electrode-level
 PD-versus-Control inference, and plots event-mask and subject-metric agreement
-with eBOSC. The overlapping 5–15 Hz band remains descriptive only.
+with eBOSC.
 
 ```bash
 bash bycycle_burst_analysis/run_bycycle_burst_analysis.sh --overwrite
@@ -275,8 +275,7 @@ PSD, ordinal, scale-free/bout, independent-bycycle-burst, and within-bout ordina
 subject-level inferential layer. Full-cohort models adjust for age and sex;
 matched-cohort models preserve `match_pair_id`. Exploratory electrode-wise
 tests include both feature-wise spatial FDR and a stricter domain-wide FDR,
-with effect and significance topomaps. The overlapping 5–15 Hz display band is
-excluded from formal testing. Methods and output columns are documented in
+with effect and significance topomaps. Methods and output columns are documented in
 [`GROUP_STATISTICS.md`](GROUP_STATISTICS.md).
 
 ## Quantitative behavioral MOCA analysis
@@ -323,8 +322,7 @@ separate full/matched sensitivity analysis for PSD, ordinal, aperiodic,
 periodic/bout, and within-bout ordinal quantities using exactly F4, P4, O2, P6,
 CP2, CP1, PO7, and P8. It recomputes the subject aggregate and electrode-wise
 PD-versus-Control inference from stored electrode-level estimates; the
-whole-head primary analyses remain unchanged. The overlapping 5–15 Hz band is
-excluded from this inferential battery.
+whole-head primary analyses remain unchanged.
 
 ## Accepted-duration sensitivity
 

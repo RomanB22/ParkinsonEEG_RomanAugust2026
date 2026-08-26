@@ -39,7 +39,6 @@
     "ordinal_metrics": ["entropy", "complexity", "fisher_information"],
     "ordinal_bands": ["delta", "theta", "alpha", "beta", "low_gamma"],
     "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],
-    "descriptive_only_bands": ["broad_5_15"],
     "bout_properties": [
       "oscillatory_occupancy",
       "bouts_per_minute",

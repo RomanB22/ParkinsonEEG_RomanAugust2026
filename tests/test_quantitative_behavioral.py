@@ -55,10 +55,11 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             config["dimension_sensitivity"]["fdr_scope"],
             "within_each_dimension_across_all_102_features_per_method",
         )
-        self.assertEqual(config["features"]["descriptive_only_bands"], ["broad_5_15"])
-        self.assertNotIn("broad_5_15", config["features"]["ordinal_bands"])
-        self.assertNotIn("broad_5_15", config["features"]["bout_bands"])
-        self.assertNotIn("broad_5_15", config["dimension_sensitivity"]["bands"])
+        self.assertNotIn("descriptive_only_bands", config["features"])
+        self.assertEqual(
+            config["features"]["bout_bands"],
+            ["theta", "alpha", "low_beta", "high_beta"],
+        )
 
     def test_cognitive_status_uses_the_prespecified_moca_boundary(self):
         config = load_analysis_config("quantitative_behavioral/config.json")

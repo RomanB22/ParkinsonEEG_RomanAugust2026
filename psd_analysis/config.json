@@ -18,8 +18,7 @@
     "theta": [4.0, 8.0],
     "alpha": [8.0, 13.0],
     "beta": [13.0, 30.0],
-    "low_gamma": [30.0, 50.0],
-    "broad_5_15": [5.0, 15.0]
+    "low_gamma": [30.0, 50.0]
   },
   "bootstrap": {
     "confidence_level": 0.95,
@@ -30,7 +29,7 @@
     "fdr_alpha": 0.05,
     "confidence_level": 0.95,
     "subject_aggregation": "median",
-    "exclude_bands": ["broad_5_15"]
+    "exclude_bands": []
   },
   "plots": {
     "dpi": 150,
@@ -47,8 +46,7 @@
       "theta": "Theta",
       "alpha": "Alpha",
       "beta": "Beta",
-      "low_gamma": "Low gamma",
-      "broad_5_15": "Broad band"
+      "low_gamma": "Low gamma"
     }
   }
 }

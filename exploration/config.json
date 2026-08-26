@@ -36,7 +36,6 @@
     ],
     "renyi_policy": "Prespecified low/high alpha endpoints only; intermediate alphas are excluded from models because of extreme rank redundancy",
     "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],
-    "descriptive_only_bout_bands": ["broad_5_15"],
     "bout_metrics": ["oscillatory_occupancy", "bouts_per_minute", "bout_duration_mean_s"],
     "bout_ordinal_metrics": ["entropy", "complexity", "fisher_information"],
     "typical_bout_summaries": ["envelope_peak_ratio", "envelope_half_height_width_s", "envelope_asymmetry", "relative_phase_consistency"]

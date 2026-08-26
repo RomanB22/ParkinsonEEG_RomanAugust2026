@@ -7,8 +7,7 @@ P4, O2, P6, CP2, CP1, PO7, and P8**.
 
 It is an additional sensitivity analysis. It does not replace the primary
 whole-head outputs, and it is separate from `disease_progression/`, which uses
-all cohort-shared electrodes. The overlapping 5–15 Hz visualization band is
-excluded from inference.
+all cohort-shared electrodes.
 
 ```bash
 bash eight_electrode_analysis/run_eight_electrode_analysis.sh --overwrite

@@ -72,7 +72,6 @@ BAND_LABELS = {
     "alpha": "Alpha",
     "beta": "Beta",
     "low_gamma": "Low gamma",
-    "broad_5_15": "Broad 5–15 Hz",
     "low_beta": "Low beta",
     "high_beta": "High beta",
 }

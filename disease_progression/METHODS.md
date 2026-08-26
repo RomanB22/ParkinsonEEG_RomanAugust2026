@@ -30,8 +30,7 @@ cohorts).
 The primary ordinal block is D=6, tau=1. It contains regular H/C/F and Rényi
 entropy/complexity for alpha=0.1, 0.5, 0.9, 1.1, 2, 5, and 10, both broadband
 and in the five canonical ordinal bands. PSD, bout properties, and within-bout
-H/C/F use their canonical non-overlapping bands. Broad 5–15 Hz remains
-descriptive and never enters this inferential feature matrix.
+H/C/F use their canonical non-overlapping bands.
 
 ## Statistical model
 

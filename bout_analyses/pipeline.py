@@ -32,6 +32,7 @@ from src.cache import replace_with_relative_symlink, same_json_settings
 from src.dataset import ordered_channel_inventory
 from src.group_statistics import compute_group_statistics
 from src.group_statistics_plots import plot_electrode_group_statistics
+from src.output_cleanup import remove_retired_band_outputs
 
 from .metrics import (
     METRICS,
@@ -457,6 +458,8 @@ def run_analysis(
         raise FileExistsError(
             f"Bout-analysis outputs already exist at {result_path}; rerun with --overwrite"
         )
+    if overwrite:
+        remove_retired_band_outputs(output_dir)
     logger = _configure_logger(output_dir, overwrite)
 
     participant_table = _participants(Path(config["input"]["participants_file"]))

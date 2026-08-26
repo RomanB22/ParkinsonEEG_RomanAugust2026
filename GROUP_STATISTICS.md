@@ -27,9 +27,8 @@ metric-by-band tests in their declared analysis domain. Broadband ordinal,
 band-resolved ordinal, aperiodic, periodic/bout, PSD, and within-bout analyses
 are separate, scientifically interpretable domains. Independent bycycle burst
 tests are also one separate sensitivity domain and are not pooled with eBOSC
-p-values. The overlapping 5–15 Hz
-band remains in descriptive plots and tables but is excluded from formal group
-inference because it overlaps the canonical bands.
+p-values. Only the configured canonical bands enter generated metrics, figures,
+and inference.
 
 ## Electrode-wise inference
 

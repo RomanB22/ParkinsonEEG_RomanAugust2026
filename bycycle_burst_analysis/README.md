@@ -12,8 +12,7 @@ separately, with a 0.5-second edge margin. Thresholds are fixed in
 `config.json` and must not be tuned using PD-versus-Control significance.
 
 All analyses use only electrodes shared by every included subject. Theta,
-alpha, low-beta, and high-beta enter formal inference. The overlapping 5–15 Hz
-band is saved and plotted only as a descriptive visualization.
+alpha, low-beta, and high-beta enter detection, figures, and formal inference.
 
 Run the complete full-cohort stage with:
 

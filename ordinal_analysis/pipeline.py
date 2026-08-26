@@ -16,6 +16,7 @@ from src.runtime import configure_runtime
 from src.dataset import ordered_channel_inventory
 from src.group_statistics import compute_group_statistics
 from src.group_statistics_plots import plot_electrode_group_statistics
+from src.output_cleanup import remove_retired_band_outputs
 
 configure_runtime()
 
@@ -80,6 +81,9 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     bands = config["bands"]
     if not isinstance(bands, dict) or not bands:
         raise ValueError("bands must be a non-empty mapping")
+    expected_bands = ["delta", "theta", "alpha", "beta", "low_gamma"]
+    if list(bands) != expected_bands:
+        raise ValueError(f"bands must be ordered as {expected_bands}")
     for name, limits in bands.items():
         if not isinstance(name, str) or not name:
             raise ValueError("Every band must have a non-empty string name")
@@ -331,6 +335,8 @@ def run_analysis(
         raise FileExistsError(
             f"Ordinal outputs already exist at {result_path}; rerun with --overwrite"
         )
+    if overwrite:
+        remove_retired_band_outputs(output_dir)
     if overwrite and not generate_figures:
         shutil.rmtree(output_dir / "figures", ignore_errors=True)
     logger = _configure_logger(output_dir, overwrite)

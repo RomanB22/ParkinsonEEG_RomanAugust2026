@@ -14,6 +14,7 @@ from src.runtime import configure_runtime
 from src.dataset import ordered_channel_inventory
 from src.group_statistics import compute_group_statistics
 from src.group_statistics_plots import plot_electrode_group_statistics
+from src.output_cleanup import remove_retired_band_outputs
 
 configure_runtime()
 
@@ -63,6 +64,9 @@ def load_psd_config(path: str | Path) -> dict[str, Any]:
     fmin, fmax = float(psd["fmin_hz"]), float(psd["fmax_hz"])
     if not 0 <= fmin < fmax:
         raise ValueError("psd requires 0 <= fmin_hz < fmax_hz")
+    expected_bands = ["delta", "theta", "alpha", "beta", "low_gamma"]
+    if list(config["bands"]) != expected_bands:
+        raise ValueError(f"bands must be ordered as {expected_bands}")
     if int(config["bootstrap"]["n_resamples"]) < 100:
         raise ValueError("bootstrap.n_resamples must be at least 100")
     for name, limits in config["bands"].items():
@@ -141,6 +145,8 @@ def run_analysis(
     result_path = output_dir / "metrics" / "group_median_psd.csv"
     if result_path.exists() and not overwrite:
         raise FileExistsError(f"PSD outputs exist at {result_path}; rerun with --overwrite")
+    if overwrite:
+        remove_retired_band_outputs(output_dir)
     logger = _configure_logger(output_dir, overwrite)
 
     participant_table = _participants(Path(config["input"]["participants_file"]))

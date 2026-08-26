@@ -72,13 +72,14 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     if analysis.get("fdr_scope") != "within_outcome_feature_family_and_method":
         raise ValueError("Disease-progression FDR scope changed unexpectedly")
     features = config["features"]
-    if "broad_5_15" not in features.get("descriptive_only_bands", []):
-        raise ValueError("The overlapping 5–15 Hz band must remain descriptive only")
-    tested_bands = set(features["ordinal_bands"]) | set(features["psd_bands"]) | set(
-        features["bout_bands"]
-    )
-    if "broad_5_15" in tested_bands:
-        raise ValueError("The overlapping 5–15 Hz band cannot enter progression inference")
+    canonical_ordinal = ["delta", "theta", "alpha", "beta", "low_gamma"]
+    canonical_bouts = ["theta", "alpha", "low_beta", "high_beta"]
+    if features["ordinal_bands"] != canonical_ordinal:
+        raise ValueError("Disease progression requires canonical ordinal bands")
+    if features["psd_bands"] != canonical_ordinal:
+        raise ValueError("Disease progression requires canonical PSD bands")
+    if features["bout_bands"] != canonical_bouts:
+        raise ValueError("Disease progression requires canonical bout bands")
     if int(features["embedding_dimension"]) != 6 or int(features["delay_samples"]) != 1:
         raise ValueError("Disease progression uses the primary D=6, tau=1 ordinal block")
     if not 0.0 < float(features["minimum_aperiodic_qc_fraction"]) <= 1.0:
@@ -174,7 +175,7 @@ def _write_report(
         "Primary estimates are partial Spearman correlations adjusted for age and sex.",
         (
             "BH-FDR is controlled separately within outcome, feature family, and method. "
-            "The overlapping 5–15 Hz visualization band is excluded."
+            "Only canonical, non-overlapping frequency bands are used."
         ),
         "",
         "## Relationship between clinical axes",
@@ -345,7 +346,7 @@ def run_analysis(
         ),
         "multiplicity": (
             "Benjamini-Hochberg FDR within outcome, feature family, and method; "
-            "broad_5_15 excluded."
+            "canonical frequency bands only."
         ),
     }
     (output_dir / "manifest.json").write_text(

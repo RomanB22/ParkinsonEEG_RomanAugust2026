@@ -44,11 +44,12 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     if config["electrodes"] != ELECTRODES:
         raise ValueError(f"electrodes must be exactly {ELECTRODES}")
     bands = config["bands"]
-    tested = set(bands["psd"]) | set(bands["ordinal"]) | set(bands["bout"])
-    if "broad_5_15" in tested:
-        raise ValueError("The overlapping 5–15 Hz band cannot enter inference")
-    if "broad_5_15" not in bands.get("descriptive_only_excluded", []):
-        raise ValueError("broad_5_15 must be declared descriptive-only and excluded")
+    canonical_ordinal = ["delta", "theta", "alpha", "beta", "low_gamma"]
+    canonical_bouts = ["theta", "alpha", "low_beta", "high_beta"]
+    if bands["psd"] != canonical_ordinal or bands["ordinal"] != canonical_ordinal:
+        raise ValueError("Eight-electrode PSD and ordinal bands must be canonical")
+    if bands["bout"] != canonical_bouts:
+        raise ValueError("Eight-electrode bout bands must be canonical")
     if not 0 < float(config["statistics"]["confidence_level"]) < 1:
         raise ValueError("Invalid confidence level")
     if not 0 < float(config["statistics"]["fdr_alpha"]) < 1:
@@ -265,7 +266,7 @@ def _write_report(
         "P6, CP2, CP1, PO7, and P8. Whole-head primary outputs are unchanged.", "",
         f"Participants: {len(participants)}; features: {len(dictionary)}.",
         "Full-cohort inference adjusts for age and sex; matched inference is paired.",
-        "The overlapping 5–15 Hz band is excluded from every inferential family.", "",
+        "Only canonical, non-overlapping bands are included.", "",
         "## Corrected results", "",
         "| Domain | Subject tests | Subject FDR | Electrode tests | Strict electrode FDR |",
         "|---|---:|---:|---:|---:|",
@@ -344,7 +345,7 @@ def run_analysis(
         "n_effect_pages": len(effect_plots),
         "n_group_distribution_pages": len(distribution_plots),
         "n_electrode_heatmaps": len(heatmaps),
-        "excluded_from_inference": ["broad_5_15"],
+        "excluded_from_inference": [],
     }
     sentinel.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     logger.info("Completed eight-electrode sensitivity analysis")

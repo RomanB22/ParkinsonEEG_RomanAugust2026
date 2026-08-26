@@ -235,8 +235,7 @@ def run_behavioral_fit_qc_sensitivity(
             "They do not replace the all-electrode provenance analysis. Partial "
             "Spearman correlations adjust for age and sex, with BH FDR controlled "
             "separately within the fit-QC bout-property and fit-QC within-bout "
-            "ordinal families. The overlapping broad 5–15 Hz band is retained "
-            "upstream for plots but excluded from these associations.",
+            "ordinal families using only canonical non-overlapping bands.",
             "",
             f"FDR-significant adjusted associations: {len(significant)}/{len(adjusted)}.",
             *result_lines,
@@ -253,8 +252,7 @@ def run_behavioral_fit_qc_sensitivity(
         "families": dictionary["family"].value_counts().to_dict(),
         "policy": (
             "PD-only MOCA fit-QC sensitivity; partial Spearman adjusted for age "
-            "and sex; BH FDR within each fit-QC feature family; broad_5_15 is "
-            "descriptive-only and excluded."
+            "and sex; BH FDR within each fit-QC feature family."
         ),
     }
     (output_root / "fit_qc_sensitivity_manifest.json").write_text(

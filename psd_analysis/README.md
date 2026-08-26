@@ -48,11 +48,6 @@ electrode's total integrated power from 1–50 Hz:
 | Alpha | 8–13 Hz |
 | Beta | 13–30 Hz |
 | Low gamma | 30–50 Hz |
-| Broad band | 5–15 Hz |
-
-The 5–15 Hz band intentionally overlaps theta, alpha, and part of beta so the
-broad feature visible in the group PSD can be mapped directly. It is an
-additional summary and does not replace the canonical bands.
 
 Endpoints are included. A shared boundary such as 4 Hz is a single point with
 zero width; the adjacent trapezoids cover the intervals on either side without
@@ -75,7 +70,7 @@ Formal PD-versus-Control inference is saved at both the subject and electrode
 levels. The primary subject test is age/sex-adjusted in the full cohort and
 paired by demographic match in the matched cohort. Electrode tests are
 exploratory spatial localization and use a strict domain-wide FDR flag. The
-overlapping 5–15 Hz display band is not included in these tests. See
+configured canonical bands all enter these tests. See
 [`../GROUP_STATISTICS.md`](../GROUP_STATISTICS.md) for the complete policy.
 
 ## Run

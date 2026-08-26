@@ -46,14 +46,13 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
                 "alpha": [8.0, 13.0],
                 "low_beta": [13.0, 20.0],
                 "high_beta": [20.0, 30.0],
-                "broad_5_15": [5.0, 15.0],
             },
         )
 
     def test_typical_bout_gallery_allocates_one_row_per_band(self):
         figure, axes = _representation_figure(len(self.config["bands"]))
         try:
-            self.assertEqual(axes.shape, (5, 3))
+            self.assertEqual(axes.shape, (4, 3))
         finally:
             import matplotlib.pyplot as plt
 

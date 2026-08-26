@@ -195,6 +195,7 @@ has_eight_electrodes() {
 
 psd_current() {
     [[ -f psd_analysis/processed/manifest.json ]] || return 1
+    ! grep -q 'broad_5_15' psd_analysis/processed/manifest.json || return 1
     [[ -f psd_analysis/processed/metrics/group_subject_statistics.csv ]] || return 1
     [[ -f psd_analysis/processed/metrics/group_electrode_statistics.csv ]] || return 1
     [[ -f psd_analysis/processed/figures/group_statistics/relative_band_power_group_statistics.png ]]
@@ -202,6 +203,7 @@ psd_current() {
 
 ordinal_primary_current() {
     [[ -f ordinal_analysis/processed/manifest.json ]] || return 1
+    ! grep -q 'broad_5_15' ordinal_analysis/processed/manifest.json || return 1
     header_has_extended_renyi \
         ordinal_analysis/processed/metrics/subject_electrode_mean_metrics.csv
     header_has_extended_renyi \
@@ -222,6 +224,7 @@ ordinal_sweep_current() {
     for dimension in 3 4 5; do
         directory="ordinal_analysis/parameter_sweep/D${dimension}_tau1"
         [[ -f "${directory}/manifest.json" ]] || return 1
+        ! grep -q 'broad_5_15' "${directory}/manifest.json" || return 1
         header_has_extended_renyi \
             "${directory}/metrics/subject_electrode_mean_metrics.csv" || return 1
         header_has_extended_renyi \
@@ -233,7 +236,7 @@ ordinal_sweep_current() {
 
 scale_free_current() {
     [[ -f scale_free_analysis/processed/manifest.json ]] || return 1
-    grep -q '"broad_5_15"' scale_free_analysis/processed/manifest.json || return 1
+    ! grep -q 'broad_5_15' scale_free_analysis/processed/manifest.json || return 1
     grep -q '"specparam_primary_fit_range_id": "4_35Hz"' \
         scale_free_analysis/processed/manifest.json || return 1
     grep -q '"raw_cycle_tables_saved": false' \
@@ -273,7 +276,7 @@ bycycle_burst_current() {
     [[ -f bycycle_burst_analysis/processed/metrics/detector_event_agreement.csv ]] || return 1
     [[ -f bycycle_burst_analysis/processed/figures/qc/independent_detection_example.png ]] || return 1
     [[ -f bycycle_burst_analysis/processed/figures/agreement/event_mask_dice.png ]] || return 1
-    grep -q '"broad_5_15"' bycycle_burst_analysis/processed/manifest.json
+    ! grep -q 'broad_5_15' bycycle_burst_analysis/processed/manifest.json
 }
 
 bycycle_group_figures_current() {
@@ -290,7 +293,7 @@ bout_current() {
     grep -q '"scale_free_manifest"' bout_analyses/processed/manifest.json || return 1
     grep -q '"legacy_episode_threshold_paths_are_symlinks": true' \
         bout_analyses/processed/manifest.json || return 1
-    grep -q '"broad_5_15"' bout_analyses/processed/manifest.json || return 1
+    ! grep -q 'broad_5_15' bout_analyses/processed/manifest.json || return 1
     grep -q '"specparam_primary_fit_range_id": "4_35Hz"' \
         bout_analyses/processed/manifest.json || return 1
     [[ -f bout_analyses/processed/metrics/group_subject_statistics.csv ]] || return 1
@@ -309,8 +312,8 @@ fit_qc_sensitivity_current() {
     [[ -f bout_analyses/processed/figures/fit_qc_sensitivity/within_bout_ordinal_all_vs_fit_qc.png ]] || return 1
     [[ -f quantitative_behavioral/processed/fit_qc_sensitivity_manifest.json ]] || return 1
     [[ -f quantitative_behavioral/processed/metrics/fit_qc_sensitivity/subject_level_correlations.csv ]] || return 1
-    grep -q 'broad_5_15' scale_free_analysis/processed/metrics/subject_band_metrics_fit_qc.csv || return 1
-    grep -q 'broad_5_15' bout_analyses/processed/metrics/subject_band_metrics_fit_qc.csv || return 1
+    ! grep -q 'broad_5_15' scale_free_analysis/processed/metrics/subject_band_metrics_fit_qc.csv || return 1
+    ! grep -q 'broad_5_15' bout_analyses/processed/metrics/subject_band_metrics_fit_qc.csv || return 1
 }
 
 typical_bouts_current() {
@@ -321,7 +324,7 @@ typical_bouts_current() {
     [[ -f scale_free_analysis/processed/figures/typical_bouts/grand_average_all_subjects.png ]] || return 1
     [[ -f scale_free_analysis/processed/figures/typical_bouts/grand_average_fit_qc.png ]] || return 1
     [[ -f scale_free_analysis/processed/figures/typical_bouts/bout_detection_subject_coverage.png ]] || return 1
-    grep -q 'broad_5_15' scale_free_analysis/processed/typical_bouts_manifest.json || return 1
+    ! grep -q 'broad_5_15' scale_free_analysis/processed/typical_bouts_manifest.json || return 1
 }
 
 exploration_current() {

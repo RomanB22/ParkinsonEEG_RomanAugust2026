@@ -109,18 +109,7 @@ def load_exploration_config(path: str | Path) -> dict[str, Any]:
         "low_beta",
         "high_beta",
     ]:
-        raise ValueError(
-            "Exploration predictors must exclude overlapping broad_5_15 bout features"
-        )
-    if candidate.get("descriptive_only_bout_bands") != ["broad_5_15"]:
-        raise ValueError("broad_5_15 must remain explicitly descriptive-only")
-    modeled_features = {
-        str(feature)
-        for specification in config["models"].values()
-        for feature in specification["features"]
-    }
-    if any("broad_5_15" in feature for feature in modeled_features):
-        raise ValueError("broad_5_15 must not enter any exploration model")
+        raise ValueError("Exploration bout predictors must use the four canonical bands")
     matching = config["demographic_matching"]
     if matching.get("exact_variables") != ["sex_male"]:
         raise ValueError("Demographic matching must require exact sex")
@@ -814,8 +803,7 @@ def run_analysis(
         "feature_policy": (
             "Every model uses one row per subject. Electrode and bout observations are "
             "aggregated within subject before modeling. PSD predictors are prespecified "
-            "log2 ratios against low gamma; overlapping broad_5_15 PSD, bout, and ordinal "
-            "features are descriptive-only and excluded from models. Rényi "
+            "log2 ratios against low gamma. Rényi "
             "models retain only the prespecified low/high Rényi endpoints because intermediate "
             "alphas are extremely redundant. Typical-bout curves are reduced to peak, "
             "half-height width, temporal asymmetry, and relative-phase consistency."

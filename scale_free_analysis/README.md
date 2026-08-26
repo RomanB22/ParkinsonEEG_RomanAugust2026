@@ -8,7 +8,7 @@ Formal PD-versus-Control tests cover aperiodic, canonical periodic, bout, and
 cycle quantities. They use subject-level shared-electrode aggregates; the full
 cohort adjusts for age and sex and the matched cohort preserves its pairs.
 Electrode-wise results are exploratory localization with strict domain-wide
-FDR. The overlapping 5–15 Hz band remains descriptive only. See
+FDR. See
 [`../GROUP_STATISTICS.md`](../GROUP_STATISTICS.md) for the common inference
 policy.
 
@@ -40,7 +40,7 @@ Saved broadband parameters are:
 - model R² and mean absolute error;
 - number of fitted peaks.
 
-The broad 5–15 Hz elevation and overlapping higher-frequency shoulder are
+Periodic spectral elevations and overlapping higher-frequency shoulders are
 represented by the fitted periodic Gaussians. A benchmark allowing peak widths
 up to 20 Hz did not materially improve fit quality or exponent stability, so
 the primary peak settings remain unchanged rather than being selected after
@@ -66,11 +66,9 @@ parallel sensitivity analyses; the pipeline does not choose the most favorable
 result.
 
 The highest fitted peak in each theta (4–7 Hz), alpha (8–13 Hz), low-beta
-(13–20 Hz), high-beta (20–30 Hz), and broad 5–15 Hz band supplies center
-frequency, power, and bandwidth. The broad band deliberately overlaps theta
-and alpha and is treated as a sensitivity representation rather than an
-independent partition. A `peak_present` indicator distinguishes a missing peak
-from a numerical value.
+(13–20 Hz), and high-beta (20–30 Hz) band supplies center frequency, power,
+and bandwidth. A `peak_present` indicator distinguishes a missing peak from a
+numerical value.
 
 For visual inspection, the pipeline also writes one decomposition PNG for
 every analyzed subject and shared electrode. The files are organized by group

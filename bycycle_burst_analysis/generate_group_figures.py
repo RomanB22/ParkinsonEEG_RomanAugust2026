@@ -73,7 +73,7 @@ def main() -> None:
         manifest["n_subject_average_violin_figures"] = len(outputs)
         manifest["subject_average_violin_policy"] = (
             "Each plotted point is one subject after arithmetic averaging across "
-            "all cohort-shared electrodes; broad_5_15 is descriptive only."
+            "all cohort-shared electrodes and the four canonical bands."
         )
         manifest_path.write_text(
             json.dumps(manifest, indent=2) + "\n", encoding="utf-8"

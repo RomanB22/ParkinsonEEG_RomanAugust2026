@@ -45,9 +45,7 @@ The defaults produce 52 transparent inferential features:
 The 52-feature primary table retains regular permutation entropy,
 statistical complexity, and Fisher information. Rényi quantities are added in
 the separate embedding-dimension analysis blocks described below. Within-bout
-ordinal quantities remain regular H/C/F only. The overlapping broad 5–15 Hz
-band remains available in upstream bout metrics and diagnostic galleries, but
-is deliberately excluded from every MOCA association and FDR family.
+ordinal quantities remain regular H/C/F only.
 
 The primary ordinal source is the completed 60-electrode `D6_tau1` parameter
 sweep. The aperiodic exponent and bout properties come from the scale-free
@@ -78,8 +76,7 @@ Each D is a separate 102-feature analysis block: six signal scopes
 (broadband plus five non-overlapping bands) × seventeen quantities. The pipeline writes a distinct
 one-row-per-subject matrix for each D and never concatenates the four D blocks
 into one model feature vector. BH-FDR is controlled separately within each D
-across its 102 features and within each correlation method. Broad 5–15 Hz
-ordinal quantities remain descriptive and do not enter these blocks.
+across its 102 features and within each correlation method.
 
 The D blocks are separate analyses, but they are **not statistically
 independent**: all four reuse the same participants and EEG recordings and

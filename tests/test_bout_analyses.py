@@ -22,7 +22,11 @@ class BoutAnalysesTests(unittest.TestCase):
         self.assertEqual(config["ordinal"]["embedding_dimension"], 6)
         self.assertEqual(config["ordinal"]["delay_samples"], 1)
         self.assertEqual(METRICS, ("entropy", "complexity", "fisher_information"))
-        self.assertEqual(config["bands"]["broad_5_15"], [5.0, 15.0])
+        self.assertEqual(
+            list(config["bands"]),
+            ["theta", "alpha", "low_beta", "high_beta"],
+        )
+        self.assertEqual(config["statistics"]["exclude_bands"], [])
         self.assertEqual(
             config["input"]["scale_free_output_dir"],
             "scale_free_analysis/processed",

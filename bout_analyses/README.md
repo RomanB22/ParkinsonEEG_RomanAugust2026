@@ -18,9 +18,7 @@ Its sequence is:
 2. Reuse eBOSC episodes detected above the 95th-percentile aperiodic-relative
    power threshold for at least three cycles within each accepted epoch.
 3. Collapse detections into theta (4–7 Hz), alpha (8–13 Hz), low-beta
-   (13–20 Hz), high-beta (20–30 Hz), and broad 5–15 Hz bouts. The broad band
-   intentionally overlaps theta and alpha and is interpreted as a separate
-   sensitivity representation, not an independent frequency partition.
+   (13–20 Hz), and high-beta (20–30 Hz) bouts.
 4. Zero-phase band-pass each complete accepted epoch before extracting the
    corresponding bout intervals. Short bouts are never filtered in isolation.
 5. Encode every bout independently into ordinal patterns. Pattern counts are
@@ -34,7 +32,7 @@ The same subject summaries also receive formal group inference for H, C, F,
 occupancy, rate, and bout duration. Full-cohort models adjust for age and sex;
 matched-cohort models preserve the demographic pairs. Electrode-wise models
 are exploratory localization with both within-feature and strict domain-wide
-FDR. Broad 5–15 Hz remains descriptive only. See
+FDR. See
 [`../GROUP_STATISTICS.md`](../GROUP_STATISTICS.md).
 
 After this primary all-electrode analysis, the fit-QC sensitivity stage can

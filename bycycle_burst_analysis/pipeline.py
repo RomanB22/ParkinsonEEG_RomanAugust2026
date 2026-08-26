@@ -28,6 +28,7 @@ from tqdm.auto import tqdm
 from src.dataset import ordered_channel_inventory
 from src.group_statistics import compute_group_statistics
 from src.group_statistics_plots import plot_electrode_group_statistics
+from src.output_cleanup import remove_retired_band_outputs
 
 from .detector import METRICS, detect_epoch_bursts, summarize_detection
 from .plots import (
@@ -51,7 +52,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     missing = sorted(required - set(config))
     if missing:
         raise ValueError(f"Missing bycycle burst config sections: {missing}")
-    expected = ["theta", "alpha", "low_beta", "high_beta", "broad_5_15"]
+    expected = ["theta", "alpha", "low_beta", "high_beta"]
     if list(config["bands"]) != expected:
         raise ValueError(f"bands must be ordered as {expected}")
     for band, limits in config["bands"].items():
@@ -434,6 +435,8 @@ def run_analysis(
     result_path = output / "metrics" / "subject_electrode_band_metrics.csv"
     if result_path.exists() and not overwrite:
         raise FileExistsError(f"bycycle burst outputs already exist at {result_path}; rerun with --overwrite")
+    if overwrite:
+        remove_retired_band_outputs(output)
     logger = _logger(output, overwrite)
     participants = _participants(Path(config["input"]["participants_file"]))
     files = _epoch_files(Path(config["input"]["epochs_dir"]), str(config["input"]["epoch_glob"]))
@@ -648,7 +651,7 @@ def run_analysis(
         "n_subject_average_violin_figures": len(subject_violin_figures),
         "subject_average_violin_policy": (
             "Each plotted point is one subject after arithmetic averaging across "
-            "all cohort-shared electrodes; broad_5_15 is descriptive only."
+            "all cohort-shared electrodes and the four canonical bands."
         ),
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

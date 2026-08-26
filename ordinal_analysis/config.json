@@ -30,10 +30,6 @@
     "low_gamma": [
       30.0,
       50.0
-    ],
-    "broad_5_15": [
-      5.0,
-      15.0
     ]
   },
   "band_filter": {
@@ -46,7 +42,7 @@
     "fdr_alpha": 0.05,
     "confidence_level": 0.95,
     "subject_aggregation": "mean",
-    "exclude_bands": ["broad_5_15"]
+    "exclude_bands": []
   },
   "plots": {
     "dpi": 150,
@@ -64,8 +60,7 @@
       "theta": "Theta",
       "alpha": "Alpha",
       "beta": "Beta",
-      "low_gamma": "Low gamma",
-      "broad_5_15": "Broad 5–15 Hz"
+      "low_gamma": "Low gamma"
     }
   }
 }

@@ -16,14 +16,17 @@ class EightElectrodeAnalysisTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.config = load_analysis_config("eight_electrode_analysis/config.json")
 
-    def test_scope_is_exact_and_overlapping_band_is_excluded(self) -> None:
+    def test_scope_is_exact_and_uses_canonical_bands(self) -> None:
         self.assertEqual(self.config["electrodes"], ELECTRODES)
         tested = set().union(
             self.config["bands"]["psd"],
             self.config["bands"]["ordinal"],
             self.config["bands"]["bout"],
         )
-        self.assertNotIn("broad_5_15", tested)
+        self.assertEqual(
+            tested,
+            {"delta", "theta", "alpha", "beta", "low_gamma", "low_beta", "high_beta"},
+        )
 
     def test_real_tables_cover_all_domains_and_exact_electrode_set(self) -> None:
         values, dictionary, subject, electrode = build_analysis_tables(self.config)

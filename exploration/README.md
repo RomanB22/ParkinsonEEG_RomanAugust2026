@@ -61,8 +61,8 @@ and beta. Rényi sensitivity models add entropy and complexity only at the two
 prespecified endpoints, α=0.1 and α=10. Intermediate α values are available in
 the source tables but are not model predictors because they are extremely
 rank-redundant. Embedding dimensions are evaluated independently and are never
-concatenated into one feature vector. Delta, low gamma, and the overlapping
-broad 5–15 Hz band do not enter the band model.
+concatenated into one feature vector. Delta and low gamma do not enter the
+deliberately restricted band model.
 
 PSD uses the subject median across shared electrodes. Relative powers are
 compositional, so the model does not enter all percentages independently. It
@@ -75,8 +75,7 @@ log2(alpha / low_gamma)
 log2(beta / low_gamma)
 ```
 
-A one-unit increase means a doubling of the numerator-to-low-gamma ratio. The
-overlapping 5–15 Hz PSD band is excluded.
+A one-unit increase means a doubling of the numerator-to-low-gamma ratio.
 
 New scale-free and bout blocks are represented conservatively:
 
@@ -88,9 +87,7 @@ New scale-free and bout blocks are represented conservatively:
   half-height width, pre/post envelope asymmetry, and relative-phase
   consistency.
 
-The overlapping broad 5–15 Hz band is retained in the upstream metrics and
-gallery for descriptive inspection only; it does not enter any prediction
-model. The full time curves and individual electrode values do not enter the model.
+The full time curves and individual electrode values do not enter the model.
 Electrodes are averaged within subject before typical-bout modeling. The bout
 and aperiodic blocks are explicitly labeled fit-QC-sensitive because bout
 detection uses the fitted aperiodic background.

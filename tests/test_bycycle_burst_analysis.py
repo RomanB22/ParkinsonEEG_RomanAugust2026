@@ -52,12 +52,16 @@ class BycycleBurstAnalysisTests(unittest.TestCase):
         self.assertEqual(summary["oscillatory_occupancy"], 0.0)
         self.assertTrue(np.isnan(summary["bout_duration_mean_s"]))
 
-    def test_overlapping_band_is_descriptive_only(self) -> None:
+    def test_config_uses_only_canonical_non_overlapping_bands(self) -> None:
         config = json.loads(
             Path("bycycle_burst_analysis/config.json").read_text(encoding="utf-8")
         )
         self.assertEqual(config["detector"]["method"], "bycycle_cycle_consistency")
-        self.assertEqual(config["statistics"]["exclude_bands"], ["broad_5_15"])
+        self.assertEqual(
+            list(config["bands"]),
+            ["theta", "alpha", "low_beta", "high_beta"],
+        )
+        self.assertEqual(config["statistics"]["exclude_bands"], [])
         self.assertEqual(config["detector"]["minimum_consecutive_cycles"], 3)
 
     def test_subject_average_violins_create_one_file_per_metric(self) -> None:

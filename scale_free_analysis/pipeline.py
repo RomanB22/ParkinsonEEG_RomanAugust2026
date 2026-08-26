@@ -28,6 +28,7 @@ from src.cache import replace_with_relative_symlink, same_json_settings
 from src.dataset import ordered_channel_inventory
 from src.group_statistics import compute_group_statistics
 from src.group_statistics_plots import plot_electrode_group_statistics
+from src.output_cleanup import remove_retired_band_outputs
 
 from .aperiodic_diagnostics import run_aperiodic_diagnostics
 from .metrics import (
@@ -107,11 +108,9 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     if [float(value) for value in config["specparam"]["frequency_range_hz"]] not in ranges:
         raise ValueError("Aperiodic sensitivity must contain the primary frequency range")
     bands = config["bands"]
-    expected_bands = ["theta", "alpha", "low_beta", "high_beta", "broad_5_15"]
+    expected_bands = ["theta", "alpha", "low_beta", "high_beta"]
     if list(bands) != expected_bands:
-        raise ValueError(
-            "bands must be theta, alpha, low_beta, high_beta, and broad_5_15 in order"
-        )
+        raise ValueError("bands must be theta, alpha, low_beta, and high_beta in order")
     for name, limits in bands.items():
         if len(limits) != 2 or not 0.0 < float(limits[0]) < float(limits[1]):
             raise ValueError(f"Invalid frequency limits for {name}")
@@ -493,6 +492,8 @@ def run_analysis(
         raise FileExistsError(
             f"Scale-free outputs already exist at {result_path}; rerun with --overwrite"
         )
+    if overwrite:
+        remove_retired_band_outputs(output_dir)
     logger = _configure_logger(output_dir, overwrite)
 
     participant_table = _participants(Path(config["input"]["participants_file"]))

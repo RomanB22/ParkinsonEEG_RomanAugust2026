@@ -94,7 +94,7 @@ class GroupStatisticsTests(unittest.TestCase):
                 domain="synthetic",
             )
 
-    def test_all_group_domains_exclude_overlapping_display_band(self) -> None:
+    def test_all_group_domains_use_every_configured_band(self) -> None:
         for relative_path in (
             "psd_analysis/config.json",
             "ordinal_analysis/config.json",
@@ -104,9 +104,7 @@ class GroupStatisticsTests(unittest.TestCase):
             config = json.loads(Path(relative_path).read_text(encoding="utf-8"))
             with self.subTest(config=relative_path):
                 self.assertEqual(config["statistics"]["fdr_alpha"], 0.05)
-                self.assertEqual(
-                    config["statistics"]["exclude_bands"], ["broad_5_15"]
-                )
+                self.assertEqual(config["statistics"]["exclude_bands"], [])
 
 
 if __name__ == "__main__":

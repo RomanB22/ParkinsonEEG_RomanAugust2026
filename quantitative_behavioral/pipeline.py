@@ -124,20 +124,14 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "beta",
         "low_gamma",
     ]:
-        raise ValueError(
-            "Behavioral ordinal associations must exclude overlapping broad_5_15"
-        )
+        raise ValueError("Behavioral ordinal associations require the canonical bands")
     if requested.get("bout_bands") != [
         "theta",
         "alpha",
         "low_beta",
         "high_beta",
     ]:
-        raise ValueError(
-            "Behavioral bout associations must exclude overlapping broad_5_15"
-        )
-    if requested.get("descriptive_only_bands") != ["broad_5_15"]:
-        raise ValueError("broad_5_15 must remain explicitly descriptive-only")
+        raise ValueError("Behavioral bout associations require the four canonical bands")
     sensitivity = config.get("dimension_sensitivity")
     if not isinstance(sensitivity, dict) or not sensitivity.get("enabled"):
         raise ValueError("The ordinal embedding-dimension sensitivity must be enabled")
@@ -159,9 +153,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "beta",
         "low_gamma",
     ]:
-        raise ValueError(
-            "Dimension-sensitivity associations must exclude overlapping broad_5_15"
-        )
+        raise ValueError("Dimension sensitivity requires the canonical ordinal bands")
     if (
         sensitivity.get("analysis_block_policy")
         != "one_separate_feature_matrix_per_embedding_dimension"
@@ -476,8 +468,7 @@ def _write_report(
             (
                 "Regular ordinal H, C, and F and Rényi entropy/complexity at alpha=0.1, "
                 "0.5, 0.9, 1.1, 2, 5, and 10 were tested at D=3, 4, 5, and 6 with tau=1 for "
-                "broadband and the five non-overlapping ordinal bands. The broad 5–15 Hz "
-                "band is retained only in descriptive plots."
+                "broadband and the five canonical ordinal bands."
             ),
             (
                 "Each embedding dimension is a separate 102-feature analysis block and has "

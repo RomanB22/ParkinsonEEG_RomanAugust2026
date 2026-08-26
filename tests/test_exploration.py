@@ -52,19 +52,19 @@ class ExplorationTests(unittest.TestCase):
             {"participant_id", "ID", "EEG", "TYPE", "UPDRS", "GROUP"},
         )
 
-    def test_no_model_contains_forbidden_or_overlapping_broad_band_features(self):
+    def test_no_model_contains_forbidden_features(self):
         table, _ = build_feature_table(self.config)
         validate_model_features(table, self.config["models"])
         for specification in self.config["models"].values():
             features = set(specification["features"])
             self.assertFalse(features & FORBIDDEN_MODEL_COLUMNS)
             self.assertFalse(any("broad_5_15" in feature for feature in features))
-        self.assertEqual(
-            self.config["candidate_features"]["descriptive_only_bout_bands"],
-            ["broad_5_15"],
-        )
         self.assertNotIn(
-            "broad_5_15", self.config["candidate_features"]["bout_bands"]
+            "descriptive_only_bout_bands", self.config["candidate_features"]
+        )
+        self.assertEqual(
+            self.config["candidate_features"]["bout_bands"],
+            ["theta", "alpha", "low_beta", "high_beta"],
         )
 
     def test_nested_validation_returns_repeated_out_of_fold_predictions(self):

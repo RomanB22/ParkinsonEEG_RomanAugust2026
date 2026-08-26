@@ -220,8 +220,7 @@ properties and 12 within-bout H/C/F quantities. Partial Spearman correlations
 use the same age/sex rank-residualization and subject bootstrap as the primary
 analysis. BH-FDR is controlled separately within its 20-feature bout-property
 family and 12-feature within-bout ordinal family, and not pooled with the
-primary 52-feature analysis. Broad 5–15 Hz is generated upstream for descriptive
-plots and QC but excluded from all association tests.
+primary 52-feature analysis.
 
 ### Separate embedding-dimension analyses
 

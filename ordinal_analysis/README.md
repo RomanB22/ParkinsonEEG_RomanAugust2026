@@ -8,8 +8,7 @@ PD-versus-Control tests are generated for every broadband and canonical-band
 Shannon, Fisher, and Rényi quantity. Primary tests use one shared-electrode
 aggregate per subject; full-cohort models adjust for age and sex, matched runs
 preserve pairs, and electrode maps are exploratory with strict domain-wide
-FDR. The overlapping 5–15 Hz band remains descriptive only. The complete
-policy and output-column definitions are in
+FDR. The complete policy and output-column definitions are in
 [`../GROUP_STATISTICS.md`](../GROUP_STATISTICS.md).
 
 ## Scientific scope
@@ -30,10 +29,8 @@ Both Rényi quantities come from one vectorized call to
 standalone `ordpy.renyi_entropy` function is not called.
 
 The same complete analysis is performed on the broadband cleaned epochs and on
-six band-pass versions: delta (1–4 Hz), theta (4–8 Hz), alpha (8–13 Hz), beta
-(13–30 Hz), low gamma (30–50 Hz), and broad 5–15 Hz. The 5–15 Hz range overlaps
-theta, alpha, and the lower edge of beta; it is an additional targeted summary,
-not a statistically independent canonical band.
+five band-pass versions: delta (1–4 Hz), theta (4–8 Hz), alpha (8–13 Hz), beta
+(13–30 Hz), and low gamma (30–50 Hz).
 
 It also calculates one subject-level value for each quantity by taking the
 arithmetic mean of that subject's shared-electrode values. The same electrode
@@ -196,7 +193,7 @@ ordinal_analysis/processed/
     │       ├── group_mean_zscored_topomaps.png
     │       └── subjects/sub-*_renyi_alpha_<alpha>_topomaps.png
     └── bands/
-        ├── delta|theta|alpha|beta|low_gamma|broad_5_15/
+        ├── delta|theta|alpha|beta|low_gamma/
         │   ├── violins/*.png
         │   └── planes/*.png
         └── topomaps/
