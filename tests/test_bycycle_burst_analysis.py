@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from bycycle_burst_analysis.detector import detect_epoch_bursts, summarize_detection
+from bycycle_burst_analysis.plots import plot_subject_average_violins
 
 
 class BycycleBurstAnalysisTests(unittest.TestCase):
@@ -57,6 +59,35 @@ class BycycleBurstAnalysisTests(unittest.TestCase):
         self.assertEqual(config["detector"]["method"], "bycycle_cycle_consistency")
         self.assertEqual(config["statistics"]["exclude_bands"], ["broad_5_15"])
         self.assertEqual(config["detector"]["minimum_consecutive_cycles"], 3)
+
+    def test_subject_average_violins_create_one_file_per_metric(self) -> None:
+        rows = []
+        for group, offset in (("PD", 0.2), ("Control", 0.0)):
+            for subject_index in range(4):
+                for band_index, band in enumerate(("theta", "alpha")):
+                    rows.append(
+                        {
+                            "subject_id": f"{group}-{subject_index}",
+                            "group": group,
+                            "band": band,
+                            "n_electrodes": 60,
+                            "bouts_per_minute": offset + band_index + subject_index / 10,
+                            "bout_duration_mean_s": 0.3 + offset + subject_index / 100,
+                        }
+                    )
+        with tempfile.TemporaryDirectory() as directory:
+            outputs = plot_subject_average_violins(
+                pd.DataFrame.from_records(rows),
+                metrics=["bouts_per_minute", "bout_duration_mean_s"],
+                bands=["theta", "alpha"],
+                group_order=["PD", "Control"],
+                colors={"PD": "#D55E00", "Control": "#0072B2"},
+                band_labels={"theta": "Theta", "alpha": "Alpha"},
+                output_dir=Path(directory),
+                dpi=50,
+            )
+            self.assertEqual(len(outputs), 2)
+            self.assertTrue(all(path.exists() for path in outputs))
 
 
 if __name__ == "__main__":

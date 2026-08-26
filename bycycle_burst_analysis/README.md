@@ -38,7 +38,18 @@ Important outputs are:
   consistency features used by the decision.
 - `figures/qc/`: example detections and detection coverage.
 - `figures/agreement/`: eBOSC-versus-bycycle agreement figures.
+- `figures/group_comparisons/group_<metric>.png`: one violin figure per
+  detector quantity. Every point is one subject after averaging that quantity
+  across all cohort-shared electrodes; the panels separate frequency bands
+  and diagnostic groups.
 - `figures/group_statistics/`: electrode-level effect and strict-FDR maps.
+
+If detection metrics already exist, regenerate only these subject-average
+group figures without repeating burst detection:
+
+```bash
+bash bycycle_burst_analysis/generate_group_figures.sh
+```
 
 Event agreement is not expected to be perfect because the methods define bouts
 differently. Scientific robustness should be judged mainly from stability of

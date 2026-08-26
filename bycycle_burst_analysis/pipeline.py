@@ -36,6 +36,7 @@ from .plots import (
     plot_event_agreement,
     plot_group_metric_violins,
     plot_metric_agreement,
+    plot_subject_average_violins,
 )
 
 
@@ -589,6 +590,16 @@ def run_analysis(
         subject, metrics=inferential_metrics, bands=inferential_bands, group_order=group_order,
         colors=colors, band_labels=labels, path=figures / "group_primary_metrics.png", dpi=dpi,
     )
+    subject_violin_figures = plot_subject_average_violins(
+        subject,
+        metrics=list(METRICS),
+        bands=list(bands),
+        group_order=group_order,
+        colors=colors,
+        band_labels=labels,
+        output_dir=figures / "group_comparisons",
+        dpi=dpi,
+    )
     plot_detection_coverage(
         subject, bands=list(bands), group_order=group_order, colors=colors, band_labels=labels,
         path=figures / "qc" / "detection_coverage.png", dpi=dpi,
@@ -634,6 +645,11 @@ def run_analysis(
         "reference_detector": str(reference_root),
         "n_event_agreement_rows": len(event_agreement),
         "n_statistical_figures": len(statistical_figures),
+        "n_subject_average_violin_figures": len(subject_violin_figures),
+        "subject_average_violin_policy": (
+            "Each plotted point is one subject after arithmetic averaging across "
+            "all cohort-shared electrodes; broad_5_15 is descriptive only."
+        ),
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     logger.info("Independent bycycle burst analysis completed | output=%s", output)

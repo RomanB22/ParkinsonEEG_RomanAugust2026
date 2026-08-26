@@ -232,6 +232,15 @@ bycycle_burst_current() {
     grep -q '"broad_5_15"' bycycle_burst_analysis/processed/manifest.json
 }
 
+bycycle_group_figures_current() {
+    local root="bycycle_burst_analysis/processed"
+    [[ -f "$root/manifest.json" ]] || return 1
+    grep -q '"n_subject_average_violin_figures": 12' "$root/manifest.json" \
+        || return 1
+    [[ -f "$root/figures/group_comparisons/group_bout_duration_mean_s.png" ]] \
+        && [[ -f "$root/figures/group_comparisons/group_bouts_per_minute.png" ]]
+}
+
 bout_current() {
     [[ -f bout_analyses/processed/manifest.json ]] || return 1
     grep -q '"broad_5_15"' bout_analyses/processed/manifest.json || return 1
@@ -408,6 +417,13 @@ if [[ "$NO_PROGRESS" == true ]]; then
 fi
 run_stage "Independent bycycle burst-detection sensitivity" bycycle_burst_current \
     bycycle_burst_analysis/processed/manifest.json "${bycycle_burst_command[@]}"
+
+printf '\n=== Independent bycycle subject-average violin figures ===\n'
+if bycycle_group_figures_current; then
+    printf '  current output found; skipping\n'
+else
+    execute bash bycycle_burst_analysis/generate_group_figures.sh
+fi
 
 bout_command=(bash bout_analyses/run_bout_analyses.sh)
 if [[ "$NO_PROGRESS" == true ]]; then

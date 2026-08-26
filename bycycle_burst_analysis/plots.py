@@ -15,6 +15,22 @@ import pandas as pd
 from scipy.signal import butter, sosfiltfilt
 
 
+METRIC_LABELS = {
+    "oscillatory_occupancy": "Oscillatory occupancy",
+    "bouts_per_minute": "Bouts per minute",
+    "bout_duration_mean_s": "Mean bout duration (s)",
+    "bout_duration_median_s": "Median bout duration (s)",
+    "bout_cycles_mean": "Mean cycles per bout",
+    "inter_bout_interval_mean_s": "Mean inter-bout interval (s)",
+    "burst_cycle_fraction": "Burst-cycle fraction",
+    "cycle_amplitude_mean_uv": "Mean burst-cycle amplitude (µV)",
+    "cycle_frequency_mean_hz": "Mean burst-cycle frequency (Hz)",
+    "amplitude_consistency_mean": "Mean amplitude consistency",
+    "period_consistency_mean": "Mean period consistency",
+    "monotonicity_mean": "Mean monotonicity",
+}
+
+
 def _save(fig: Any, path: Path, dpi: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=dpi, bbox_inches="tight")
@@ -112,6 +128,89 @@ def plot_group_metric_violins(
     fig.suptitle("Independent bycycle burst metrics — subject means across shared electrodes")
     fig.tight_layout()
     _save(fig, path, dpi)
+
+
+def plot_subject_average_violins(
+    subject_table: pd.DataFrame,
+    *,
+    metrics: list[str],
+    bands: list[str],
+    group_order: list[str],
+    colors: dict[str, str],
+    band_labels: dict[str, str],
+    output_dir: Path,
+    dpi: int,
+) -> list[Path]:
+    """Create one violin figure per subject mean across shared electrodes."""
+    required = {"subject_id", "group", "band", "n_electrodes", *metrics}
+    missing = sorted(required - set(subject_table))
+    if missing:
+        raise ValueError(f"Subject-average violin table is missing columns: {missing}")
+    positions = np.arange(len(bands), dtype=float)
+    offsets = np.linspace(-0.18, 0.18, len(group_order))
+    rng = np.random.default_rng(31)
+    electrode_counts = subject_table["n_electrodes"].dropna().astype(int).unique()
+    if len(electrode_counts) == 1:
+        aggregation_text = f"mean across {electrode_counts[0]} shared electrodes"
+    else:
+        aggregation_text = "mean across cohort-shared electrodes"
+    outputs: list[Path] = []
+    for metric in metrics:
+        fig, axis = plt.subplots(figsize=(10, 5.5))
+        for group, offset in zip(group_order, offsets):
+            for band_index, band in enumerate(bands):
+                values = subject_table.loc[
+                    subject_table["group"].eq(group)
+                    & subject_table["band"].eq(band),
+                    metric,
+                ].dropna().to_numpy(float)
+                if not len(values):
+                    continue
+                position = positions[band_index] + offset
+                if len(values) > 1 and not np.allclose(values, values[0]):
+                    violin = axis.violinplot(
+                        [values],
+                        positions=[position],
+                        widths=0.30,
+                        showmeans=False,
+                        showmedians=True,
+                        showextrema=False,
+                    )
+                    violin["bodies"][0].set_facecolor(colors[group])
+                    violin["bodies"][0].set_edgecolor(colors[group])
+                    violin["bodies"][0].set_alpha(0.32)
+                    violin["cmedians"].set_color("black")
+                    violin["cmedians"].set_linewidth(1.3)
+                else:
+                    axis.hlines(
+                        float(values[0]), position - 0.08, position + 0.08,
+                        color="black", linewidth=1.3,
+                    )
+                jitter = rng.uniform(-0.045, 0.045, len(values))
+                axis.scatter(
+                    position + jitter,
+                    values,
+                    s=13,
+                    color=colors[group],
+                    edgecolor="white",
+                    linewidth=0.25,
+                    alpha=0.62,
+                    zorder=3,
+                )
+            axis.scatter([], [], color=colors[group], label=group)
+        label = METRIC_LABELS.get(metric, metric.replace("_", " ").title())
+        axis.set_xticks(positions, [band_labels[band] for band in bands])
+        axis.set(
+            ylabel=label,
+            title=f"Subject-level {label.lower()} by group\nEach point: one subject, {aggregation_text}",
+        )
+        axis.grid(axis="y", alpha=0.2)
+        axis.legend(frameon=False)
+        fig.tight_layout()
+        output_path = output_dir / f"group_{metric}.png"
+        _save(fig, output_path, dpi)
+        outputs.append(output_path)
+    return outputs
 
 
 def plot_detection_coverage(

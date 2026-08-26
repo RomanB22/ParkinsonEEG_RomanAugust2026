@@ -100,6 +100,15 @@ flat_specparam_gallery_current() {
     [[ "$actual" -eq "$expected" ]]
 }
 
+bycycle_group_figures_current() {
+    local root="$1"
+    [[ -f "$root/manifest.json" ]] || return 1
+    grep -q '"n_subject_average_violin_figures": 12' "$root/manifest.json" \
+        || return 1
+    [[ -f "$root/figures/group_comparisons/group_bout_duration_mean_s.png" ]] \
+        && [[ -f "$root/figures/group_comparisons/group_bouts_per_minute.png" ]]
+}
+
 run_stage() {
     local label="$1"
     local sentinel="$2"
@@ -279,6 +288,14 @@ if [[ "$NO_PROGRESS" == true ]]; then bycycle_burst_command+=(--no-progress); fi
 run_stage "independent bycycle burst-detection sensitivity" \
     bycycle_burst_analysis/processed_matched/manifest.json \
     "${bycycle_burst_command[@]}"
+
+printf '\n=== Matched: independent bycycle subject-average violin figures ===\n'
+if bycycle_group_figures_current bycycle_burst_analysis/processed_matched; then
+    printf '  current output found; skipping\n'
+else
+    execute bash bycycle_burst_analysis/generate_group_figures.sh \
+        --config "$CONFIG_ROOT/bycycle_burst.json"
+fi
 
 bout_command=(
     bash bout_analyses/run_bout_analyses.sh
