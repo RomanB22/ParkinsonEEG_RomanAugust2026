@@ -12,7 +12,8 @@ The analysis uses only accepted four-second cleaned epochs and only electrodes
 present in every analyzed subject. Its sequence is:
 
 1. Calculate a subject/electrode Welch PSD over 1–50 Hz.
-2. Fit the 1–50 Hz PSD with fixed-mode `specparam`.
+2. Fit its 4–35 Hz portion with fixed-mode `specparam`; delta remains outside
+   the aperiodic background fit.
 3. Map the fitted aperiodic spectrum to the eBOSC Morlet-power scale.
 4. Detect samples above the 95th-percentile aperiodic-relative power threshold
    for at least three cycles, independently within each accepted epoch.

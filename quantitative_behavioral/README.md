@@ -36,7 +36,7 @@ The defaults produce 52 transparent inferential features:
 
 | Family | Features | Count |
 |---|---|---:|
-| Aperiodic | All-fit and QC-qualified fixed-mode specparam exponents over 1–50 Hz | 2 |
+| Aperiodic | All-fit and QC-qualified fixed-mode specparam exponents over 4–35 Hz | 2 |
 | Broadband ordinal | H, C, F from `D=6`, `tau=1` | 3 |
 | Band ordinal | H, C, F in delta, theta, alpha, beta, and low gamma | 15 |
 | Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in four canonical eBOSC bands | 20 |
@@ -50,8 +50,9 @@ band remains available in upstream bout metrics and diagnostic galleries, but
 is deliberately excluded from every MOCA association and FDR family.
 
 The primary ordinal source is the completed 60-electrode `D6_tau1` parameter
-sweep. The aperiodic exponent and bout properties come from the 1–50 Hz
-scale-free analysis. The exponent is estimated in fixed mode at each shared
+sweep. The aperiodic exponent and bout properties come from the scale-free
+analysis, which retains a 1–50 Hz PSD but fits the exponent over 4–35 Hz. The
+exponent is estimated in fixed mode at each shared
 electrode and averaged across those 60 electrodes within each subject. A
 separate QC sensitivity retains only subjects with at least 80% QC-passing
 electrodes and averages their passing electrodes. Within-bout

@@ -118,7 +118,7 @@ def plot_aperiodic_exponent_group_comparison(
             fontsize=9,
             bbox={"facecolor": "white", "edgecolor": "0.75", "alpha": 0.9},
         )
-    fig.suptitle("Aperiodic exponent by diagnostic group (specparam, 1–50 Hz)")
+    fig.suptitle("Aperiodic exponent by diagnostic group (specparam, 4–35 Hz)")
     fig.tight_layout()
     _save(fig, path, dpi)
 

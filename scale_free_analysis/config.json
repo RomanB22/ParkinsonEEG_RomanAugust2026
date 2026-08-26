@@ -21,7 +21,7 @@
   },
   "specparam": {
     "aperiodic_mode": "fixed",
-    "frequency_range_hz": [1.0, 50.0],
+    "frequency_range_hz": [4.0, 35.0],
     "peak_width_limits_hz": [0.5, 12.0],
     "max_n_peaks": 8,
     "min_peak_height": 0.0,
@@ -36,7 +36,7 @@
     "policy": "Flag every fit; retain all fits for visualization and primary provenance; report QC-qualified summaries separately"
   },
   "aperiodic_sensitivity": {
-    "frequency_ranges_hz": [[1.0, 50.0], [1.0, 40.0], [2.0, 50.0], [2.0, 40.0]],
+    "frequency_ranges_hz": [[4.0, 35.0], [3.0, 35.0], [4.0, 40.0], [3.0, 40.0]],
     "workers": 4,
     "aperiodic_mode": "fixed",
     "purpose": "Range sensitivity only; peak settings remain identical to the primary model"

@@ -914,6 +914,13 @@ def run_analysis(
         "group_counts": pd.Series([group_lookup[s] for s in expected_subjects]).value_counts().to_dict(),
         "n_common_electrodes": len(common_channels),
         "n_electrode_union": len(electrode_union),
+        "specparam_primary_fit_range_hz": config["specparam"][
+            "frequency_range_hz"
+        ],
+        "specparam_primary_fit_range_id": (
+            f"{float(config['specparam']['frequency_range_hz'][0]):g}_"
+            f"{float(config['specparam']['frequency_range_hz'][1]):g}Hz"
+        ),
         "n_specparam_decomposition_figures": int(len(specparam_gallery_index)),
         "n_specparam_subject_overview_figures": int(
             specparam_gallery_index["subject_id"].nunique()

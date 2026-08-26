@@ -205,6 +205,8 @@ ordinal_sweep_current() {
 scale_free_current() {
     [[ -f scale_free_analysis/processed/manifest.json ]] || return 1
     grep -q '"broad_5_15"' scale_free_analysis/processed/manifest.json || return 1
+    grep -q '"specparam_primary_fit_range_id": "4_35Hz"' \
+        scale_free_analysis/processed/manifest.json || return 1
     [[ -f scale_free_analysis/processed/metrics/specparam_fit_qc_summary.csv ]] || return 1
     [[ -f scale_free_analysis/processed/metrics/subject_aperiodic_range_sensitivity.csv ]] || return 1
     [[ -f scale_free_analysis/processed/figures/aperiodic_diagnostics/group_median_decomposition_and_residuals.png ]] || return 1
@@ -252,6 +254,8 @@ bycycle_group_figures_current() {
 bout_current() {
     [[ -f bout_analyses/processed/manifest.json ]] || return 1
     grep -q '"broad_5_15"' bout_analyses/processed/manifest.json || return 1
+    grep -q '"specparam_primary_fit_range_id": "4_35Hz"' \
+        bout_analyses/processed/manifest.json || return 1
     [[ -f bout_analyses/processed/metrics/group_subject_statistics.csv ]] || return 1
     [[ -f bout_analyses/processed/metrics/group_electrode_statistics.csv ]] || return 1
     [[ -f bout_analyses/processed/figures/group_statistics/entropy_group_statistics.png ]]

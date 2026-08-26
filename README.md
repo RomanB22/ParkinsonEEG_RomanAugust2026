@@ -298,10 +298,10 @@ excluded from formal testing. Methods and output columns are documented in
 The cross-sectional workflow in
 [`quantitative_behavioral/`](quantitative_behavioral/README.md) relates MOCA to
 regular broadband/band ordinal H/C/F, eBOSC bout properties, and within-bout
-ordinal H/C/F among PD participants. It also tests the fixed-mode 1–50 Hz
+ordinal H/C/F among PD participants. It also tests the fixed-mode 4–35 Hz
 aperiodic exponent between Control and PD and its association with MOCA, with
-formal electrode-fit QC and fixed-mode 1–40, 2–50, and 2–40 Hz sensitivity
-analyses. It
+formal electrode-fit QC and fixed-mode 3–35, 4–40, and 3–40 Hz sensitivity
+analyses. The underlying PSD remains 1–50 Hz for descriptive spectral work. It
 uses subject-level partial Spearman
 correlations adjusted for age and sex, deterministic bootstrap intervals,
 prespecified family-specific FDR correction, raw-data scatter grids, forest

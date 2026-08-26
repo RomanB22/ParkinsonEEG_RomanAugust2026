@@ -83,7 +83,8 @@
     "delay_samples": 1,
     "shared_electrodes": 60,
     "scale_free_psd_range_hz": [1.0, 50.0],
-    "aperiodic_sensitivity_ranges_hz": [[1.0, 50.0], [1.0, 40.0], [2.0, 50.0], [2.0, 40.0]]
+    "aperiodic_fit_range_hz": [4.0, 35.0],
+    "aperiodic_sensitivity_ranges_hz": [[4.0, 35.0], [3.0, 35.0], [4.0, 40.0], [3.0, 40.0]]
   },
   "plots": {
     "dpi": 150,

@@ -29,8 +29,11 @@ union-only electrode contributes to a table, summary, statistic, or figure.
 
 For each subject/shared electrode, accepted epochs are concatenated in stored
 order and passed to one Welch PSD calculation. Non-overlapping four-second Hann
-windows produce a 0.25 Hz grid. The linear 1–50 Hz PSD is fitted with
-`specparam.SpectralModel` in fixed aperiodic mode.
+windows produce a 0.25 Hz grid. The PSD is retained over 1–50 Hz, while
+`specparam.SpectralModel` fits the fixed aperiodic model over 4–35 Hz. This
+prespecified fitting range excludes the less reliable delta region and avoids
+the upper edge of the cleaned passband without removing those frequencies from
+the descriptive PSD analysis.
 
 Saved broadband parameters are:
 
@@ -57,10 +60,11 @@ electrodes and requires at least 48/60 passing fits per subject. The original
 all-electrode bout, cycle, and within-bout ordinal outputs are preserved; the
 QC-qualified versions are written alongside them.
 
-Fixed-mode sensitivity fits use identical peak settings over 1–50 Hz (primary),
-1–40 Hz, 2–50 Hz, and 2–40 Hz. This isolates dependence on the fitting range
-without conflating it with a different peak model. The ranges are parallel
-sensitivity analyses; the pipeline does not choose the most favorable result.
+Fixed-mode sensitivity fits use identical peak settings over 4–35 Hz (primary),
+3–35 Hz, 4–40 Hz, and 3–40 Hz. This isolates dependence on nearby fitting-range
+choices without conflating them with a different peak model. The ranges are
+parallel sensitivity analyses; the pipeline does not choose the most favorable
+result.
 
 The highest fitted peak in each theta (4–7 Hz), alpha (8–13 Hz), low-beta
 (13–20 Hz), high-beta (20–30 Hz), and broad 5–15 Hz band supplies center

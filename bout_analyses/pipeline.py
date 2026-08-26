@@ -100,8 +100,13 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     fit_range = [float(value) for value in config["specparam"]["frequency_range_hz"]]
     if not 0.0 <= psd_min < psd_max:
         raise ValueError("psd requires 0 <= fmin_hz < fmax_hz")
-    if fit_range != [psd_min, psd_max]:
-        raise ValueError("specparam.frequency_range_hz must match the PSD range")
+    if (
+        len(fit_range) != 2
+        or not psd_min <= fit_range[0] < fit_range[1] <= psd_max
+    ):
+        raise ValueError(
+            "specparam.frequency_range_hz must be contained within the PSD range"
+        )
 
     ebosc = config["ebosc"]
     frequency_min = float(ebosc["frequency_min_hz"])
@@ -734,6 +739,13 @@ def run_analysis(
         "group_counts": pd.Series([groups[subject] for subject in expected_subjects]).value_counts().to_dict(),
         "n_common_electrodes": len(common_channels),
         "n_electrode_union": len(electrode_union),
+        "specparam_primary_fit_range_hz": config["specparam"][
+            "frequency_range_hz"
+        ],
+        "specparam_primary_fit_range_id": (
+            f"{float(config['specparam']['frequency_range_hz'][0]):g}_"
+            f"{float(config['specparam']['frequency_range_hz'][1]):g}Hz"
+        ),
         "n_subject_electrode_band_rows": len(electrode_metrics),
         "n_detected_bouts": int(electrode_metrics["n_detected_bouts"].sum()),
         "n_analyzable_ordinal_bouts": int(electrode_metrics["n_analyzable_ordinal_bouts"].sum()),

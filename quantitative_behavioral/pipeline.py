@@ -238,8 +238,19 @@ def _validate_upstream_manifests(config: dict[str, Any]) -> dict[str, Any]:
     specparam = manifests["scale_free"]["analysis_config"]["specparam"]
     if specparam.get("aperiodic_mode") != "fixed":
         raise ValueError("Aperiodic exponent source must use fixed-mode specparam")
-    if [float(value) for value in specparam["frequency_range_hz"]] != actual_range:
-        raise ValueError("Aperiodic exponent and PSD frequency ranges disagree")
+    actual_fit_range = [
+        float(value) for value in specparam["frequency_range_hz"]
+    ]
+    expected_fit_range = [
+        float(value) for value in expected["aperiodic_fit_range_hz"]
+    ]
+    if actual_fit_range != expected_fit_range:
+        raise ValueError("Aperiodic exponent source uses the wrong fitting range")
+    if not (
+        actual_range[0] <= actual_fit_range[0]
+        < actual_fit_range[1] <= actual_range[1]
+    ):
+        raise ValueError("Aperiodic fitting range must lie within the PSD range")
     fit_qc = manifests["scale_free"].get("specparam_fit_qc")
     if not isinstance(fit_qc, dict):
         raise ValueError(
@@ -372,7 +383,7 @@ def _write_report(
         "## Aperiodic exponent",
         "",
         (
-            "The exponent is estimated by fixed-mode specparam over 1–50 Hz at each of the "
+            "The exponent is estimated by fixed-mode specparam over 4–35 Hz at each of the "
             "60 shared electrodes, then averaged within subject before inference."
         ),
         (

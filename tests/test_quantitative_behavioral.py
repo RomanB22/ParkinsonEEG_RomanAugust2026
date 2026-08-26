@@ -34,6 +34,16 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         )
         self.assertEqual(config["expected"]["shared_electrodes"], 60)
         self.assertEqual(
+            config["expected"]["scale_free_psd_range_hz"], [1.0, 50.0]
+        )
+        self.assertEqual(
+            config["expected"]["aperiodic_fit_range_hz"], [4.0, 35.0]
+        )
+        self.assertEqual(
+            config["expected"]["aperiodic_sensitivity_ranges_hz"],
+            [[4.0, 35.0], [3.0, 35.0], [4.0, 40.0], [3.0, 40.0]],
+        )
+        self.assertEqual(
             config["features"]["aperiodic_metrics"],
             ["aperiodic_exponent", "aperiodic_exponent_qc"],
         )

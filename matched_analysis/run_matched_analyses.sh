@@ -146,6 +146,7 @@ stage_current() {
             ;;
         scale_free_analysis/processed_matched/manifest.json)
             grep -q '"broad_5_15"' "$sentinel" \
+                && grep -q '"specparam_primary_fit_range_id": "4_35Hz"' "$sentinel" \
                 && [[ -f scale_free_analysis/processed_matched/metrics/group_subject_statistics_aperiodic.csv ]] \
                 && [[ -f scale_free_analysis/processed_matched/metrics/group_electrode_statistics_periodic_bout.csv ]] \
                 && [[ -f scale_free_analysis/processed_matched/figures/group_statistics/aperiodic/aperiodic_exponent_group_statistics.png ]]
@@ -159,6 +160,7 @@ stage_current() {
             ;;
         bout_analyses/processed_matched/manifest.json)
             grep -q '"broad_5_15"' "$sentinel" \
+                && grep -q '"specparam_primary_fit_range_id": "4_35Hz"' "$sentinel" \
                 && [[ -f bout_analyses/processed_matched/metrics/group_subject_statistics.csv ]] \
                 && [[ -f bout_analyses/processed_matched/metrics/group_electrode_statistics.csv ]] \
                 && [[ -f bout_analyses/processed_matched/figures/group_statistics/entropy_group_statistics.png ]]

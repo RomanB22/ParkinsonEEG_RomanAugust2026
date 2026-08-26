@@ -56,15 +56,15 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
 
             plt.close(figure)
 
-    def test_config_covers_full_cleaned_frequency_range(self):
+    def test_config_keeps_full_psd_and_uses_reliable_aperiodic_range(self):
         config = load_analysis_config("scale_free_analysis/config.json")
         self.assertEqual(config["psd"]["fmin_hz"], 1.0)
         self.assertEqual(config["psd"]["fmax_hz"], 50.0)
-        self.assertEqual(config["specparam"]["frequency_range_hz"], [1.0, 50.0])
+        self.assertEqual(config["specparam"]["frequency_range_hz"], [4.0, 35.0])
         self.assertEqual(config["aperiodic_fit_qc"]["minimum_r_squared"], 0.9)
         self.assertEqual(
             config["aperiodic_sensitivity"]["frequency_ranges_hz"],
-            [[1.0, 50.0], [1.0, 40.0], [2.0, 50.0], [2.0, 40.0]],
+            [[4.0, 35.0], [3.0, 35.0], [4.0, 40.0], [3.0, 40.0]],
         )
 
     def test_specparam_recovers_aperiodic_and_alpha_peak(self):

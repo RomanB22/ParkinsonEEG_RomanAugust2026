@@ -17,7 +17,8 @@ is in [`features.py`](features.py), and all prespecified settings are in
 
 ## Aperiodic exponent construction and diagnostic-group comparison
 
-The scale-free workflow fits fixed-mode specparam models over 1–50 Hz. For each
+The scale-free workflow calculates PSDs over 1–50 Hz and fits fixed-mode
+specparam models over 4–35 Hz. For each
 participant it exports the aperiodic exponent at every one of the 60 electrodes
 shared by all participants. The primary exponent is the arithmetic mean across
 those electrodes, giving one value per participant.
@@ -26,9 +27,10 @@ Every electrode fit is audited against four configurable criteria: R² at least
 0.90, log10-power MAE at most 0.15, maximum absolute signed residual at most
 0.75 log10 units, and exponent within 0–3. All 8,940 fits remain visible. The
 QC sensitivity averages only passing electrodes and includes a participant
-only when at least 80% (48/60) electrodes pass. Fixed-mode 1–40, 2–50, and
-2–40 Hz fits retain identical peak settings and assess fitting-range stability;
-1–50 Hz remains primary.
+only when at least 80% (48/60) electrodes pass. Fixed-mode 3–35, 4–40, and
+3–40 Hz fits retain identical peak settings and assess fitting-range stability;
+4–35 Hz remains primary. Delta is retained in descriptive PSD analyses but is
+not used to estimate the aperiodic exponent.
 
 The Control-versus-PD analysis uses all 149 participants. Its primary model is:
 
