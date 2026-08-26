@@ -84,6 +84,18 @@ class PipelineResumeTests(unittest.TestCase):
             source = Path(filename).read_text(encoding="utf-8")
             self.assertNotIn("tests.test_simple_pipeline", source)
 
+    def test_master_runner_exposes_parallel_preprocessing_and_progress(self) -> None:
+        wrapper = Path("run_reproducible_pipeline.sh").read_text(encoding="utf-8")
+        cleaning = Path("scripts/run_full_cleaning.sh").read_text(encoding="utf-8")
+        batch = Path("scripts/run_preprocessing.py").read_text(encoding="utf-8")
+        self.assertIn("--preprocessing-workers", wrapper)
+        self.assertIn("--workers", cleaning)
+        self.assertIn("conda run --no-capture-output", cleaning)
+        self.assertIn("ProcessPoolExecutor", batch)
+        self.assertIn('desc="ICA cleaning"', batch)
+        self.assertIn("check_preprocessing_outputs.py", wrapper)
+        self.assertIn('"$cleaning_rebuilt" == true', wrapper)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -21,13 +21,13 @@ For this dataset, most defaults should **not** be changed. Before cleaning all
 4. Edit any incorrect proposal, strengthen each reason with the visual evidence
    you confirmed, and set `ica.manual_review_confirmed.<subject>` to `true`.
 
-The current configuration contains completed reviews only for `sub-001` and
-`sub-101`. The full cleaning command therefore correctly refuses to process the
-other 147 subjects until their ICA decisions are recorded.
+The current configuration has no confirmed manual reviews. The full cleaning
+command therefore refuses manual-mode cleaning until every ICA decision is
+recorded, unless the explicit automatic override is used.
 
-Do not change the 1–50 Hz filter, enable a redundant 60 Hz notch, or lower
-artifact thresholds merely to make traces look smoother. Threshold changes
-should be justified by pilot QC and then applied identically to both groups.
+Do not change the prespecified 1–100 Hz filter, 60 Hz notch, or artifact
+thresholds merely to make traces look smoother. Changes should be justified by
+pilot QC and then applied identically to both groups.
 
 ## Configuration-file syntax
 
@@ -46,9 +46,9 @@ Consequences:
   are integers, for example `[0]`.
 
 The pipeline validates the configuration before loading EEG. It stops if the
-final filter is not exactly 1–50 Hz, if epoch duration is invalid, if baseline
-correction is requested, or if AutoReject is enabled even though it is not part
-of this implementation.
+final filter is not exactly 1–100 Hz, the 60 Hz notch is disabled, the sampling
+rate does not preserve the band, epoch duration is invalid, baseline correction
+is requested, or AutoReject is enabled.
 
 ## Before the first run
 
@@ -85,7 +85,7 @@ bash scripts/run_full_cleaning.sh pilot --overwrite
 ```
 
 This runs inspection and tests, then cleans `pilot_subjects` (`sub-001` and
-`sub-101`). Source data are read at 500 Hz and final data are saved at 120 Hz.
+`sub-101`). Source data are read at 500 Hz and final data are saved at 250 Hz.
 
 Inspect at least:
 
@@ -103,9 +103,9 @@ bash scripts/run_full_cleaning.sh review --overwrite
 ```
 
 This command performs dataset inspection, runs all tests, filters and assesses
-each recording, fits ICA at 120 Hz, runs ICLabel, writes ranked ICA review
+each recording, applies CAR, fits ICA at 250 Hz, runs ICLabel, writes ranked ICA review
 material, and prefills an unconfirmed proposal in the configuration. It stops
-before ICA removal, interpolation, re-referencing, and epoching.
+before ICA removal, interpolation, final re-referencing, and epoching.
 
 For each participant, inspect:
 
@@ -165,9 +165,9 @@ If any flag is absent or false, it stops and names the unreviewed subjects. This
 prevents a machine-prefilled proposal from being treated as a scientific
 decision.
 
-The final signal is always resampled from 500 Hz to 120 Hz. The bash script
-passes `--no-ica-downsampling`, which keeps the temporary ICA fitting copy at
-120 Hz instead of reducing only that copy to 100 Hz.
+The final signal and ICA/ICLabel input are resampled from 500 Hz to 250 Hz after
+the 1–100 Hz band-pass and 60 Hz notch. ICA and ICLabel use a common-average
+reference calculated after bad-channel detection.
 
 ### Step 5: inspect batch-level QC
 
@@ -234,12 +234,15 @@ bash scripts/run_full_cleaning.sh MODE [OPTIONS]
 | `--config PATH` | `config/preprocessing.yaml` | Use a different configuration file. Prefer an absolute path if it is outside the project. |
 | `--env NAME` | `MNE_August2026` | Conda environment passed to every Python command. |
 | `--overwrite` | off | Replace generated outputs for the same subjects. It never overwrites source files under `dataset/`. |
+| `--workers N` | `2` | Process independent participants concurrently. Use `1` when memory is constrained. |
+| `--no-progress` | off | Hide the participant progress bar and ETA. |
 | `--skip-manual-ica-review` | off | Bypass visual confirmation and automatically apply high-confidence ICLabel proposals in `clean` or `pilot` mode. The automatic lists and provenance are saved separately. |
 | `-h`, `--help` | — | Print usage and exit. |
 
-Without `--overwrite`, MNE stops when an output FIF/ICA file already exists.
-Use the flag when deliberately regenerating results after a configuration or
-code change.
+The batch runner verifies and reuses complete per-subject outputs, then safely
+rebuilds any incomplete participant from the start. An interrupted cohort run
+therefore continues with only missing subjects. Use `--overwrite` when
+deliberately regenerating every result after a configuration or code change.
 
 ## Python runner parameters
 
@@ -249,9 +252,11 @@ These are mainly useful for debugging or selected-subject runs.
 |---|---|
 | `subject_id` | Positional ID for `preprocess_subject.py`, such as `sub-025`. |
 | `--subjects ID ...` | Restrict `run_preprocessing.py` to the listed IDs. Without it, all recordings are selected. |
+| `--workers N` | Process independent subjects concurrently. The master runner defaults to two; use one when memory is constrained. Each worker keeps the same per-subject ICA configuration and random seed. |
+| `--no-progress` | Hide the participant-level progress bar and ETA. |
 | `--config PATH` | Select the configuration file. |
 | `--review-only` | Stop after the ICA review files are saved. No cleaned raw/epochs are produced. |
-| `--no-ica-downsampling` | Keep the temporary ICA copy at the final 120 Hz instead of reducing it to 100 Hz. It does not disable final 500→120 Hz resampling. The old `--no-downsampling` spelling is an alias. |
+| `--no-ica-downsampling` | Backward-compatible option that disables optional ICA-only downsampling. It has no effect with the default 250 Hz ICA and final rates. The old `--no-downsampling` spelling is an alias. |
 | `--overwrite` | Replace generated outputs for the selected participant(s). |
 | `--allow-unreviewed` | Debugging only: continue with no ICA removal for an unreviewed subject. Do not use for the final scientific dataset. |
 | `--skip-manual-ica-review` | Apply the newly calculated ICLabel proposal without visual confirmation. Mutually exclusive with `--allow-unreviewed`. |
@@ -271,27 +276,27 @@ These are mainly useful for debugging or selected-subject runs.
 | Parameter | Current value | Meaning and effect of changing it |
 |---|---:|---|
 | `filter.l_freq` | `1.0` Hz | Final high-pass cutoff. Locked to 1 Hz by the project specification. Raising it could distort slow activity and aperiodic slope. |
-| `filter.h_freq` | `50.0` Hz | Final low-pass cutoff. Locked to 50 Hz. Lowering it would discard required spectral bandwidth. |
+| `filter.h_freq` | `100.0` Hz | Final low-pass cutoff and ICLabel input boundary. |
 | `filter.method` | `fir` | MNE filter family. FIR is used for a stable offline zero-phase response. Keep it unchanged unless the entire filter is revalidated. |
 | `filter.phase` | `zero` | Applies the FIR without a systematic time shift. Keep `zero`. |
-| `filter.notch_enabled` | `false` | Requests a notch only when useful. Keep false because the final 50 Hz low-pass already excludes the 60 Hz line frequency. |
-| `filter.notch_freq_hz` | `60.0` Hz | Recorded power-line frequency. If notch is enabled while this remains above `h_freq`, the pipeline explicitly skips it and logs why. |
-| `filter.notch_width_hz` | `2.0` Hz | Width of a requested notch. It has no effect while the notch is disabled/skipped. |
+| `filter.notch_enabled` | `true` | Applies the required line-noise notch because 60 Hz is inside the retained band. |
+| `filter.notch_freq_hz` | `60.0` Hz | Recorded power-line frequency removed before resampling. |
+| `filter.notch_width_hz` | `2.0` Hz | Width of the 60 Hz notch. |
 | `filter.reason` | explanatory text | Human-readable reason saved in logs and QC metadata. Update it only if the filter decision changes. |
 
-The cleaned recording is always validated as exactly 1–50 Hz. These settings
+The cleaned recording is always validated as exactly 1–100 Hz. These settings
 describe the scientific analysis band, not only a plotting range.
 
 ### `resampling`
 
 | Parameter | Current value | Meaning and effect of changing it |
 |---|---:|---|
-| `resampling.target_sfreq` | `120.0` Hz | Final sampling rate for continuous cleaned EEG and epochs. It must be greater than twice the 50 Hz low-pass; 120 Hz gives a 60 Hz Nyquist frequency and a 10 Hz guard band. |
+| `resampling.target_sfreq` | `250.0` Hz | Final sampling rate for cleaned EEG, epochs, ICA, and ICLabel. Its 125 Hz Nyquist frequency leaves a 25 Hz guard band above 100 Hz. |
 | `resampling.method` | `fft` | MNE resampling method used by the pipeline. MNE applies anti-aliasing as part of resampling. |
 | `resampling.npad` | `auto` | Lets MNE choose FFT padding for efficient resampling. Keep this fixed for reproducible processing. |
 
-Filtering is performed before resampling. Lowering the target to 100 Hz would
-put the 50 Hz cutoff exactly at Nyquist and is rejected by the validator.
+Filtering and the notch are performed before resampling. A target at or below
+200 Hz would put the 100 Hz cutoff at or above Nyquist and is rejected.
 
 ### `channels`
 
@@ -337,9 +342,9 @@ samples. Epochs overlapping them are later rejected.
 | `ica.n_components` | `0.99` | Retain enough PCA dimensions to explain 99% of variance before ICA. This means 99% variance, **not 99 components**. |
 | `ica.random_state` | `42` | Fixed random seed for reproducible ICA initialization. Keep fixed across subjects/reruns. |
 | `ica.max_iter` | `1000` | Maximum ICA optimization iterations. Increase only if logs show non-convergence; it may lengthen runtime. |
-| `ica.fit_l_freq` | `1.0` Hz | High-pass cutoff of the temporary ICA fitting copy. It does not replace the final 1–50 Hz EEG. |
-| `ica.fit_h_freq` | `40.0` Hz | Low-pass cutoff of the temporary ICA fitting copy for numerical stability. Final EEG remains 1–50 Hz. |
-| `ica.temporary_resample_sfreq` | `100.0` Hz | Optional second reduction applied only to the temporary ICA copy when Python is run without `--no-ica-downsampling`. It never changes the final 120 Hz cleaned data. The supplied bash runner keeps ICA at 120 Hz, so this value is ignored there. |
+| `ica.fit_l_freq` | `1.0` Hz | High-pass cutoff shared by the ICA and ICLabel input. |
+| `ica.fit_h_freq` | `100.0` Hz | Low-pass cutoff shared by the ICA and ICLabel input. |
+| `ica.temporary_resample_sfreq` | `250.0` Hz | ICA/ICLabel sampling rate. It matches the final data, so no extra ICA-only downsampling occurs. |
 | `ica.suggestion_frontal_correlation` | `0.30` | Minimum absolute correlation between an ICA source and the available frontal EEG average for an ocular-review suggestion. It never causes automatic removal. |
 | `ica.suggestion_frontal_weight_ratio` | `1.5` | Minimum frontal-versus-whole-scalp component-weight ratio for the same suggestion. Both suggestion criteria must pass. |
 | `ica.iclabel_enabled` | `true` | Runs MNE-ICALabel and creates the ranked probabilities and proposal. Disabling it removes the new ranking/proposal workflow. |
@@ -353,9 +358,9 @@ samples. Epochs overlapping them are later rejected.
 | `ica.automatic_exclude_reasons` | subject/component mapping | ICLabel labels and probabilities corresponding to each automatically used exclusion. |
 
 ICLabel and the original frontal suggestion metrics are screening aids. There
-are no dedicated EOG or ECG channels, and the ICA input differs from ICLabel's
-common-average 1–100 Hz training assumptions. Component topography, source time
-course, PSD, and before/after effects must therefore be reviewed together.
+are no dedicated EOG or ECG channels. The ICA input now matches ICLabel's CAR
+and 1–100 Hz assumptions, but component topography, source time course, PSD,
+and before/after effects should still be reviewed together.
 
 ### `epochs`
 
@@ -415,8 +420,8 @@ A successful full run creates:
 
 ```text
 processed/
-├── cleaned_raw/      final annotated 1–50 Hz, 120 Hz continuous EEG
-├── epochs/           accepted 4-second epochs, 120 Hz, no baseline
+├── cleaned_raw/      final annotated 1–100 Hz, 250 Hz continuous EEG
+├── epochs/           accepted 4-second epochs, 250 Hz, no baseline
 ├── ica/              fitted ICA solutions
 ├── qc/<subject>/     ordered stages 01–21 and decisions.json
 ├── metadata/         dataset tables and preprocessing_qc.csv

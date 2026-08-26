@@ -7,7 +7,7 @@ import numpy as np
 from src.artifacts import annotate_large_artifacts, create_and_reject_epochs
 from src.channels import detect_bad_channels
 from src.config import load_config
-from src.preprocessing import resample_eeg
+from src.preprocessing import filter_eeg, rereference, resample_eeg
 
 
 def synthetic_raw(data_uv, sfreq=100.0):
@@ -42,8 +42,30 @@ class CleaningTests(unittest.TestCase):
             logging.getLogger("test.resampling"),
         )
         self.assertEqual(raw.info["sfreq"], 500.0)
-        self.assertEqual(result.info["sfreq"], 120.0)
-        self.assertEqual(result.n_times, 1200)
+        self.assertEqual(result.info["sfreq"], 250.0)
+        self.assertEqual(result.n_times, 2500)
+
+    def test_iclabel_input_contract_is_notched_bandlimited_and_car(self):
+        rng = np.random.default_rng(42)
+        raw = synthetic_raw(rng.normal(scale=10.0, size=(4, 5000)), sfreq=500.0)
+        logger = logging.getLogger("test.iclabel_input")
+        filtered, notch_applied, _ = filter_eeg(
+            raw, self.config["filter"], logger
+        )
+        prepared = rereference(
+            resample_eeg(filtered, self.config["resampling"], logger),
+            logger,
+            stage="test",
+        )
+        self.assertTrue(notch_applied)
+        self.assertEqual(prepared.info["highpass"], 1.0)
+        self.assertEqual(prepared.info["lowpass"], 100.0)
+        self.assertEqual(prepared.info["sfreq"], 250.0)
+        np.testing.assert_allclose(
+            prepared.get_data(picks="eeg").mean(axis=0),
+            0.0,
+            atol=1e-15,
+        )
 
     def test_large_transient_becomes_annotation(self):
         rng = np.random.default_rng(42)

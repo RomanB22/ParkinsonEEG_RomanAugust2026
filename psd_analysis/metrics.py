@@ -20,7 +20,8 @@ def compute_subject_electrode_psd(
     Input samples are expected in volts, as returned by MNE. Output density is
     converted to µV²/Hz. Epochs are concatenated in their array order for each
     electrode. Welch then uses one non-overlapping four-second segment per
-    accepted epoch, retaining the native 0.25 Hz grid at 120 Hz. Thus the
+    accepted four-second epoch, retaining the native 0.25 Hz grid independent
+    of the stored sampling rate. Thus the
     subject/electrode result is the pooled Welch mean, not a median of separate
     epoch PSDs.
     """

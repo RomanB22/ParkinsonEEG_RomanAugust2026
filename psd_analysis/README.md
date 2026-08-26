@@ -11,7 +11,7 @@ four-second epochs are then loaded in their stored temporal order and
 concatenated separately for those shared electrodes. The pipeline makes one
 Welch call on that `electrodes × concatenated samples` array.
 Welch uses non-overlapping four-second Hann windows, so a spectral window never
-straddles an artificial join between epochs. At 120 Hz, the 480-sample window
+straddles an artificial join between epochs. At 250 Hz, the 1,000-sample window
 produces a 0.25 Hz frequency grid. The default analysis retains 1–50 Hz.
 
 Aggregation is deliberately hierarchical and subject-balanced:

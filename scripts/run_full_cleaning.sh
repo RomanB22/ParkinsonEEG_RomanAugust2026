@@ -19,6 +19,8 @@ CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
 CONFIG_PATH="config/preprocessing.yaml"
 OVERWRITE=false
 SKIP_MANUAL_ICA_REVIEW=false
+NO_PROGRESS=false
+PREPROCESSING_WORKERS="${PARKINSON_EEG_PREPROCESSING_WORKERS:-2}"
 
 usage() {
     cat <<'EOF'
@@ -28,7 +30,7 @@ Usage:
   bash scripts/run_full_cleaning.sh pilot  [options]
 
 Modes:
-  review  Inspect/test the dataset, then create 120 Hz ICA review material
+  review  Inspect/test the dataset, then create 250 Hz ICA review material
           for all 149 participants and prefill ICLabel proposals. No ICA
           components are removed.
 
@@ -42,12 +44,14 @@ Options:
   --config PATH       Configuration file (default: config/preprocessing.yaml)
   --env NAME          Conda environment (default: MNE_August2026)
   --overwrite         Replace previously generated outputs for the same subjects
+  --workers N         Process N independent subjects concurrently (default: 2)
+  --no-progress       Disable the participant progress bar
   --skip-manual-ica-review
                       Automatically apply high-confidence ICLabel proposals.
                       This bypasses visual confirmation and is recorded in QC.
   -h, --help          Show this message
 
-Source EEG is 500 Hz. Filtered, ICA, cleaned, and epoch data are 120 Hz.
+Source EEG is 500 Hz. Filtered, ICA, cleaned, and epoch data are 250 Hz.
 Original files under dataset/ are never overwritten.
 EOF
 }
@@ -68,6 +72,15 @@ while [[ $# -gt 0 ]]; do
             OVERWRITE=true
             shift
             ;;
+        --workers)
+            [[ $# -ge 2 ]] || { echo "ERROR: --workers requires a number" >&2; exit 2; }
+            PREPROCESSING_WORKERS="$2"
+            shift 2
+            ;;
+        --no-progress)
+            NO_PROGRESS=true
+            shift
+            ;;
         --skip-manual-ica-review)
             SKIP_MANUAL_ICA_REVIEW=true
             shift
@@ -83,6 +96,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+if ! [[ "$PREPROCESSING_WORKERS" =~ ^[1-9][0-9]*$ ]]; then
+    echo "ERROR: --workers must be a positive integer" >&2
+    exit 2
+fi
 
 if [[ "$MODE" == "help" || "$MODE" == "-h" || "$MODE" == "--help" ]]; then
     usage
@@ -128,13 +146,17 @@ mkdir -p "$XDG_CACHE_HOME"
 
 run_python() {
     echo
-    printf '+ conda run -n %q python' "$CONDA_ENV"
+    printf '+ conda run --no-capture-output -n %q python' "$CONDA_ENV"
     printf ' %q' "$@"
     echo
-    conda run -n "$CONDA_ENV" python "$@"
+    conda run --no-capture-output -n "$CONDA_ENV" python "$@"
 }
 
-COMMON_ARGS=(--config "$CONFIG_PATH" --no-ica-downsampling)
+COMMON_ARGS=(--config "$CONFIG_PATH")
+BATCH_ARGS=(--workers "$PREPROCESSING_WORKERS")
+if [[ "$NO_PROGRESS" == true ]]; then
+    BATCH_ARGS+=(--no-progress)
+fi
 if [[ "$OVERWRITE" == true ]]; then
     COMMON_ARGS+=(--overwrite)
 fi
@@ -146,8 +168,9 @@ echo "Project:     $PROJECT_ROOT"
 echo "Environment: $CONDA_ENV"
 echo "Config:      $CONFIG_PATH"
 echo "Mode:        $MODE"
-echo "Sampling:    source 500 Hz; final and ICA 120 Hz"
+echo "Sampling:    source 500 Hz; final and ICA 250 Hz"
 echo "Overwrite:   $OVERWRITE"
+echo "Workers:     $PREPROCESSING_WORKERS subject(s)"
 echo "ICA review:  $([[ "$SKIP_MANUAL_ICA_REVIEW" == true ]] && echo 'automatic ICLabel proposals' || echo 'manual confirmation required')"
 
 echo
@@ -170,7 +193,8 @@ echo
 case "$MODE" in
     review)
         echo "STEP 3/3 — Generate ICA review material for every participant"
-        run_python scripts/run_preprocessing.py --review-only "${COMMON_ARGS[@]}"
+        run_python scripts/run_preprocessing.py --review-only \
+            "${COMMON_ARGS[@]}" "${BATCH_ARGS[@]}"
         echo
         echo "ICA review material is ready under processed/qc/<subject>/."
         echo "Inspect ranked stages 08–10. ICLabel proposals were prefilled in"
@@ -185,7 +209,8 @@ case "$MODE" in
         else
             echo "STEP 3/3 — Run the reviewed full cleaning pipeline"
         fi
-        run_python scripts/run_preprocessing.py "${COMMON_ARGS[@]}"
+        run_python scripts/run_preprocessing.py \
+            "${COMMON_ARGS[@]}" "${BATCH_ARGS[@]}"
         echo
         echo "Full cleaning completed. Outputs are under processed/."
         echo "Review processed/metadata/preprocessing_qc.csv before group analysis."

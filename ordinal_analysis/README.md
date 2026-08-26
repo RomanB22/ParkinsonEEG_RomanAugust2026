@@ -64,7 +64,7 @@ The defaults in [`config.json`](config.json) are:
 | Parameter | Value | Meaning |
 |---|---:|---|
 | `embedding_dimension` | `3` | Each ordinal symbol orders three samples. There are `3! = 6` possible patterns. |
-| `delay_samples` | `1` | Adjacent elements of a pattern are one 120 Hz sample apart (`1/120 ≈ 8.33 ms`). |
+| `delay_samples` | `1` | Adjacent elements of a pattern are one 250 Hz sample apart (`1/250 = 4 ms`). |
 | `tie_precision` | `null` | Uses the `ordpy` default full-precision policy; samples retain their full float64 decimals and are never rounded. |
 
 Rényi alpha values are fixed at `0.1`, `0.5`, `0.9`, `1.1`, `2`, `5`, and `10`.

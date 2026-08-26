@@ -23,6 +23,7 @@ SKIP_MATCHED=false
 SKIP_MANUAL_ICA_REVIEW=false
 INCLUDE_BYCYCLE_BURSTS=false
 PROFILE="paper"
+PREPROCESSING_WORKERS="${PARKINSON_EEG_PREPROCESSING_WORKERS:-2}"
 CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
 
 usage() {
@@ -45,6 +46,7 @@ Options:
   --skip-matched             Skip the complete matched-cohort sensitivity pipeline
   --include-bycycle-bursts   Also run the optional independent bycycle sensitivity
   --profile NAME             compute, paper (default), or full-qc
+  --preprocessing-workers N  Concurrent cleaning subjects (default: 2)
   --skip-manual-ica-review   Explicitly use automatic ICLabel proposals during cleaning
   --env NAME                 Conda environment (default: MNE_August2026)
   -h, --help                 Show this help
@@ -73,6 +75,11 @@ while [[ $# -gt 0 ]]; do
             PROFILE="$2"
             shift
             ;;
+        --preprocessing-workers)
+            [[ $# -ge 2 ]] || { printf 'ERROR: --preprocessing-workers requires a number\n' >&2; exit 2; }
+            PREPROCESSING_WORKERS="$2"
+            shift
+            ;;
         --skip-manual-ica-review) SKIP_MANUAL_ICA_REVIEW=true ;;
         --env)
             [[ $# -ge 2 ]] || { printf 'ERROR: --env requires a name\n' >&2; exit 2; }
@@ -84,6 +91,11 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+if ! [[ "$PREPROCESSING_WORKERS" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'ERROR: --preprocessing-workers must be a positive integer\n' >&2
+    exit 2
+fi
 
 case "$PROFILE" in
     compute|paper) ;;
@@ -116,7 +128,13 @@ if [[ "$DRY_RUN" == true ]]; then environment_arguments+=(--dry-run); fi
 bash scripts/ensure_conda_environment.sh "${environment_arguments[@]}"
 
 if [[ "$MODE" == "review" ]]; then
-    command=(bash scripts/run_full_cleaning.sh review --env "$CONDA_ENV")
+    command=(
+        bash scripts/run_full_cleaning.sh review --env "$CONDA_ENV"
+        --workers "$PREPROCESSING_WORKERS"
+    )
+    if [[ "$NO_PROGRESS" == true ]]; then
+        command+=(--no-progress)
+    fi
     if [[ "$OVERWRITE" == true ]]; then
         command+=(--overwrite)
     fi
@@ -157,34 +175,48 @@ fi
 cleaning_current=false
 if [[ "$cleaned_epochs" -eq "$expected_subjects" ]] \
     && [[ -f processed/metadata/preprocessing_qc.csv ]]; then
-    cleaning_current=true
+    if conda run -n "$CONDA_ENV" python scripts/check_preprocessing_outputs.py \
+        --config config/preprocessing.yaml --quiet >/dev/null 2>&1; then
+        cleaning_current=true
+    fi
 fi
 
-cleaning_command=(bash scripts/run_full_cleaning.sh clean --env "$CONDA_ENV")
+cleaning_command=(
+    bash scripts/run_full_cleaning.sh clean --env "$CONDA_ENV"
+    --workers "$PREPROCESSING_WORKERS"
+)
 if [[ "$OVERWRITE" == true ]]; then
     cleaning_command+=(--overwrite)
 fi
 if [[ "$SKIP_MANUAL_ICA_REVIEW" == true ]]; then
     cleaning_command+=(--skip-manual-ica-review)
 fi
+if [[ "$NO_PROGRESS" == true ]]; then
+    cleaning_command+=(--no-progress)
+fi
 
 printf 'Project: %s\n' "$SCRIPT_DIR"
 printf 'Expected subjects: %s\n' "$expected_subjects"
+cleaning_rebuilt=false
 if [[ "$DRY_RUN" == true ]]; then
     printf '\n=== Signal cleaning ===\n'
     printf '  +'
     printf ' %q' "${cleaning_command[@]}"
     printf '\n'
+    if [[ "$cleaning_current" == false || "$OVERWRITE" == true ]]; then
+        cleaning_rebuilt=true
+    fi
 elif [[ "$OVERWRITE" == false && "$cleaning_current" == true ]]; then
     printf '\n=== Signal cleaning ===\n  complete cleaned cohort found; resuming downstream\n'
 else
     printf '\n=== Signal cleaning ===\n'
     "${cleaning_command[@]}"
+    cleaning_rebuilt=true
 fi
 
 analysis_command=(bash run_all_analyses.sh --env "$CONDA_ENV")
 analysis_command+=(--profile "$PROFILE")
-if [[ "$OVERWRITE" == true ]]; then
+if [[ "$OVERWRITE" == true || "$cleaning_rebuilt" == true ]]; then
     analysis_command+=(--overwrite)
 fi
 if [[ "$DRY_RUN" == true ]]; then

@@ -114,7 +114,7 @@ For example:
 ```yaml
 filter:
   l_freq: 1.0
-  h_freq: 50.0
+  h_freq: 100.0
 ```
 
 ### Interface Segregation
@@ -283,7 +283,10 @@ filter:
 
 line_noise:
   frequency: 60
-  notch_enabled: false
+  notch_enabled: true
+
+resampling:
+  target_sfreq: 250.0
 
 ica:
   enabled: true
@@ -318,7 +321,9 @@ RAW EEG
    ↓
 channel + metadata inspection
    ↓
-1–50 Hz filtering
+1–100 Hz filtering + 60 Hz notch
+   ↓
+resampling to 250 Hz
    ↓
 bad-channel detection
    ↓
@@ -473,7 +478,7 @@ Also plot its PSD:
 filtered_psd = raw_filtered.compute_psd(
     method="welch",
     fmin=1,
-    fmax=50
+    fmax=100
 )
 
 filtered_psd.plot()
@@ -488,7 +493,7 @@ Generate a direct comparison between:
 ```text
 RAW EEG
 vs
-1–50 Hz FILTERED EEG
+1–100 Hz FILTERED EEG + 60 Hz NOTCH
 ```
 
 Use identical channels and time windows.
@@ -505,9 +510,8 @@ The recordings were acquired in the US, so expected power-line frequency is:
 LINE_FREQ = 60
 ```
 
-However, the final signal is low-pass filtered at 50 Hz.
-
-Therefore, **do not automatically apply a 60-Hz notch filter** unless inspection shows that it is necessary.
+The final signal is low-pass filtered at 100 Hz, so 60 Hz remains inside the
+retained band. Apply the line-noise notch before resampling.
 
 If needed, MNE provides:
 
@@ -515,13 +519,13 @@ If needed, MNE provides:
 raw.notch_filter(freqs=[60])
 ```
 
-but the pipeline should default to:
+The pipeline should default to:
 
 ```yaml
-notch_enabled: false
+notch_enabled: true
 ```
 
-because unnecessary filtering should be avoided.
+because the 60 Hz acquisition line frequency is retained by the 100 Hz low-pass.
 
 ---
 
@@ -660,7 +664,7 @@ ICA settings should come from `config.yaml`.
 
 # ICA filtering note
 
-The final EEG must remain **1–50 Hz**.
+The final EEG must remain **1–100 Hz at 250 Hz sampling**.
 
 If ICA requires different filtering for numerical stability, create a temporary copy:
 
@@ -670,7 +674,9 @@ raw_for_ica = raw_filtered.copy()
 
 and modify only that copy if necessary.
 
-Never replace the final 1–50 Hz recording with an ICA-specific filtered signal.
+ICA and ICLabel should use a common-average-referenced copy of the same
+1–100 Hz signal. Never replace the final recording with a differently filtered
+ICA-only signal.
 
 ---
 
@@ -958,7 +964,7 @@ Before epoching, plot the final continuous signal.
 Clearly label it:
 
 ```text
-FINAL CLEANED EEG — 1–50 Hz
+FINAL CLEANED EEG — 1–100 Hz + 60 Hz notch, 250 Hz sampling
 ```
 
 This is the continuous signal that will be used to create resting-state epochs.
@@ -1421,7 +1427,9 @@ Group: Parkinson
 Sampling frequency: 500 Hz
 EEG channels: 64
 
-Applying 1–50 Hz filter
+Applying 1–100 Hz filter and 60 Hz notch
+Resampling to 250 Hz
+Applying pre-ICA common-average reference
 
 Bad channels:
 Fp1
@@ -1518,20 +1526,20 @@ Because the eventual goal is periodic/aperiodic spectral analysis:
 Do not:
 
 * filter above 1 Hz on the final data
-* low-pass below 50 Hz
+* low-pass below 100 Hz
 * normalize epochs independently
 * baseline-correct resting EEG
 * aggressively detrend the data
 * automatically remove unusual ICA components
 * remove oscillations simply because they appear prominent
-* apply unnecessary notch filters
+* apply additional unnecessary notch filters
 * perform spectral flattening
 * run `specparam` during preprocessing
 
 The final cleaned EEG should remain:
 
 ```text
-1–50 Hz
+1–100 Hz at 250 Hz sampling, with a 60 Hz notch
 ```
 
 ---

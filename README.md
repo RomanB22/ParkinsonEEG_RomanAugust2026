@@ -53,11 +53,12 @@ The code configures non-interactive MNE/Matplotlib caches automatically.
 ```text
 raw EEG
 → metadata/channel inspection
-→ zero-phase 1–50 Hz FIR filter
-→ anti-aliased resampling from 500 to 120 Hz
+→ zero-phase 1–100 Hz FIR filter + 60 Hz notch
+→ anti-aliased resampling from 500 to 250 Hz
 → conservative bad-channel detection
 → large-transient BAD annotations
-→ extended Infomax ICA
+→ pre-ICA common-average reference
+→ extended Infomax ICA on the same 1–100 Hz, 250 Hz signal
 → ICLabel probabilities and artifact-to-brain ranking
 → automatically prefilled candidate exclusions
 → visually confirmed ICA removal
@@ -77,12 +78,11 @@ configuration value are documented in
 
 ## Run one subject
 
-Generate ICA review material while keeping the temporary ICA copy at the final
-120 Hz rate:
+Generate ICA review material at the final 250 Hz rate:
 
 ```bash
 conda run -n MNE_August2026 python scripts/preprocess_subject.py sub-001 \
-  --review-only --no-ica-downsampling --overwrite
+  --review-only --overwrite
 ```
 
 Review the ranked ICLabel plot and component diagnostics. Edit the prefilled
@@ -92,7 +92,7 @@ list and reasons if necessary, then set
 
 ```bash
 conda run -n MNE_August2026 python scripts/preprocess_subject.py sub-001 \
-  --no-ica-downsampling --overwrite
+  --overwrite
 ```
 
 ## Historical verified two-subject pilot
@@ -105,7 +105,7 @@ ICLabel override:
 
 ```bash
 conda run -n MNE_August2026 python scripts/preprocess_test_set.py \
-  --no-ica-downsampling --overwrite
+  --overwrite
 ```
 
 Verified pilot result:
@@ -115,9 +115,10 @@ Verified pilot result:
 | sub-001 | PD | 35 | IC000 ocular | 0 | 69/70 (98.6%) | 276 s |
 | sub-101 | Control | 32 | IC000 ocular | 7 | 57/67 (85.1%) | 228 s |
 
-Both cleaned continuous files are 120 Hz and 1–50 Hz.
+Those historical pilot outputs used the superseded 120 Hz, 1–50 Hz contract
+and must not be reused. Current runs regenerate 250 Hz, 1–100 Hz outputs.
 
-## Safely clean all recordings at 120 Hz
+## Safely clean all recordings at 250 Hz
 
 The simplest entry point is the two-stage bash runner:
 
@@ -142,9 +143,9 @@ bash scripts/run_full_cleaning.sh clean --skip-manual-ica-review --overwrite
 This option applies the high-confidence ICLabel proposal directly. It records
 `ica_selection_mode: automatic_iclabel` and `automatic_ica_removal: true` in QC,
 and writes the actual lists under `ica.automatic_exclude_components` without
-overwriting prior manual decisions. Because the present ICA input differs from
-ICLabel's training reference and bandwidth, the reviewed workflow above remains
-the scientific default.
+overwriting prior manual decisions. The ICA/ICLabel input now uses CAR and the
+recommended 1–100 Hz bandwidth, although visual review remains the scientific
+default.
 
 The equivalent individual Python commands are shown below.
 
@@ -152,7 +153,7 @@ First create review material for all subjects:
 
 ```bash
 conda run -n MNE_August2026 python scripts/run_preprocessing.py \
-  --review-only --no-ica-downsampling --overwrite
+  --review-only --overwrite
 ```
 
 Inspect each participant's ranked `08_ica_*`, `09_ica_*`, and `10_ica_*`
@@ -163,16 +164,16 @@ disagree, use `[]` when nothing should be removed, and set the participant's
 
 ```bash
 conda run -n MNE_August2026 python scripts/run_preprocessing.py \
-  --no-ica-downsampling --overwrite
+  --overwrite
 ```
 
 The final command deliberately refuses to start if any participant lacks a
 visually confirmed ICA review. A machine proposal alone never removes a
 component unless `--skip-manual-ica-review` is explicitly supplied.
 
-`--no-ica-downsampling` does not disable the required 500→120 Hz resampling.
-It keeps the temporary ICA copy at 120 Hz instead of reducing that copy once
-more to 100 Hz. The older `--no-downsampling` spelling remains an alias.
+`--no-ica-downsampling` remains as a backward-compatible option. Under the
+current defaults it has no effect because both the cleaned signal and ICA copy
+already run at 250 Hz.
 
 ## Ordinal analysis
 
@@ -382,18 +383,16 @@ and copy-paste commands are in [`COMMAND.md`](COMMAND.md).
 
 ## 60 Hz notch decision
 
-The final required passband is 1–50 Hz. Therefore the configured 60 Hz line
-frequency is already outside the retained band, and a second 60 Hz notch would
-be redundant. `notch_enabled` is false and the decision is recorded in every
-log and QC row. This follows `Prompt.md`'s instruction to avoid unnecessary
-filters while still documenting the 60 Hz acquisition environment.
+The retained passband is 1–100 Hz, so the 60 Hz line frequency lies inside the
+analysis signal. A 2 Hz-wide 60 Hz notch is enabled by default and its
+application is recorded in every log and QC row.
 
 ## Main outputs
 
 ```text
 processed/
-├── cleaned_raw/       # final continuous 1–50 Hz, 120 Hz FIF
-├── epochs/            # accepted 4-second epochs, 120 Hz, no baseline
+├── cleaned_raw/       # final continuous 1–100 Hz, 250 Hz FIF
+├── epochs/            # accepted 4-second epochs, 250 Hz, no baseline
 ├── ica/               # fitted ICA solutions
 ├── qc/<subject>/      # ordered plots 01–21 + decisions.json
 ├── metadata/          # inspection, subject decisions, preprocessing_qc.csv

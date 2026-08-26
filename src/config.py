@@ -8,6 +8,7 @@ project dependency.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -39,9 +40,9 @@ def validate_config(config: dict[str, Any]) -> None:
 
     low = float(config["filter"]["l_freq"])
     high = float(config["filter"]["h_freq"])
-    if (low, high) != (1.0, 50.0):
+    if (low, high) != (1.0, 100.0):
         raise ValueError(
-            "Prompt.md requires final continuous EEG to remain exactly 1-50 Hz; "
+            "The preprocessing contract requires final EEG to remain exactly 1-100 Hz; "
             f"received {low:g}-{high:g} Hz."
         )
     target_sfreq = float(config["resampling"]["target_sfreq"])
@@ -50,6 +51,15 @@ def validate_config(config: dict[str, Any]) -> None:
             "resampling.target_sfreq must be greater than twice filter.h_freq "
             f"({target_sfreq:g} <= {2.0 * high:g} Hz)"
         )
+    if not bool(config["filter"].get("notch_enabled", False)):
+        raise ValueError("The preprocessing contract requires the 60 Hz notch")
+    if float(config["filter"].get("notch_freq_hz", 0.0)) != 60.0:
+        raise ValueError("filter.notch_freq_hz must be 60 Hz")
+    if (float(config["ica"]["fit_l_freq"]), float(config["ica"]["fit_h_freq"])) != (
+        1.0,
+        100.0,
+    ):
+        raise ValueError("ICLabel/ICA input must be filtered exactly 1-100 Hz")
     if float(config["epochs"]["duration_sec"]) <= 0:
         raise ValueError("epochs.duration_sec must be positive")
     if config["epochs"].get("baseline") is not None:
@@ -80,6 +90,33 @@ def validate_config(config: dict[str, Any]) -> None:
             "Confirmed ICA reviews lack exclusion lists: "
             f"{sorted(missing_decisions)}"
         )
+
+
+def preprocessing_signature(config: dict[str, Any]) -> str:
+    """Hash settings that determine cleaned EEG and ICA decomposition outputs."""
+    ica = {
+        key: value
+        for key, value in config["ica"].items()
+        if key
+        not in {
+            "manual_exclude_components",
+            "manual_exclude_reasons",
+            "manual_review_confirmed",
+            "automatic_exclude_components",
+            "automatic_exclude_reasons",
+        }
+    }
+    relevant = {
+        "filter": config["filter"],
+        "resampling": config["resampling"],
+        "channels": config["channels"],
+        "artifacts": config["artifacts"],
+        "ica": ica,
+        "epochs": config["epochs"],
+        "ica_reference": "average",
+    }
+    payload = json.dumps(relevant, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def is_ica_review_confirmed(config: dict[str, Any], subject_id: str) -> bool:

@@ -32,8 +32,7 @@ order and passed to one Welch PSD calculation. Non-overlapping four-second Hann
 windows produce a 0.25 Hz grid. The PSD is retained over 1–50 Hz, while
 `specparam.SpectralModel` fits the fixed aperiodic model over 4–35 Hz. This
 prespecified fitting range excludes the less reliable delta region and avoids
-the upper edge of the cleaned passband without removing those frequencies from
-the descriptive PSD analysis.
+the upper edge of the selected 1–50 Hz descriptive PSD range.
 
 Saved broadband parameters are:
 

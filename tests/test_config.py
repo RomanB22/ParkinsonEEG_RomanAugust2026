@@ -19,17 +19,26 @@ class ConfigTests(unittest.TestCase):
 
     def test_final_band_is_fixed(self):
         self.assertEqual(self.config["filter"]["l_freq"], 1.0)
-        self.assertEqual(self.config["filter"]["h_freq"], 50.0)
+        self.assertEqual(self.config["filter"]["h_freq"], 100.0)
 
-    def test_notch_is_disabled_below_line_frequency(self):
-        self.assertFalse(self.config["filter"]["notch_enabled"])
+    def test_60_hz_notch_is_enabled_inside_retained_band(self):
+        self.assertTrue(self.config["filter"]["notch_enabled"])
         self.assertEqual(self.config["filter"]["notch_freq_hz"], 60.0)
+        self.assertLess(
+            self.config["filter"]["notch_freq_hz"],
+            self.config["filter"]["h_freq"],
+        )
 
     def test_final_sampling_rate_has_nyquist_guard_band(self):
         target = self.config["resampling"]["target_sfreq"]
         high = self.config["filter"]["h_freq"]
-        self.assertEqual(target, 120.0)
+        self.assertEqual(target, 250.0)
         self.assertGreater(target / 2.0, high)
+
+    def test_ica_and_iclabel_use_full_car_compatible_band(self):
+        self.assertEqual(self.config["ica"]["fit_l_freq"], 1.0)
+        self.assertEqual(self.config["ica"]["fit_h_freq"], 100.0)
+        self.assertEqual(self.config["ica"]["temporary_resample_sfreq"], 250.0)
 
     def test_manual_ica_review_state_starts_empty(self):
         components, reasons = subject_manual_ica(self.config, "sub-001")

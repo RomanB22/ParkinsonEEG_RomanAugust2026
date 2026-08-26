@@ -15,6 +15,7 @@ from .artifacts import annotate_large_artifacts, create_and_reject_epochs
 from .channels import detect_bad_channels
 from .config import (
     is_ica_review_confirmed,
+    preprocessing_signature,
     subject_manual_ica,
     write_ica_review_proposal,
 )
@@ -56,7 +57,9 @@ def _json_ready(value):
     return value
 
 
-def _subject_logger(subject_id: str, log_dir: Path) -> logging.Logger:
+def _subject_logger(
+    subject_id: str, log_dir: Path, *, console_logging: bool = True
+) -> logging.Logger:
     log_dir.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(f"preprocessing.{subject_id}")
     logger.setLevel(logging.INFO)
@@ -68,14 +71,15 @@ def _subject_logger(subject_id: str, log_dir: Path) -> logging.Logger:
     file_handler = logging.FileHandler(log_dir / f"{subject_id}.log", mode="w", encoding="utf-8")
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
-    stream_handler = logging.StreamHandler()
-    stream_handler.setFormatter(formatter)
-    logger.addHandler(stream_handler)
+    if console_logging:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        logger.addHandler(stream_handler)
     return logger
 
 
 def filter_eeg(raw, config: dict[str, Any], logger: logging.Logger):
-    """Return a new, final-band 1–50 Hz signal without changing sample rate."""
+    """Return a new, notched final-band signal without changing sample rate."""
     filtered = raw.copy()
     filtered.filter(
         l_freq=float(config["l_freq"]),
@@ -155,10 +159,10 @@ def interpolate_bad_channels(raw, bad_channels: list[str], logger: logging.Logge
     return interpolated, valid, invalid
 
 
-def rereference(raw, logger: logging.Logger):
+def rereference(raw, logger: logging.Logger, *, stage: str = "final"):
     rereferenced = raw.copy()
     rereferenced.set_eeg_reference(ref_channels="average", projection=False, verbose="ERROR")
-    logger.info("Applied final average reference")
+    logger.info("Applied %s common-average reference", stage)
     return rereferenced
 
 
@@ -191,6 +195,7 @@ def process_subject(
     overwrite: bool = False,
     config_path: str | Path | None = None,
     skip_manual_ica_review: bool = False,
+    console_logging: bool = True,
 ) -> SubjectResult:
     """Preprocess one participant and save every decision and QC stage."""
     set_path = Path(set_path)
@@ -212,7 +217,11 @@ def process_subject(
             for previous_stage_file in qc_dir.glob(pattern):
                 previous_stage_file.unlink()
 
-    logger = _subject_logger(subject_id, output_dir / "logs")
+    logger = _subject_logger(
+        subject_id,
+        output_dir / "logs",
+        console_logging=console_logging,
+    )
     participant = participant_metadata(dataset_dir, subject_id)
     raw, provenance = load_subject(set_path, config["channels"]["auxiliary_names"])
     raw_original = raw.copy()
@@ -233,9 +242,9 @@ def process_subject(
     expected_sfreq = float(config["resampling"]["target_sfreq"])
     if not np.isclose(filtered.info["sfreq"], expected_sfreq):
         raise RuntimeError(f"Expected final sampling frequency {expected_sfreq:g} Hz")
-    qc.plot_signal(filtered, channels, start, duration, "FILTERED EEG — 1–50 Hz, 120 Hz sampling", qc_dir / "03_filtered_signal.png", dpi)
-    qc.plot_psd(filtered, channels, float(qcc["psd_fmin_hz"]), float(qcc["final_psd_fmax_hz"]), "Filtered EEG PSD — 1–50 Hz", qc_dir / "04_filtered_psd.png", dpi)
-    qc.plot_signal_comparison(raw, filtered, channels, start, duration, "raw 500 Hz", "1–50 Hz at 120 Hz", "Raw vs filtered/resampled EEG", qc_dir / "05_raw_vs_filtered.png", dpi)
+    qc.plot_signal(filtered, channels, start, duration, "FILTERED EEG — 1–100 Hz + 60 Hz notch, 250 Hz sampling", qc_dir / "03_filtered_signal.png", dpi)
+    qc.plot_psd(filtered, channels, float(qcc["psd_fmin_hz"]), float(qcc["final_psd_fmax_hz"]), "Filtered EEG PSD — 1–100 Hz + 60 Hz notch", qc_dir / "04_filtered_psd.png", dpi)
+    qc.plot_signal_comparison(raw, filtered, channels, start, duration, "raw 500 Hz", "1–100 Hz at 250 Hz", "Raw vs filtered/resampled EEG", qc_dir / "05_raw_vs_filtered.png", dpi)
 
     bad_result = detect_bad_channels(filtered, config["channels"])
     filtered.info["bads"] = list(bad_result.bad_channels)
@@ -245,7 +254,11 @@ def process_subject(
     if not qc.plot_bad_channels(filtered, bad_result, start, duration, qc_dir / "06_bad_channels.png", dpi):
         qc.save_status(qc_dir, "06_bad_channels", "No bad recorded channels detected. Missing channels are listed separately and were not interpolated.")
 
-    annotated, artifact_table = annotate_large_artifacts(filtered, config["artifacts"])
+    # ICLabel was trained on common-average-referenced data. Apply CAR after
+    # bad-channel detection so marked channels are excluded from the reference.
+    # A final CAR is calculated again after interpolation below.
+    ica_referenced = rereference(filtered, logger, stage="pre-ICA")
+    annotated, artifact_table = annotate_large_artifacts(ica_referenced, config["artifacts"])
     artifact_table.to_csv(metadata_dir / "temporal_artifacts.csv", index=False)
     logger.info("Added %d large-artifact annotation interval(s)", len(artifact_table))
     if not qc.plot_artifact_annotations(annotated, artifact_table, channels, qc_dir / "07_artifact_annotations.png", dpi):
@@ -255,8 +268,7 @@ def process_subject(
     ica_path = ica_dir / f"{subject_id}_task-Rest_desc-preprocessing-ica.fif"
     ica.save(ica_path, overwrite=overwrite)
     logger.info("Fitted %d ICA components at %.1f Hz (final signal remains %.1f Hz)", ica.n_components_, raw_for_ica.info["sfreq"], annotated.info["sfreq"])
-    # ICLabel must receive the same temporary signal used to fit the ICA. The
-    # final 1-50 Hz recording remains unchanged and is used for visual QC.
+    # ICLabel receives the same 1-100 Hz, 250 Hz, CAR signal used to fit ICA.
     scores = score_ica_components(ica, raw_for_ica, config["ica"])
     proposed_components, proposed_reasons = proposed_ica_exclusions(scores)
     automatic_mode = bool(skip_manual_ica_review and not review_only)
@@ -346,12 +358,13 @@ def process_subject(
         "iclabel_proposal_reasons": automatic_reasons if automatic_mode else proposed_reasons,
         "iclabel_proposal_written_to_config": proposal_written,
         "iclabel_model_input_note": (
-            "Advisory only: extended Infomax matches ICLabel training, but the temporary "
-            "ICA input is 1-40 Hz and retains the acquisition reference; ICLabel was "
-            "designed for common-average-referenced 1-100 Hz EEG."
+            "Extended Infomax ICA and ICLabel use common-average-referenced "
+            "1-100 Hz EEG at 250 Hz."
             if ranked_scores is not None
             else "ICLabel disabled by configuration."
         ),
+        "preprocessing_signature": preprocessing_signature(config),
+        "ica_reference": "average",
         "automatic_ica_removal": automatic_mode,
         "notch_applied": notch_applied,
         "notch_reason": notch_reason,
@@ -414,9 +427,9 @@ def process_subject(
         qc.save_status(qc_dir, "14_interpolation", "No recorded channels required interpolation.")
 
     before_reference = interpolated.copy()
-    cleaned = rereference(interpolated, logger)
+    cleaned = rereference(interpolated, logger, stage="final post-interpolation")
     qc.plot_signal_comparison(before_reference, cleaned, channels, start, duration, "before reference", "average reference", "Re-referencing effect", qc_dir / "15_reference_comparison.png", dpi)
-    qc.plot_signal(cleaned, channels, start, duration, "FINAL CLEANED EEG — 1–50 Hz", qc_dir / "16_final_clean_signal.png", dpi)
+    qc.plot_signal(cleaned, channels, start, duration, "FINAL CLEANED EEG — 1–100 Hz + 60 Hz notch", qc_dir / "16_final_clean_signal.png", dpi)
     qc.plot_raw_vs_clean_intervals(raw_original, cleaned, channels, start, artifact_table, duration, qc_dir / "17_raw_vs_clean.png", dpi)
     qc.plot_psd_comparison(raw_original, cleaned, channels, float(qcc["psd_fmin_hz"]), float(qcc["final_psd_fmax_hz"]), "raw", "final cleaned", "Raw vs cleaned PSD — no independent normalization", qc_dir / "18_raw_vs_clean_psd.png", dpi)
 
@@ -474,6 +487,7 @@ def process_subject(
         "notch_applied": notch_applied,
         "notch_reason": notch_reason,
         "temporary_ica_sampling_frequency": float(raw_for_ica.info["sfreq"]),
+        "ica_reference": "average",
     }
     decisions["epoch_rejection"] = epoch_result.rejection_table.to_dict(orient="records")
     decisions["qc_summary"] = qc_row

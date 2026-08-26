@@ -158,7 +158,7 @@ Keep the code simple, modular, well documented, and easy to inspect. Follow **KI
 ### Data assumptions
 
 * EEG has already been cleaned with the existing preprocessing pipeline.
-* Signals are filtered approximately from **1–50 Hz**.
+* Cleaned signals are filtered from **1–100 Hz**, notched at 60 Hz, and sampled at 250 Hz.
 * Preserve subject ID, group label, channel information, and relevant metadata.
 * Apply exactly the same analysis pipeline to PD and Control subjects.
 * Do not modify the existing preprocessing code.

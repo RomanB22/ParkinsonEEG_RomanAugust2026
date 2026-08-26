@@ -142,7 +142,7 @@ def inspect_dataset(config: dict[str, Any]) -> dict[str, Any]:
 - Auxiliary channels named Resp/X/Y/Z are excluded from EEG cleaning but recorded in provenance.
 - Valid EEGLAB electrode positions are preserved. Standard 10–05 positions are only a fallback for incomplete coordinates and are assigned only to recorded channels. Missing channels are never created or interpolated.
 - Medication status is not present in `participants.tsv` and is therefore reported as unavailable.
-- Final analysis data are fixed at 1–50 Hz and resampled from 500 Hz to 120 Hz. A 60 Hz notch is disabled because the 50 Hz low-pass already excludes that line frequency.
+- Final analysis data are filtered to 1–100 Hz, notched at 60 Hz, common-average referenced for ICA/ICLabel, and resampled from 500 Hz to 250 Hz.
 
 ## Generated metadata
 

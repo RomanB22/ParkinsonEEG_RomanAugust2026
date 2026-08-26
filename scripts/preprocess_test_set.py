@@ -30,7 +30,7 @@ def main() -> None:
         "--no-downsampling",
         dest="no_downsampling",
         action="store_true",
-        help="Keep ICA at the final 120 Hz rate (old --no-downsampling name remains an alias)",
+        help="Disable any optional extra ICA-only downsampling (default config already keeps ICA at 250 Hz)",
     )
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args()

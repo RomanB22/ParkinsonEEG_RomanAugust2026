@@ -4,7 +4,7 @@ This document follows the actual code from raw input to accepted resting-state
 epochs. The goal is to preserve spectral slope and oscillatory peaks while
 removing only clear contamination. No epoch normalization, baseline correction,
 spectral flattening, or `specparam` analysis is performed. The filtered signal
-is resampled from the 500 Hz acquisition rate to a final 120 Hz rate.
+is resampled from the 500 Hz acquisition rate to a final 250 Hz rate.
 
 ## 1. Dataset inspection
 
@@ -45,23 +45,20 @@ The raw data are copied before any operation. QC files `01_raw_signal.png` and
 Preferred channels are Fp1, Fz, Cz, CPz/Pz, and O1; existing alternatives are
 selected automatically when needed.
 
-## 4. Filter to the final 1–50 Hz band
+## 4. Filter to 1–100 Hz, notch 60 Hz, and resample
 
 **Definition.** A band-pass retains frequencies between its lower and upper
-cutoffs. Here, a zero-phase FIR filter retains 1–50 Hz. Zero phase means that
+cutoffs. Here, a zero-phase FIR filter retains 1–100 Hz. Zero phase means that
 the offline filter does not systematically shift peaks in time.
 
 `src.preprocessing.filter_eeg()` operates on a copy at the 500 Hz acquisition
-rate. `src.preprocessing.resample_eeg()` then applies MNE's anti-aliased FFT
-resampling to 120 Hz. Because the retained band ends at 50 Hz, the final 60 Hz
-Nyquist frequency leaves a 10 Hz guard band. QC files
+rate and applies a 60 Hz notch because line frequency lies inside the retained
+band. `src.preprocessing.resample_eeg()` then applies MNE's anti-aliased FFT
+resampling to 250 Hz. The 125 Hz Nyquist frequency leaves a 25 Hz guard band
+above the 100 Hz low-pass. QC files
 `03_filtered_signal.png`, `04_filtered_psd.png`, and
 `05_raw_vs_filtered.png` use identical channels and trace intervals while
 allowing for the different raw and processed time grids.
-
-The 60 Hz notch is disabled because 60 Hz is above the final 50 Hz low-pass.
-Applying both would add an unnecessary filter without retaining any additional
-analysis bandwidth. This decision is logged per participant.
 
 ## 5. Detect bad recorded channels
 
@@ -104,19 +101,19 @@ cut from the continuous recording. ICA fitting and epoch creation honor these
 annotations. The exact onset, duration, metric, and reason are saved in
 `temporal_artifacts.csv` and shown in `07_artifact_annotations.png`.
 
-## 7. Fit ICA on a temporary copy
+## 7. Apply pre-ICA CAR and fit ICA
 
 **Definition.** Independent component analysis separates reproducible spatial
 source patterns. It is used here only for clear physiological artifacts, mainly
 ocular activity because the dataset has no dedicated EOG or ECG channels.
 
-`src.ica.fit_ica()` makes a temporary 1–40 Hz copy for numerical stability and
-fits extended Infomax with 99% explained PCA variance, random state 42, and a
-maximum of 1000 iterations. BAD intervals and bad channels are excluded from
-the fit. With `--no-ica-downsampling`, this temporary copy remains at the final
-120 Hz; without the option, only the temporary ICA fitting copy is reduced to
-100 Hz. The final EEG is always the separate 1–50 Hz, 120 Hz copy. The older
-`--no-downsampling` option name is retained as a backward-compatible alias.
+After bad-channel detection, the pipeline applies a common-average reference
+while excluding marked bad channels. `src.ica.fit_ica()` uses this 1–100 Hz,
+60 Hz-notched, 250 Hz signal and fits extended Infomax with 99% explained PCA
+variance, random state 42, and a maximum of 1000 iterations. BAD intervals and
+bad channels are excluded from the fit. ICLabel receives this exact same CAR
+signal. The legacy `--no-ica-downsampling` option remains accepted, but the
+default ICA rate already equals the final 250 Hz rate.
 
 ## 8. Rank, inspect, and review every ICA component
 
@@ -132,7 +129,7 @@ change. Review material is:
 - `08_ica_components_ranked_p*.png`: ranked, indexed topographies;
 - `09_ica_sources_ranked_p*.png`: ranked source time courses;
 - `10_ica_properties_ranked_p*.png`: ranked topography, 20-second time course,
-  and 1–50 Hz PSD;
+  and 1–100 Hz PSD;
 - `ica_component_scores.csv`: all seven probabilities, artifact rank,
   prediction, candidate flag, and the original frontal/low-frequency metrics.
 
@@ -163,15 +160,14 @@ table record `ica_selection_mode: automatic_iclabel` and
 `automatic_ica_removal: true`.
 
 ICLabel was designed for common-average-referenced, approximately 1–100 Hz EEG
-fit with extended Infomax. This pipeline matches extended Infomax but gives the
-model the exact 1–40 Hz acquisition-reference copy used for ICA fitting.
-Probabilities are therefore explicitly advisory, particularly for muscle and
-prefrontal classifications. The final signal remains 1–50 Hz at 120 Hz.
+fit with extended Infomax. The pipeline now matches those reference, bandwidth,
+and ICA-method assumptions directly. Probabilities remain screening evidence,
+not a substitute for reviewing component topography, time course, spectrum,
+and before/after signal effects.
 
 ## 9. Apply selected ICA removal
 
-ICA is applied to another copy of the annotated 1–50 Hz signal. The fitted
-temporary 1–40 Hz copy never replaces the final data. QC includes:
+ICA is applied to another copy of the annotated 1–100 Hz CAR signal. QC includes:
 
 - `11_removed_ica_components.png`, with index, topography, time course, PSD,
   and reason;
@@ -204,7 +200,7 @@ reference. The Pz source reference and final average reference are both saved.
 
 ## 12. Verify the final continuous signal
 
-The final continuous copy remains 1–50 Hz and 120 Hz and preserves all BAD
+The final continuous copy remains 1–100 Hz and 250 Hz and preserves all BAD
 annotations. It is saved before epoching. QC includes:
 
 - `16_final_clean_signal.png`;
@@ -288,19 +284,19 @@ conda run -n MNE_August2026 python scripts/inspect_dataset.py
 conda run -n MNE_August2026 python -m unittest discover -s tests -v
 ```
 
-Review every subject with ICA kept at the final 120 Hz rate:
+Review every subject with ICA at the final 250 Hz rate:
 
 ```bash
 conda run -n MNE_August2026 python scripts/run_preprocessing.py \
-  --review-only --no-ica-downsampling --overwrite
+  --review-only --overwrite
 ```
 
 After every prefilled ICA entry has been visually checked and every
-`manual_review_confirmed` flag is `true`, clean all recordings at 120 Hz:
+`manual_review_confirmed` flag is `true`, clean all recordings at 250 Hz:
 
 ```bash
 conda run -n MNE_August2026 python scripts/run_preprocessing.py \
-  --no-ica-downsampling --overwrite
+  --overwrite
 ```
 
 Explicit unattended alternative:
@@ -308,6 +304,12 @@ Explicit unattended alternative:
 ```bash
 bash scripts/run_full_cleaning.sh clean --skip-manual-ica-review --overwrite
 ```
+
+The batch runner displays completed subjects and an ETA. It processes two
+subjects concurrently by default while keeping every subject's ICA fit and
+random seed unchanged. Use `--workers 1` if memory is limited. The master
+pipeline exposes the same setting as `--preprocessing-workers N`; its existing
+`--no-progress` option intentionally hides this bar.
 
 This is not equivalent to human review. It applies the configured ICLabel
 thresholds and records the run as automatic throughout the provenance outputs.

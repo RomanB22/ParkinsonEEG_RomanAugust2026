@@ -19,6 +19,8 @@ Profiles:
 Runs are resumable by default. Add `--overwrite` only when intentionally
 replacing current products. `run_all_analyses.sh` is the internal downstream
 orchestrator; individual analysis scripts remain available for focused reruns.
+Preprocessing uses two subject-level workers by default and displays completed
+subjects plus an ETA. Set `--preprocessing-workers 1` when memory is limited.
 
 ## Data flow and ownership
 

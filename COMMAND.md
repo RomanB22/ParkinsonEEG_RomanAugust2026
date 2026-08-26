@@ -77,6 +77,14 @@ duration sensitivity, matched analyses, and tests. `full-qc` additionally runs
 the independent bycycle sensitivity. All profiles resume current stages unless
 `--overwrite` is supplied.
 
+Signal cleaning shows a participant-level progress bar and processes two
+independent subjects concurrently by default. Adjust this according to
+available memory with `--preprocessing-workers N`. Use one worker for the most
+conservative memory footprint; two is the recommended default. Passing
+`--no-progress` intentionally hides the cleaning and analysis progress bars.
+When `--overwrite` is omitted, complete subject outputs are reused and only
+missing or interrupted subjects are processed.
+
 The computationally expensive independent bycycle burst sensitivity is not
 part of the default full run. Include it for both cohorts only when requested:
 
