@@ -266,6 +266,10 @@ with eBOSC. The overlapping 5–15 Hz band remains descriptive only.
 bash bycycle_burst_analysis/run_bycycle_burst_analysis.sh --overwrite
 ```
 
+This independent detector is intentionally opt-in and is not run by the
+default full pipeline. Add `--include-bycycle-bursts` to the full runner when
+this sensitivity analysis is required.
+
 ## Ordinal analysis inside detected bouts
 
 The independent workflow in [`bout_analyses/`](bout_analyses/README.md) detects
@@ -369,7 +373,8 @@ in [`matched_analysis/README.md`](matched_analysis/README.md). Pass
 `--skip-matched` only when the matched sensitivity battery is not required.
 
 Useful controls include `--overwrite`, `--dry-run`, `--no-progress`,
-`--skip-sweep`, and `--skip-exploration`. Cleaning is deliberately not invoked:
+`--skip-sweep`, `--skip-exploration`, and the opt-in
+`--include-bycycle-bursts`. Cleaning is deliberately not invoked:
 manual ICA confirmation remains an explicit prerequisite through
 `scripts/run_full_cleaning.sh`.
 

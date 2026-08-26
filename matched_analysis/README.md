@@ -42,6 +42,13 @@ variables.
 bash matched_analysis/run_matched_analyses.sh
 ```
 
+The independent bycycle burst sensitivity is optional and skipped by default.
+Include it explicitly with:
+
+```bash
+bash matched_analysis/run_matched_analyses.sh --include-bycycle-bursts
+```
+
 Use `--overwrite` to rebuild all matched products. The master scripts run both
 cohorts automatically:
 

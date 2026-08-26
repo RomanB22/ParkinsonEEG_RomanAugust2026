@@ -21,6 +21,7 @@ SKIP_SWEEP=false
 SKIP_EXPLORATION=false
 SKIP_MATCHED=false
 SKIP_MANUAL_ICA_REVIEW=false
+INCLUDE_BYCYCLE_BURSTS=false
 CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
 
 usage() {
@@ -41,6 +42,7 @@ Options:
   --skip-sweep               Skip the D={3,4,5,6}, tau=1 ordinal sensitivity sweep
   --skip-exploration         Skip full and demographically matched prediction models
   --skip-matched             Skip the complete matched-cohort sensitivity pipeline
+  --include-bycycle-bursts   Also run the optional independent bycycle sensitivity
   --skip-manual-ica-review   Explicitly use automatic ICLabel proposals during cleaning
   --env NAME                 Conda environment (default: MNE_August2026)
   -h, --help                 Show this help
@@ -63,6 +65,7 @@ while [[ $# -gt 0 ]]; do
         --skip-sweep) SKIP_SWEEP=true ;;
         --skip-exploration) SKIP_EXPLORATION=true ;;
         --skip-matched) SKIP_MATCHED=true ;;
+        --include-bycycle-bursts) INCLUDE_BYCYCLE_BURSTS=true ;;
         --skip-manual-ica-review) SKIP_MANUAL_ICA_REVIEW=true ;;
         --env)
             [[ $# -ge 2 ]] || { printf 'ERROR: --env requires a name\n' >&2; exit 2; }
@@ -183,6 +186,9 @@ if [[ "$SKIP_EXPLORATION" == true ]]; then
 fi
 if [[ "$SKIP_MATCHED" == true ]]; then
     analysis_command+=(--skip-matched)
+fi
+if [[ "$INCLUDE_BYCYCLE_BURSTS" == true ]]; then
+    analysis_command+=(--include-bycycle-bursts)
 fi
 
 "${analysis_command[@]}"

@@ -13,6 +13,7 @@ DRY_RUN=false
 NO_PROGRESS=false
 SKIP_SWEEP=false
 SKIP_EXPLORATION=false
+INCLUDE_BYCYCLE_BURSTS=false
 CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
 
 usage() {
@@ -21,7 +22,7 @@ Usage: bash matched_analysis/run_matched_analyses.sh [options]
 
 Prepare one canonical exact-sex/optimal-age matched cohort, then run matched:
 PSD, ordinal quantities/planes/topomaps, ordinal D={3,4,5,6} inputs at tau=1,
-scale-free, independent bycycle bursts, bouts, the eight-electrode non-progression sensitivity battery,
+scale-free, bouts, the eight-electrode non-progression sensitivity battery,
 fit-QC sensitivity, typical bouts, prediction models, MOCA, the whole-head
 UPDRS/MOCA severity analysis, and the at-least-60-second
 accepted-duration sensitivity.
@@ -32,6 +33,8 @@ Options:
   --no-progress        Disable supported progress bars
   --skip-sweep         Skip ordinal sensitivity inputs and MOCA analysis
   --skip-exploration   Skip matched prediction models
+  --include-bycycle-bursts
+                       Run the optional independent bycycle sensitivity
   --env NAME           Conda environment (default: MNE_August2026)
   -h, --help           Show this help
 
@@ -47,6 +50,7 @@ while [[ $# -gt 0 ]]; do
         --no-progress) NO_PROGRESS=true ;;
         --skip-sweep) SKIP_SWEEP=true ;;
         --skip-exploration) SKIP_EXPLORATION=true ;;
+        --include-bycycle-bursts) INCLUDE_BYCYCLE_BURSTS=true ;;
         --env)
             [[ $# -ge 2 ]] || { printf 'ERROR: --env requires a name\n' >&2; exit 2; }
             CONDA_ENV="$2"
@@ -280,21 +284,26 @@ else
         --config "$CONFIG_ROOT/scale_free.json" --overwrite
 fi
 
-bycycle_burst_command=(
-    bash bycycle_burst_analysis/run_bycycle_burst_analysis.sh
-    --config "$CONFIG_ROOT/bycycle_burst.json"
-)
-if [[ "$NO_PROGRESS" == true ]]; then bycycle_burst_command+=(--no-progress); fi
-run_stage "independent bycycle burst-detection sensitivity" \
-    bycycle_burst_analysis/processed_matched/manifest.json \
-    "${bycycle_burst_command[@]}"
-
-printf '\n=== Matched: independent bycycle subject-average violin figures ===\n'
-if bycycle_group_figures_current bycycle_burst_analysis/processed_matched; then
-    printf '  current output found; skipping\n'
-else
-    execute bash bycycle_burst_analysis/generate_group_figures.sh \
+if [[ "$INCLUDE_BYCYCLE_BURSTS" == true ]]; then
+    bycycle_burst_command=(
+        bash bycycle_burst_analysis/run_bycycle_burst_analysis.sh
         --config "$CONFIG_ROOT/bycycle_burst.json"
+    )
+    if [[ "$NO_PROGRESS" == true ]]; then bycycle_burst_command+=(--no-progress); fi
+    run_stage "independent bycycle burst-detection sensitivity" \
+        bycycle_burst_analysis/processed_matched/manifest.json \
+        "${bycycle_burst_command[@]}"
+
+    printf '\n=== Matched: independent bycycle subject-average violin figures ===\n'
+    if bycycle_group_figures_current bycycle_burst_analysis/processed_matched; then
+        printf '  current output found; skipping\n'
+    else
+        execute bash bycycle_burst_analysis/generate_group_figures.sh \
+            --config "$CONFIG_ROOT/bycycle_burst.json"
+    fi
+else
+    printf '\n=== Matched: independent bycycle burst sensitivity ===\n'
+    printf '  skipped by default; use --include-bycycle-bursts to run it\n'
 fi
 
 bout_command=(

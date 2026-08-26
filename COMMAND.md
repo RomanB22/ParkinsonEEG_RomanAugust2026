@@ -35,8 +35,7 @@ The `run` command includes:
 - reviewed ICA signal cleaning;
 - PSD and relative band-power analyses;
 - primary and D={3,4,5,6} ordinal sensitivity analyses, all at tau=1;
-- scale-free/specparam, eBOSC bout, independent bycycle cycle-consistency
-  burst, within-bout ordinal, and fit-QC analyses;
+- scale-free/specparam, eBOSC bout, within-bout ordinal, and fit-QC analyses;
 - a separate eight-electrode sensitivity battery using F4, P4, O2, P6, CP2,
   CP1, PO7, and P8 for non-progression group analyses;
 - typical-bout and other diagnostic figures;
@@ -52,6 +51,15 @@ The `run` command includes:
 
 The matched pipeline runs by default. Do not pass `--skip-matched` when both
 cohorts are required.
+
+The computationally expensive independent bycycle burst sensitivity is not
+part of the default full run. Include it for both cohorts only when requested:
+
+```bash
+bash run_reproducible_pipeline.sh run \
+  --overwrite \
+  --include-bycycle-bursts
+```
 
 The runner is bootstrappable from the source `dataset/`: if the root
 `processed/` directory is absent, dataset inspection first creates

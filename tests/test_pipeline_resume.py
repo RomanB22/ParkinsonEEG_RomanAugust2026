@@ -41,6 +41,22 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertIn("bycycle_burst_analysis/run_bycycle_burst_analysis.sh", matched)
         self.assertIn("$CONFIG_ROOT/bycycle_burst.json", matched)
 
+    def test_independent_bycycle_stage_is_opt_in_from_every_runner(self) -> None:
+        wrapper = Path("run_reproducible_pipeline.sh").read_text(encoding="utf-8")
+        full = Path("run_all_analyses.sh").read_text(encoding="utf-8")
+        matched = Path("matched_analysis/run_matched_analyses.sh").read_text(
+            encoding="utf-8"
+        )
+        for source in (wrapper, full, matched):
+            self.assertIn("INCLUDE_BYCYCLE_BURSTS=false", source)
+            self.assertIn("--include-bycycle-bursts", source)
+        self.assertIn(
+            'if [[ "$INCLUDE_BYCYCLE_BURSTS" == true ]]; then', full
+        )
+        self.assertIn(
+            'if [[ "$INCLUDE_BYCYCLE_BURSTS" == true ]]; then', matched
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
