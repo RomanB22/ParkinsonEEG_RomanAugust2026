@@ -17,6 +17,8 @@ SKIP_SWEEP=false
 SKIP_EXPLORATION=false
 SKIP_MATCHED=false
 INCLUDE_BYCYCLE_BURSTS=false
+PROFILE="paper"
+COMPUTE_ONLY=false
 CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
 
 usage() {
@@ -48,12 +50,15 @@ Options:
   --dry-run            Print the commands and freshness decisions only
   --no-progress        Disable progress bars where supported
   --skip-tests         Do not run repository integration tests after analyses
-  --skip-sweep         Skip the D={3,4,5,6}, tau=1 ordinal sensitivity sweep
+  --skip-sweep         Skip D={3,4,5}; primary D=6 is calculated once separately
   --skip-exploration   Skip the PD-versus-Control model exploration
   --skip-matched       Skip the complete matched-cohort sensitivity pipeline
   --include-bycycle-bursts
                        Run the optional independent bycycle sensitivity for
                        both the full and matched cohorts
+  --profile NAME       compute: reusable base metrics, minimal figures
+                       paper: complete inferential/reporting pipeline (default)
+                       full-qc: paper plus independent bycycle sensitivity
   --env NAME           Conda environment (default: MNE_August2026)
   -h, --help           Show this help
 
@@ -97,6 +102,11 @@ while [[ $# -gt 0 ]]; do
             INCLUDE_BYCYCLE_BURSTS=true
             shift
             ;;
+        --profile)
+            [[ $# -ge 2 ]] || { printf 'ERROR: --profile requires a name\n' >&2; exit 2; }
+            PROFILE="$2"
+            shift 2
+            ;;
         --env)
             [[ $# -ge 2 ]] || { printf 'ERROR: --env requires a name\n' >&2; exit 2; }
             CONDA_ENV="$2"
@@ -113,6 +123,22 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+case "$PROFILE" in
+    compute)
+        COMPUTE_ONLY=true
+        SKIP_TESTS=true
+        SKIP_EXPLORATION=true
+        SKIP_MATCHED=true
+        ;;
+    paper) ;;
+    full-qc) INCLUDE_BYCYCLE_BURSTS=true ;;
+    *) printf 'ERROR: --profile must be compute, paper, or full-qc\n' >&2; exit 2 ;;
+esac
+if [[ "$COMPUTE_ONLY" == true && "$INCLUDE_BYCYCLE_BURSTS" == true ]]; then
+    printf 'ERROR: compute profile cannot include the optional bycycle analysis\n' >&2
+    exit 2
+fi
 
 export PARKINSON_EEG_CONDA_ENV="$CONDA_ENV"
 environment_arguments=(--env "$CONDA_ENV")
@@ -180,6 +206,9 @@ ordinal_primary_current() {
         ordinal_analysis/processed/metrics/subject_electrode_mean_metrics.csv
     header_has_extended_renyi \
         ordinal_analysis/processed/metrics/band_subject_electrode_mean_metrics.csv
+    if [[ "$COMPUTE_ONLY" == true ]]; then
+        return 0
+    fi
     [[ -f ordinal_analysis/processed/figures/topomaps/renyi_alpha_0_1/group_mean_topomaps.png ]] || return 1
     [[ -f ordinal_analysis/processed/figures/topomaps/renyi_alpha_10/group_mean_zscored_topomaps.png ]] || return 1
     [[ -f ordinal_analysis/processed/figures/bands/topomaps/renyi_alpha_10/group_means/alpha_group_mean_topomaps.png ]] || return 1
@@ -190,7 +219,7 @@ ordinal_primary_current() {
 
 ordinal_sweep_current() {
     local dimension directory
-    for dimension in 3 4 5 6; do
+    for dimension in 3 4 5; do
         directory="ordinal_analysis/parameter_sweep/D${dimension}_tau1"
         [[ -f "${directory}/manifest.json" ]] || return 1
         header_has_extended_renyi \
@@ -207,8 +236,13 @@ scale_free_current() {
     grep -q '"broad_5_15"' scale_free_analysis/processed/manifest.json || return 1
     grep -q '"specparam_primary_fit_range_id": "4_35Hz"' \
         scale_free_analysis/processed/manifest.json || return 1
+    grep -q '"raw_cycle_tables_saved": false' \
+        scale_free_analysis/processed/manifest.json || return 1
     [[ -f scale_free_analysis/processed/metrics/specparam_fit_qc_summary.csv ]] || return 1
     [[ -f scale_free_analysis/processed/metrics/subject_aperiodic_range_sensitivity.csv ]] || return 1
+    if [[ "$COMPUTE_ONLY" == true ]]; then
+        return 0
+    fi
     [[ -f scale_free_analysis/processed/figures/aperiodic_diagnostics/group_median_decomposition_and_residuals.png ]] || return 1
     grep -q 'specparam_fit_qc' scale_free_analysis/processed/manifest.json || return 1
     [[ -f scale_free_analysis/processed/metrics/group_subject_statistics_aperiodic.csv ]] || return 1
@@ -253,11 +287,17 @@ bycycle_group_figures_current() {
 
 bout_current() {
     [[ -f bout_analyses/processed/manifest.json ]] || return 1
+    grep -q '"scale_free_manifest"' bout_analyses/processed/manifest.json || return 1
+    grep -q '"legacy_episode_threshold_paths_are_symlinks": true' \
+        bout_analyses/processed/manifest.json || return 1
     grep -q '"broad_5_15"' bout_analyses/processed/manifest.json || return 1
     grep -q '"specparam_primary_fit_range_id": "4_35Hz"' \
         bout_analyses/processed/manifest.json || return 1
     [[ -f bout_analyses/processed/metrics/group_subject_statistics.csv ]] || return 1
     [[ -f bout_analyses/processed/metrics/group_electrode_statistics.csv ]] || return 1
+    if [[ "$COMPUTE_ONLY" == true ]]; then
+        return 0
+    fi
     [[ -f bout_analyses/processed/figures/group_statistics/entropy_group_statistics.png ]]
 }
 
@@ -374,6 +414,7 @@ run_stage() {
 printf 'Project: %s\n' "$SCRIPT_DIR"
 printf 'Cleaned epochs found: %s\n' "$epoch_count"
 printf 'Mode: %s\n' "$([[ "$OVERWRITE" == true ]] && printf overwrite || printf resume)"
+printf 'Profile: %s\n' "$PROFILE"
 
 run_stage "PSD analysis" psd_current psd_analysis/processed/manifest.json \
     bash psd_analysis/run_psd_analysis.sh
@@ -381,6 +422,9 @@ run_stage "PSD analysis" psd_current psd_analysis/processed/manifest.json \
 ordinal_primary_command=(bash ordinal_analysis/run_ordinal_analysis.sh)
 if [[ "$NO_PROGRESS" == true ]]; then
     ordinal_primary_command+=(--no-progress)
+fi
+if [[ "$COMPUTE_ONLY" == true ]]; then
+    ordinal_primary_command+=(--skip-figures)
 fi
 run_stage "Primary ordinal analysis" ordinal_primary_current \
     ordinal_analysis/processed/manifest.json "${ordinal_primary_command[@]}"
@@ -407,6 +451,9 @@ scale_free_command=(bash scale_free_analysis/run_scale_free_analysis.sh)
 if [[ "$NO_PROGRESS" == true ]]; then
     scale_free_command+=(--no-progress)
 fi
+if [[ "$COMPUTE_ONLY" == true ]]; then
+    scale_free_command+=(--skip-specparam-gallery)
+fi
 if [[ "$OVERWRITE" == false \
     && -f scale_free_analysis/processed/figures/specparam_decomposition/index.html \
     && -f scale_free_analysis/processed/manifest.json ]] \
@@ -417,7 +464,9 @@ run_stage "Scale-free and bout-property analysis" scale_free_current \
     scale_free_analysis/processed/manifest.json "${scale_free_command[@]}"
 
 printf '\n=== Flat all-electrode specparam gallery ===\n'
-if specparam_gallery_current; then
+if [[ "$COMPUTE_ONLY" == true ]]; then
+    printf '  skipped by compute profile\n'
+elif specparam_gallery_current; then
     printf '  current output found; skipping\n'
 else
     execute bash scale_free_analysis/generate_specparam_figures.sh --overwrite
@@ -446,8 +495,16 @@ bout_command=(bash bout_analyses/run_bout_analyses.sh)
 if [[ "$NO_PROGRESS" == true ]]; then
     bout_command+=(--no-progress)
 fi
+if [[ "$COMPUTE_ONLY" == true ]]; then
+    bout_command+=(--skip-figures)
+fi
 run_stage "Within-bout ordinal analysis" bout_current \
     bout_analyses/processed/manifest.json "${bout_command[@]}"
+
+if [[ "$COMPUTE_ONLY" == true ]]; then
+    printf '\nCompute profile completed: reusable PSD, ordinal, scale-free, and within-bout metrics are ready.\n'
+    exit 0
+fi
 
 run_stage "Eight-electrode non-progression sensitivity battery" \
     eight_electrode_current eight_electrode_analysis/processed/manifest.json \
@@ -469,7 +526,7 @@ else
     printf '\n=== PD-versus-Control model exploration ===\n  skipped by request\n'
 fi
 
-printf '\n=== D=3,4,5,6 quantitative-behavioral ordinal inputs ===\n'
+printf '\n=== D=3,4,5 sensitivity inputs plus reused primary D=6 ===\n'
 dimension_input_command=(bash quantitative_behavioral/prepare_dimension_sensitivity.sh)
 if [[ "$OVERWRITE" == true ]]; then
     dimension_input_command+=(--overwrite)

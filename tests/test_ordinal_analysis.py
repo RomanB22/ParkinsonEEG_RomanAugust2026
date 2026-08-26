@@ -19,7 +19,10 @@ from ordinal_analysis.metrics import (
     ordinal_probabilities,
     subject_electrode_means,
 )
-from ordinal_analysis.pipeline import load_analysis_config
+from ordinal_analysis.pipeline import (
+    _load_reusable_subject_metrics,
+    load_analysis_config,
+)
 from ordinal_analysis.plots import electrode_metric_zscores
 
 
@@ -225,6 +228,71 @@ class OrdinalMetricTests(unittest.TestCase):
             path.write_text(json.dumps(config), encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "must be 1"):
                 load_analysis_config(path)
+
+    def test_reusable_metrics_are_filtered_and_require_complete_grids(self):
+        config = load_analysis_config("ordinal_analysis/config.json")
+        subjects = ["sub-001", "sub-002"]
+        electrodes = ["Fz", "Cz"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            metrics_dir = root / "metrics"
+            metrics_dir.mkdir()
+            (root / "manifest.json").write_text(
+                json.dumps({"analysis_config": config}), encoding="utf-8"
+            )
+            (metrics_dir / "electrode_sets.json").write_text(
+                json.dumps({"common_electrodes": electrodes}), encoding="utf-8"
+            )
+            broadband = pd.DataFrame(
+                [
+                    {
+                        "subject_id": subject,
+                        "group": "old",
+                        "electrode": electrode,
+                        "entropy": 0.5,
+                    }
+                    for subject in subjects + ["sub-extra"]
+                    for electrode in electrodes
+                ]
+            )
+            band = pd.DataFrame(
+                [
+                    {
+                        "subject_id": subject,
+                        "group": "old",
+                        "band": band_name,
+                        "electrode": electrode,
+                        "entropy": 0.5,
+                    }
+                    for subject in subjects + ["sub-extra"]
+                    for band_name in config["bands"]
+                    for electrode in electrodes
+                ]
+            )
+            inputs = pd.DataFrame(
+                {
+                    "subject_id": subjects + ["sub-extra"],
+                    "group": ["old"] * 3,
+                }
+            )
+            broadband.to_csv(metrics_dir / "electrode_metrics.csv", index=False)
+            band.to_csv(metrics_dir / "band_electrode_metrics.csv", index=False)
+            inputs.to_csv(metrics_dir / "analyzed_inputs.csv", index=False)
+
+            reused, reused_band, reused_inputs, provenance = (
+                _load_reusable_subject_metrics(
+                    root,
+                    config=config,
+                    expected_subjects=subjects,
+                    common_channels=electrodes,
+                    groups={"sub-001": "PD", "sub-002": "Control"},
+                )
+            )
+            self.assertEqual(len(reused), 4)
+            self.assertEqual(len(reused_band), 4 * len(config["bands"]))
+            self.assertEqual(len(reused_inputs), 2)
+            self.assertEqual(set(reused["group"]), {"PD", "Control"})
+            self.assertEqual(provenance["mode"], "filtered_subject_level_reuse")
 
 
 if __name__ == "__main__":

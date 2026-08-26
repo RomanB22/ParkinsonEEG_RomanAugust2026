@@ -23,6 +23,11 @@ class BoutAnalysesTests(unittest.TestCase):
         self.assertEqual(config["ordinal"]["delay_samples"], 1)
         self.assertEqual(METRICS, ("entropy", "complexity", "fisher_information"))
         self.assertEqual(config["bands"]["broad_5_15"], [5.0, 15.0])
+        self.assertEqual(
+            config["input"]["scale_free_output_dir"],
+            "scale_free_analysis/processed",
+        )
+        self.assertTrue(config["cache"]["reuse_scale_free_detection"])
 
     def test_counts_match_ordpy_for_one_bout(self):
         signal = np.asarray([3.0, 1.0, 4.0, 1.5, 5.0, 9.0, 2.0])

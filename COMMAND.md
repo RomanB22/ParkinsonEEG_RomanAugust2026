@@ -1,9 +1,9 @@
 # Reproduce the complete analysis
 
-`run_reproducible_pipeline.sh` is the full entry point: it bootstraps the conda
-environment and metadata, performs ICA cleaning, and then invokes
-`run_all_analyses.sh`. `run_all_analyses.sh` starts from existing cleaned epochs
-and runs only the downstream full-cohort and matched-cohort analyses.
+`run_reproducible_pipeline.sh` is the public entry point. It bootstraps the
+conda environment and metadata, performs ICA cleaning, and invokes the internal
+downstream orchestrator. Most users do not need to call `run_all_analyses.sh`
+directly.
 
 Both entry points check for the default `MNE_August2026` environment. If it is
 missing, they create it with Python 3.14 and install the pinned
@@ -27,14 +27,18 @@ Inspect ICA stages 08–10 and confirm the component decisions in
 battery:
 
 ```bash
-bash run_reproducible_pipeline.sh run --overwrite --no-progress
+bash run_reproducible_pipeline.sh run \
+  --profile paper \
+  --overwrite \
+  --no-progress
 ```
 
 The `run` command includes:
 
 - reviewed ICA signal cleaning;
 - PSD and relative band-power analyses;
-- primary and D={3,4,5,6} ordinal sensitivity analyses, all at tau=1;
+- primary D=6 ordinal analysis plus D={3,4,5} sensitivity analyses, all at
+  tau=1 (D=6 is calculated only once);
 - scale-free/specparam, eBOSC bout, within-bout ordinal, and fit-QC analyses;
 - a separate eight-electrode sensitivity battery using F4, P4, O2, P6, CP2,
   CP1, PO7, and P8 for non-progression group analyses;
@@ -52,13 +56,34 @@ The `run` command includes:
 The matched pipeline runs by default. Do not pass `--skip-matched` when both
 cohorts are required.
 
+## Choose a profile
+
+The same entry point supports three explicit workloads:
+
+```bash
+# Reusable base metrics, minimal figures, full cohort only
+bash run_reproducible_pipeline.sh run --profile compute --no-progress
+
+# Complete paper/report battery for full and matched cohorts (default)
+bash run_reproducible_pipeline.sh run --profile paper --no-progress
+
+# Paper profile plus the slow independent bycycle detector
+bash run_reproducible_pipeline.sh run --profile full-qc --no-progress
+```
+
+`compute` stops after PSD, ordinal, scale-free/eBOSC, and within-bout ordinal
+metric caches. `paper` adds inference, galleries, models, behavioral analyses,
+duration sensitivity, matched analyses, and tests. `full-qc` additionally runs
+the independent bycycle sensitivity. All profiles resume current stages unless
+`--overwrite` is supplied.
+
 The computationally expensive independent bycycle burst sensitivity is not
 part of the default full run. Include it for both cohorts only when requested:
 
 ```bash
 bash run_reproducible_pipeline.sh run \
   --overwrite \
-  --include-bycycle-bursts
+  --profile full-qc
 ```
 
 The runner is bootstrappable from the source `dataset/`: if the root
@@ -95,3 +120,6 @@ Full-cohort outputs are written under each analysis folder's `processed/`
 directory. Matched outputs use `processed_matched/`; the matched subject list,
 pair assignments, balance table, and generated configs are stored under
 `matched_analysis/processed/`.
+
+See [`PIPELINE_MAP.md`](PIPELINE_MAP.md) for the dependency graph, ownership of
+cached calculations, and focused rerun commands.

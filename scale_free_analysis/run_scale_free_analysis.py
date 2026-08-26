@@ -39,6 +39,10 @@ def main() -> None:
         "--output-dir",
         help="Optional output-directory override, useful for development runs",
     )
+    parser.add_argument(
+        "--feature-source-output-dir",
+        help="Optional compatible scale-free output to reuse for a cohort subset",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--no-progress", action="store_true")
     parser.add_argument(
@@ -52,6 +56,7 @@ def main() -> None:
         subjects=args.subjects,
         channels=args.channels,
         output_dir_override=args.output_dir,
+        feature_source_output_dir_override=args.feature_source_output_dir,
         overwrite=args.overwrite,
         show_progress=not args.no_progress,
         skip_specparam_gallery=args.skip_specparam_gallery,

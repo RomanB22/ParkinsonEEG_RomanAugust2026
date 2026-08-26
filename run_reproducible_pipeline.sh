@@ -22,6 +22,7 @@ SKIP_EXPLORATION=false
 SKIP_MATCHED=false
 SKIP_MANUAL_ICA_REVIEW=false
 INCLUDE_BYCYCLE_BURSTS=false
+PROFILE="paper"
 CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
 
 usage() {
@@ -39,10 +40,11 @@ Options:
   --dry-run                  Print downstream commands without executing them
   --no-progress              Disable supported progress bars
   --skip-tests               Skip the downstream repository-test stage
-  --skip-sweep               Skip the D={3,4,5,6}, tau=1 ordinal sensitivity sweep
+  --skip-sweep               Skip D={3,4,5}; primary D=6 still runs at tau=1
   --skip-exploration         Skip full and demographically matched prediction models
   --skip-matched             Skip the complete matched-cohort sensitivity pipeline
   --include-bycycle-bursts   Also run the optional independent bycycle sensitivity
+  --profile NAME             compute, paper (default), or full-qc
   --skip-manual-ica-review   Explicitly use automatic ICLabel proposals during cleaning
   --env NAME                 Conda environment (default: MNE_August2026)
   -h, --help                 Show this help
@@ -50,7 +52,7 @@ Options:
 Recommended reproducible reviewed workflow:
   bash run_reproducible_pipeline.sh review --overwrite
   # Inspect ICA stages 08–10 and confirm decisions in config/preprocessing.yaml.
-  bash run_reproducible_pipeline.sh run --overwrite
+  bash run_reproducible_pipeline.sh run --profile paper --overwrite
 
 The automatic ICA option is recorded in QC and is not the scientific default.
 EOF
@@ -66,6 +68,11 @@ while [[ $# -gt 0 ]]; do
         --skip-exploration) SKIP_EXPLORATION=true ;;
         --skip-matched) SKIP_MATCHED=true ;;
         --include-bycycle-bursts) INCLUDE_BYCYCLE_BURSTS=true ;;
+        --profile)
+            [[ $# -ge 2 ]] || { printf 'ERROR: --profile requires a name\n' >&2; exit 2; }
+            PROFILE="$2"
+            shift
+            ;;
         --skip-manual-ica-review) SKIP_MANUAL_ICA_REVIEW=true ;;
         --env)
             [[ $# -ge 2 ]] || { printf 'ERROR: --env requires a name\n' >&2; exit 2; }
@@ -77,6 +84,16 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
+
+case "$PROFILE" in
+    compute|paper) ;;
+    full-qc) INCLUDE_BYCYCLE_BURSTS=true ;;
+    *) printf 'ERROR: --profile must be compute, paper, or full-qc\n' >&2; exit 2 ;;
+esac
+if [[ "$PROFILE" == compute && "$INCLUDE_BYCYCLE_BURSTS" == true ]]; then
+    printf 'ERROR: compute profile cannot include the optional bycycle analysis\n' >&2
+    exit 2
+fi
 
 case "$MODE" in
     review|run) ;;
@@ -166,6 +183,7 @@ else
 fi
 
 analysis_command=(bash run_all_analyses.sh --env "$CONDA_ENV")
+analysis_command+=(--profile "$PROFILE")
 if [[ "$OVERWRITE" == true ]]; then
     analysis_command+=(--overwrite)
 fi

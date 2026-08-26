@@ -2,7 +2,8 @@
   "input": {
     "epochs_dir": "processed/epochs",
     "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif",
-    "participants_file": "processed/metadata/subjects.csv"
+    "participants_file": "processed/metadata/subjects.csv",
+    "scale_free_output_dir": "scale_free_analysis/processed"
   },
   "output_dir": "bout_analyses/processed",
   "bands": {
@@ -45,6 +46,10 @@
     "order": 4,
     "phase": "zero_phase",
     "boundary_policy": "filter_each_accepted_epoch_before_slicing_bouts"
+  },
+  "cache": {
+    "reuse_scale_free_detection": true,
+    "link_reused_episode_and_threshold_files": true
   },
   "statistics": {
     "fdr_alpha": 0.05,

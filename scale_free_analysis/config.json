@@ -53,6 +53,10 @@
   "bycycle": {
     "minimum_bout_overlap_fraction": 0.5
   },
+  "cache": {
+    "save_raw_cycle_tables": false,
+    "policy": "Save reusable spectra, eBOSC episodes, and thresholds; retain cycle summaries without duplicating raw cycle rows"
+  },
   "typical_bouts": {
     "center_window_seconds": 0.5,
     "bandpass_filter_order": 4,

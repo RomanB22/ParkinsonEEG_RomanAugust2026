@@ -31,6 +31,10 @@ def main() -> None:
         help="Optional BIDS participant IDs; default is every participant",
     )
     parser.add_argument(
+        "--output-dir",
+        help="Optional output-directory override for pilots",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Replace existing ordinal-analysis result files",
@@ -52,6 +56,7 @@ def main() -> None:
     manifest = run_analysis(
         args.config,
         subjects=args.subjects,
+        output_dir_override=args.output_dir,
         overwrite=args.overwrite,
         show_progress=not args.no_progress,
         generate_figures=not args.skip_figures,

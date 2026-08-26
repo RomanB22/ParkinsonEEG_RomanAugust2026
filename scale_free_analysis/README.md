@@ -171,6 +171,11 @@ features and summarizes:
 - rise/decay symmetry;
 - peak/trough symmetry.
 
+All cycle summaries are retained in the electrode and subject metric tables.
+The much larger per-cycle provenance tables are disabled by default to reduce
+disk writes and cache size. Set `cache.save_raw_cycle_tables` to `true` in the
+configuration only when individual cycle rows are needed for an audit.
+
 ### 5. Subject-level PD vs Control comparisons
 
 Electrode values are averaged first, producing one value per subject for every
@@ -282,7 +287,7 @@ scale_free_analysis/processed/
 │   ├── spectra/sub-*_specparam_spectra.npz
 │   ├── thresholds/sub-*_ebosc_thresholds.csv.gz
 │   ├── episodes/sub-*_bout_episodes.csv.gz
-│   └── cycles/sub-*_bycycle_cycles.csv.gz
+│   └── cycles/sub-*_bycycle_cycles.csv.gz  # optional; disabled by default
 └── figures/
     ├── examples/
     │   ├── specparam_decomposition.png
@@ -317,10 +322,10 @@ component in orange. Red electrode labels indicate formal QC failures. No
 individual-electrode PNGs or per-subject folders are generated; poor fits stay
 visible in the combined figure rather than being hidden.
 
-The compressed intermediate files preserve individual bout and cycle rows, the
+The compressed intermediate files preserve individual bout rows, the
 frequency-specific aperiodic background and threshold, and observed/fitted
-spectral curves. Every stage can therefore be inspected without reverse
-engineering a final aggregate.
+spectral curves. Optional raw cycle rows can be enabled for a cycle-level audit;
+the default cache retains their complete summaries without the large raw table.
 
 ## Validation
 

@@ -532,9 +532,12 @@ def _dimension_source_paths(
     config: dict[str, Any], dimension: int
 ) -> dict[str, Path]:
     settings = config["dimension_sensitivity"]
-    root = Path(settings["ordinal_output_root"])
     delay = int(settings["delay_samples"])
-    metrics_dir = root / f"D{dimension}_tau{delay}" / "metrics"
+    if int(dimension) == int(config["expected"]["embedding_dimension"]):
+        metrics_dir = Path(settings["primary_output_dir"]) / "metrics"
+    else:
+        root = Path(settings["ordinal_output_root"])
+        metrics_dir = root / f"D{dimension}_tau{delay}" / "metrics"
     return {
         "subject": metrics_dir / "subject_electrode_mean_metrics.csv",
         "band_subject": metrics_dir / "band_subject_electrode_mean_metrics.csv",

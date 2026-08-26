@@ -24,6 +24,7 @@ from scipy.stats import mannwhitneyu, ttest_ind
 from tqdm.auto import tqdm
 
 from psd_analysis.metrics import compute_subject_electrode_psd
+from src.cache import replace_with_relative_symlink, same_json_settings
 from src.dataset import ordered_channel_inventory
 from src.group_statistics import compute_group_statistics
 from src.group_statistics_plots import plot_electrode_group_statistics
@@ -70,6 +71,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "aperiodic_sensitivity",
         "ebosc",
         "bycycle",
+        "cache",
         "typical_bouts",
         "statistics",
         "plots",
@@ -122,6 +124,9 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("plots.specparam_gallery_workers must be at least one")
     if int(config["plots"].get("specparam_gallery_dpi", 100)) < 50:
         raise ValueError("plots.specparam_gallery_dpi must be at least 50")
+    cache = config.get("cache", {})
+    if not isinstance(cache.get("save_raw_cycle_tables", False), bool):
+        raise ValueError("cache.save_raw_cycle_tables must be boolean")
     overlap = float(config["bycycle"]["minimum_bout_overlap_fraction"])
     if not 0.0 <= overlap <= 1.0:
         raise ValueError("bycycle.minimum_bout_overlap_fraction must be between zero and one")
@@ -322,12 +327,154 @@ def _subject_means(table: pd.DataFrame, keys: list[str], features: tuple[str, ..
     return means.merge(counts, on=keys, validate="one_to_one")
 
 
+def _load_reusable_subject_features(
+    source_output_dir: Path,
+    output_dir: Path,
+    *,
+    config: dict[str, Any],
+    expected_subjects: list[str],
+    common_channels: list[str],
+    groups: dict[str, str],
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    dict[str, Any],
+]:
+    """Filter compatible cohort-independent scale-free features and caches."""
+    manifest_path = source_output_dir / "manifest.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"Reusable scale-free manifest not found: {manifest_path}"
+        )
+    source_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    source_config = source_manifest.get("analysis_config", {})
+    for section in (
+        "bands",
+        "psd",
+        "specparam",
+        "aperiodic_fit_qc",
+        "aperiodic_sensitivity",
+        "ebosc",
+        "bycycle",
+    ):
+        if not same_json_settings(source_config.get(section), config.get(section)):
+            raise ValueError(
+                "Reusable scale-free output is incompatible: "
+                f"analysis_config.{section} differs in {manifest_path}"
+            )
+
+    source_metrics = source_output_dir / "metrics"
+    electrode_sets_path = source_metrics / "electrode_sets.json"
+    if not electrode_sets_path.is_file():
+        raise FileNotFoundError(
+            f"Reusable scale-free electrode set not found: {electrode_sets_path}"
+        )
+    source_electrodes = json.loads(
+        electrode_sets_path.read_text(encoding="utf-8")
+    ).get("common_electrodes", [])
+    if list(source_electrodes) != list(common_channels):
+        raise ValueError(
+            "Reusable scale-free output has a different shared-electrode set. "
+            "Recompute this cohort so its electrode policy remains explicit."
+        )
+
+    aperiodic = pd.read_csv(source_metrics / "electrode_aperiodic_metrics.csv")
+    band_metrics = pd.read_csv(source_metrics / "electrode_band_metrics.csv")
+    inputs = pd.read_csv(source_metrics / "analyzed_inputs.csv")
+    expected_set = set(expected_subjects)
+    aperiodic = aperiodic.loc[aperiodic["subject_id"].isin(expected_set)].copy()
+    band_metrics = band_metrics.loc[
+        band_metrics["subject_id"].isin(expected_set)
+    ].copy()
+    inputs = inputs.loc[inputs["subject_id"].isin(expected_set)].copy()
+    for table in (aperiodic, band_metrics, inputs):
+        table["group"] = table["subject_id"].map(groups)
+
+    n_subjects = len(expected_subjects)
+    n_electrodes = len(common_channels)
+    n_bands = len(config["bands"])
+    if aperiodic.duplicated(["subject_id", "electrode"]).any() or len(
+        aperiodic
+    ) != n_subjects * n_electrodes:
+        raise ValueError("Reusable aperiodic metric grid is incomplete")
+    if band_metrics.duplicated(["subject_id", "electrode", "band"]).any() or len(
+        band_metrics
+    ) != n_subjects * n_electrodes * n_bands:
+        raise ValueError("Reusable band/bout metric grid is incomplete")
+    if len(inputs) != n_subjects or inputs["subject_id"].duplicated().any():
+        raise ValueError("Reusable scale-free analyzed-input table is incomplete")
+
+    for subject_id in expected_subjects:
+        intermediate_files = [
+            ("spectra", "specparam_spectra.npz"),
+            ("episodes", "bout_episodes.csv.gz"),
+            ("thresholds", "ebosc_thresholds.csv.gz"),
+        ]
+        if bool(config.get("cache", {}).get("save_raw_cycle_tables", False)):
+            intermediate_files.append(("cycles", "bycycle_cycles.csv.gz"))
+        for subdirectory, suffix in intermediate_files:
+            source = (
+                source_output_dir
+                / "intermediate"
+                / subdirectory
+                / f"{subject_id}_{suffix}"
+            )
+            if not source.is_file():
+                raise FileNotFoundError(
+                    f"Reusable scale-free cache is incomplete: {source}"
+                )
+            replace_with_relative_symlink(
+                source,
+                output_dir / "intermediate" / subdirectory / source.name,
+            )
+        if not bool(config.get("cache", {}).get("save_raw_cycle_tables", False)):
+            stale_cycle_path = (
+                output_dir
+                / "intermediate"
+                / "cycles"
+                / f"{subject_id}_bycycle_cycles.csv.gz"
+            )
+            if stale_cycle_path.is_symlink() or stale_cycle_path.exists():
+                stale_cycle_path.unlink()
+
+    provenance = {
+        "mode": "filtered_subject_level_reuse",
+        "source_output_dir": str(source_output_dir.resolve()),
+        "source_manifest": str(manifest_path.resolve()),
+        "validation": (
+            "Spectral, fit-QC, sensitivity, eBOSC, bycycle, band, exact shared-"
+            "electrode, subject, and complete row-grid settings were verified."
+        ),
+        "reused": [
+            "aperiodic electrode features",
+            "periodic/bout/cycle electrode features",
+            "spectra",
+            "eBOSC episodes",
+            "eBOSC thresholds",
+        ],
+        "recomputed": [
+            "aperiodic diagnostic summaries",
+            "cohort summaries",
+            "matched/full statistical inference",
+            "figures",
+        ],
+    }
+    return (
+        aperiodic.to_dict("records"),
+        band_metrics.to_dict("records"),
+        inputs.to_dict("records"),
+        provenance,
+    )
+
+
 def run_analysis(
     config_path: str | Path,
     *,
     subjects: list[str] | None = None,
     channels: list[str] | None = None,
     output_dir_override: str | Path | None = None,
+    feature_source_output_dir_override: str | Path | None = None,
     overwrite: bool = False,
     show_progress: bool = True,
     skip_specparam_gallery: bool = False,
@@ -336,6 +483,10 @@ def run_analysis(
     config = load_analysis_config(config_path)
     if output_dir_override is not None:
         config["output_dir"] = str(output_dir_override)
+    if feature_source_output_dir_override is not None:
+        config["input"]["feature_source_output_dir"] = str(
+            feature_source_output_dir_override
+        )
     output_dir = Path(config["output_dir"])
     result_path = output_dir / "metrics" / "subject_band_metrics.csv"
     if result_path.exists() and not overwrite:
@@ -393,24 +544,67 @@ def run_analysis(
         ",".join(band_order),
     )
 
-    aperiodic_rows: list[dict[str, Any]] = []
-    band_rows: list[dict[str, Any]] = []
-    input_rows: list[dict[str, Any]] = []
+    feature_source = config["input"].get("feature_source_output_dir")
+    if feature_source:
+        logger.info(
+            "Reusing compatible subject-level scale-free features from %s",
+            feature_source,
+        )
+        (
+            aperiodic_rows,
+            band_rows,
+            input_rows,
+            feature_cache,
+        ) = _load_reusable_subject_features(
+            Path(feature_source),
+            output_dir,
+            config=config,
+            expected_subjects=expected_subjects,
+            common_channels=common_channels,
+            groups=group_lookup,
+        )
+        for filename in (
+            "specparam_decomposition.png",
+            "detected_bout_and_time_frequency.png",
+            "bycycle_waveform_landmarks.png",
+        ):
+            stale_example = output_dir / "figures" / "examples" / filename
+            if stale_example.exists() or stale_example.is_symlink():
+                stale_example.unlink()
+        computation_subjects: list[str] = []
+    else:
+        aperiodic_rows = []
+        band_rows = []
+        input_rows = []
+        feature_cache = {
+            "mode": "calculated_from_cleaned_epochs",
+            "source_output_dir": None,
+        }
+        computation_subjects = expected_subjects
     subject_infos: dict[str, mne.Info] = {}
+    if feature_source:
+        for subject_id in expected_subjects:
+            epochs = mne.read_epochs(
+                files[subject_id], preload=False, verbose="ERROR"
+            )
+            picks = [epochs.ch_names.index(channel) for channel in common_channels]
+            info = mne.pick_info(epochs.info, picks, copy=True)
+            info["bads"] = []
+            subject_infos[subject_id] = info
     spectral_example: dict[str, Any] | None = None
     bout_example: dict[str, Any] | None = None
     cycle_example: dict[str, Any] | None = None
     progress = tqdm(
-        total=len(expected_subjects) * len(common_channels),
+        total=len(computation_subjects) * len(common_channels),
         desc="specparam + eBOSC + bycycle",
         unit="electrode",
         dynamic_ncols=True,
         disable=not show_progress,
     )
 
-    for subject_index, subject_id in enumerate(expected_subjects, start=1):
+    for subject_index, subject_id in enumerate(computation_subjects, start=1):
         path = files[subject_id]
-        logger.info("[%d/%d] %s | %s", subject_index, len(expected_subjects), subject_id, path)
+        logger.info("[%d/%d] %s | %s", subject_index, len(computation_subjects), subject_id, path)
         epochs = mne.read_epochs(path, preload=True, verbose="ERROR")
         picks = [epochs.ch_names.index(channel) for channel in common_channels]
         data_v = epochs.get_data(picks=picks, copy=True)
@@ -569,7 +763,8 @@ def run_analysis(
                     all_cycles.insert(0, "electrode", electrode)
                     all_cycles.insert(0, "group", group_lookup[subject_id])
                     all_cycles.insert(0, "subject_id", subject_id)
-                    subject_cycle_tables.append(all_cycles)
+                    if bool(config.get("cache", {}).get("save_raw_cycle_tables", False)):
+                        subject_cycle_tables.append(all_cycles)
 
                 band_rows.append(
                     {
@@ -637,11 +832,13 @@ def run_analysis(
             intermediate_dir / "episodes" / f"{subject_id}_bout_episodes.csv.gz",
             compressed=True,
         )
-        _write_csv(
-            cycle_output,
-            intermediate_dir / "cycles" / f"{subject_id}_bycycle_cycles.csv.gz",
-            compressed=True,
+        cycle_path = (
+            intermediate_dir / "cycles" / f"{subject_id}_bycycle_cycles.csv.gz"
         )
+        if bool(config.get("cache", {}).get("save_raw_cycle_tables", False)):
+            _write_csv(cycle_output, cycle_path, compressed=True)
+        elif cycle_path.exists() or cycle_path.is_symlink():
+            cycle_path.unlink()
         _write_csv(
             pd.DataFrame.from_records(subject_threshold_rows),
             intermediate_dir / "thresholds" / f"{subject_id}_ebosc_thresholds.csv.gz",
@@ -914,6 +1111,7 @@ def run_analysis(
         "group_counts": pd.Series([group_lookup[s] for s in expected_subjects]).value_counts().to_dict(),
         "n_common_electrodes": len(common_channels),
         "n_electrode_union": len(electrode_union),
+        "feature_cache": feature_cache,
         "specparam_primary_fit_range_hz": config["specparam"][
             "frequency_range_hz"
         ],
@@ -922,6 +1120,13 @@ def run_analysis(
             f"{float(config['specparam']['frequency_range_hz'][1]):g}Hz"
         ),
         "n_specparam_decomposition_figures": int(len(specparam_gallery_index)),
+        "raw_cycle_tables_saved": bool(
+            config.get("cache", {}).get("save_raw_cycle_tables", False)
+        ),
+        "raw_cycle_table_policy": (
+            "Cycle-level rows are optional provenance output. All configured bycycle "
+            "summary quantities are calculated before raw rows are discarded."
+        ),
         "n_specparam_subject_overview_figures": int(
             specparam_gallery_index["subject_id"].nunique()
             if not specparam_gallery_index.empty

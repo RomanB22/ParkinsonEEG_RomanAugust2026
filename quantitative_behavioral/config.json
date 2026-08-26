@@ -1,11 +1,11 @@
 {
   "input": {
     "participants_file": "processed/metadata/subjects.csv",
-    "ordinal_subject_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/subject_electrode_mean_metrics.csv",
-    "ordinal_band_subject_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/band_subject_electrode_mean_metrics.csv",
-    "ordinal_electrode_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/electrode_metrics.csv",
-    "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/band_electrode_metrics.csv",
-    "ordinal_electrode_sets_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/electrode_sets.json",
+    "ordinal_subject_file": "ordinal_analysis/processed/metrics/subject_electrode_mean_metrics.csv",
+    "ordinal_band_subject_file": "ordinal_analysis/processed/metrics/band_subject_electrode_mean_metrics.csv",
+    "ordinal_electrode_file": "ordinal_analysis/processed/metrics/electrode_metrics.csv",
+    "ordinal_band_electrode_file": "ordinal_analysis/processed/metrics/band_electrode_metrics.csv",
+    "ordinal_electrode_sets_file": "ordinal_analysis/processed/metrics/electrode_sets.json",
     "bout_subject_file": "scale_free_analysis/processed/metrics/subject_band_metrics.csv",
     "bout_electrode_file": "scale_free_analysis/processed/metrics/electrode_band_metrics.csv",
     "aperiodic_subject_file": "scale_free_analysis/processed/metrics/subject_aperiodic_metrics.csv",
@@ -52,6 +52,7 @@
   "dimension_sensitivity": {
     "enabled": true,
     "ordinal_output_root": "ordinal_analysis/parameter_sweep",
+    "primary_output_dir": "ordinal_analysis/processed",
     "embedding_dimensions": [3, 4, 5, 6],
     "delay_samples": 1,
     "metrics": [

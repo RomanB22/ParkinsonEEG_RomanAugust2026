@@ -11,7 +11,7 @@ BASE_CONFIG="${ORDINAL_BASE_CONFIG:-ordinal_analysis/config.json}"
 OUTPUT_ROOT="${ORDINAL_SWEEP_OUTPUT_ROOT:-ordinal_analysis/parameter_sweep}"
 CONDA_ENV="${ORDINAL_CONDA_ENV:-${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}}"
 
-embedding_dimensions=(3 4 5 6)
+embedding_dimensions=(3 4 5)
 delays=(1)
 total_runs=$(( ${#embedding_dimensions[@]} * ${#delays[@]} ))
 run_number=0
@@ -25,7 +25,8 @@ for argument in "$@"; do
             cat <<'EOF'
 Usage: bash ordinal_analysis/run_ordinal_parameter_sweep.sh [ANALYSIS_OPTIONS]
 
-Run D={3,4,5,6} with the ordinal delay fixed at tau=1.
+Run the D={3,4,5} sensitivity fits with tau=1. The primary ordinal stage
+already calculates the identical D=6, tau=1 quantities and is reused directly.
 ANALYSIS_OPTIONS are forwarded to run_ordinal_analysis.sh; for example:
   --subjects sub-001 sub-101
   --overwrite
@@ -104,6 +105,11 @@ with Path(base_path).open(encoding="utf-8") as stream:
 config["ordinal"]["embedding_dimension"] = int(dimension)
 config["ordinal"]["delay_samples"] = int(delay)
 config["output_dir"] = output_dir
+source_root = config["input"].get("feature_source_sweep_root")
+if source_root:
+    config["input"]["feature_source_output_dir"] = str(
+        Path(source_root) / f"D{dimension}_tau{delay}"
+    )
 Path(config_path).write_text(
     json.dumps(config, indent=2) + "\n",
     encoding="utf-8",

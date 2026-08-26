@@ -39,16 +39,27 @@ def main() -> None:
         "--output-dir",
         help="Optional output-directory override, useful for pilot runs",
     )
+    parser.add_argument(
+        "--scale-free-output-dir",
+        help="Optional compatible scale-free cache override for pilot runs",
+    )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--no-progress", action="store_true")
+    parser.add_argument(
+        "--skip-figures",
+        action="store_true",
+        help="Calculate all metric and statistical tables without rendering figures",
+    )
     args = parser.parse_args()
     manifest = run_analysis(
         args.config,
         subjects=args.subjects,
         channels=args.channels,
         output_dir_override=args.output_dir,
+        scale_free_output_dir_override=args.scale_free_output_dir,
         overwrite=args.overwrite,
         show_progress=not args.no_progress,
+        generate_figures=not args.skip_figures,
     )
     print(
         f"Completed bout ordinal analysis for {manifest['n_subjects']} subjects; "
@@ -58,4 +69,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

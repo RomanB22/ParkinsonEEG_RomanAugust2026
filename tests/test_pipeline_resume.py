@@ -57,6 +57,25 @@ class PipelineResumeTests(unittest.TestCase):
             'if [[ "$INCLUDE_BYCYCLE_BURSTS" == true ]]; then', matched
         )
 
+    def test_public_runner_exposes_bounded_profiles(self) -> None:
+        wrapper = Path("run_reproducible_pipeline.sh").read_text(encoding="utf-8")
+        downstream = Path("run_all_analyses.sh").read_text(encoding="utf-8")
+        for source in (wrapper, downstream):
+            self.assertIn("--profile", source)
+            self.assertIn("compute", source)
+            self.assertIn("paper", source)
+            self.assertIn("full-qc", source)
+        self.assertIn('PROFILE="paper"', wrapper)
+        self.assertIn('PROFILE="paper"', downstream)
+
+    def test_dimension_sweep_does_not_recompute_primary_d6(self) -> None:
+        sweep = Path("ordinal_analysis/run_ordinal_parameter_sweep.sh").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("embedding_dimensions=(3 4 5)", sweep)
+        self.assertNotIn("embedding_dimensions=(3 4 5 6)", sweep)
+        self.assertIn("feature_source_sweep_root", sweep)
+
 
 if __name__ == "__main__":
     unittest.main()

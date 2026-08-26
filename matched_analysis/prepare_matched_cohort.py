@@ -127,8 +127,23 @@ def prepare_matched_cohort(
         config = _load_json(Path(source_name))
         config["input"]["participants_file"] = str(metadata_path)
         config["output_dir"] = analysis_output
-        if name == "bycycle_burst":
+        if name == "ordinal":
+            config["input"]["feature_source_output_dir"] = (
+                "ordinal_analysis/processed"
+            )
+            config["input"]["feature_source_sweep_root"] = (
+                "ordinal_analysis/parameter_sweep"
+            )
+        elif name == "bycycle_burst":
             config["input"]["reference_ebosc_output_dir"] = (
+                "scale_free_analysis/processed_matched"
+            )
+        elif name == "scale_free":
+            config["input"]["feature_source_output_dir"] = (
+                "scale_free_analysis/processed"
+            )
+        elif name == "bout":
+            config["input"]["scale_free_output_dir"] = (
                 "scale_free_analysis/processed_matched"
             )
         elif name == "exploration":
@@ -154,11 +169,11 @@ def prepare_matched_cohort(
         elif name == "quantitative_behavioral":
             config["input"].update(
                 {
-                    "ordinal_subject_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/subject_electrode_mean_metrics.csv",
-                    "ordinal_band_subject_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/band_subject_electrode_mean_metrics.csv",
-                    "ordinal_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/electrode_metrics.csv",
-                    "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/band_electrode_metrics.csv",
-                    "ordinal_electrode_sets_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/electrode_sets.json",
+                    "ordinal_subject_file": "ordinal_analysis/processed_matched/metrics/subject_electrode_mean_metrics.csv",
+                    "ordinal_band_subject_file": "ordinal_analysis/processed_matched/metrics/band_subject_electrode_mean_metrics.csv",
+                    "ordinal_electrode_file": "ordinal_analysis/processed_matched/metrics/electrode_metrics.csv",
+                    "ordinal_band_electrode_file": "ordinal_analysis/processed_matched/metrics/band_electrode_metrics.csv",
+                    "ordinal_electrode_sets_file": "ordinal_analysis/processed_matched/metrics/electrode_sets.json",
                     "bout_subject_file": "scale_free_analysis/processed_matched/metrics/subject_band_metrics.csv",
                     "bout_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_band_metrics.csv",
                     "aperiodic_subject_file": "scale_free_analysis/processed_matched/metrics/subject_aperiodic_metrics.csv",
@@ -171,12 +186,15 @@ def prepare_matched_cohort(
             config["dimension_sensitivity"]["ordinal_output_root"] = (
                 "ordinal_analysis/parameter_sweep_matched"
             )
+            config["dimension_sensitivity"]["primary_output_dir"] = (
+                "ordinal_analysis/processed_matched"
+            )
         elif name == "disease_progression":
             config["input"].update(
                 {
-                    "ordinal_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/electrode_metrics.csv",
-                    "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/band_electrode_metrics.csv",
-                    "ordinal_electrode_sets_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/electrode_sets.json",
+                    "ordinal_electrode_file": "ordinal_analysis/processed_matched/metrics/electrode_metrics.csv",
+                    "ordinal_band_electrode_file": "ordinal_analysis/processed_matched/metrics/band_electrode_metrics.csv",
+                    "ordinal_electrode_sets_file": "ordinal_analysis/processed_matched/metrics/electrode_sets.json",
                     "psd_electrode_file": "psd_analysis/processed_matched/metrics/subject_electrode_band_power.csv",
                     "aperiodic_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_aperiodic_metrics.csv",
                     "bout_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_band_metrics.csv",
@@ -187,8 +205,8 @@ def prepare_matched_cohort(
             config["input"].update(
                 {
                     "psd_electrode_file": "psd_analysis/processed_matched/metrics/subject_electrode_band_power.csv",
-                    "ordinal_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/electrode_metrics.csv",
-                    "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep_matched/D6_tau1/metrics/band_electrode_metrics.csv",
+                    "ordinal_electrode_file": "ordinal_analysis/processed_matched/metrics/electrode_metrics.csv",
+                    "ordinal_band_electrode_file": "ordinal_analysis/processed_matched/metrics/band_electrode_metrics.csv",
                     "aperiodic_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_aperiodic_metrics.csv",
                     "bout_electrode_file": "scale_free_analysis/processed_matched/metrics/electrode_band_metrics.csv",
                     "bout_ordinal_electrode_file": "bout_analyses/processed_matched/metrics/subject_electrode_band_metrics.csv",
@@ -216,6 +234,12 @@ def prepare_matched_cohort(
         "output_policy": (
             "Every matched analysis reads this same participant table and writes to a "
             "separate processed_matched directory; full-cohort outputs are never overwritten."
+        ),
+        "feature_cache_policy": (
+            "Compatible cohort-independent ordinal and scale-free subject features are "
+            "filtered from full-cohort caches after strict parameter, electrode, subject, "
+            "and row-grid validation. Matched summaries, paired inference, FDR, and figures "
+            "are recomputed."
         ),
     }
     _write_json(manifest, output_root / "manifest.json")

@@ -64,6 +64,17 @@ prediction exploration, and behavioral analyses.
 The matched ordinal sensitivity grid is stored in
 `ordinal_analysis/parameter_sweep_matched/`.
 
+Ordinal H/C/F and Rényi values are subject-level feature calculations, so the
+matched pipeline filters them from compatible full-cohort D=3–6 caches instead
+of reading and filtering the same EEG again. Before reuse it verifies the
+complete subject/electrode grids, exact shared-electrode order, embedding
+parameters, bands, and filter configuration. Cohort summaries, paired
+statistics, FDR correction, and all matched figures are always recalculated.
+The matched scale-free stage applies the same guarded reuse to subject-level
+fits, detections, and cycle summaries, then reruns matched fit-QC summaries,
+paired inference, FDR, and figures. The within-bout ordinal stage consumes that
+matched cache rather than repeating PSD, specparam, wavelet, or eBOSC work.
+
 The final matched sensitivity requires at least 60 accepted EEG seconds. A
 complete demographic pair is retained only when both members pass; outputs are
 written to `duration_qc_analysis/processed_matched/`. This preserves pairing

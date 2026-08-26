@@ -11,9 +11,9 @@ cycle, and within-bout ordinal summaries, which require at least 48/60 passing
 electrodes per subject. Run it after both bout pipelines with
 `bash scale_free_analysis/run_fit_qc_sensitivity.sh`.
 
-The original files under `dataset/` are read-only inputs. Complex-pipeline
-outputs are placed under `processed/`; minimal-pipeline outputs are isolated
-under `simpler/processed/`.
+The original files under `dataset/` are read-only inputs. Generated cleaning
+outputs are placed under the root `processed/` tree; analysis outputs stay in
+their owning analysis folder's `processed/` or `processed_matched/` tree.
 
 ## Verified dataset
 
@@ -173,21 +173,6 @@ component unless `--skip-manual-ica-review` is explicitly supplied.
 `--no-ica-downsampling` does not disable the required 500→120 Hz resampling.
 It keeps the temporary ICA copy at 120 Hz instead of reducing that copy once
 more to 100 Hz. The older `--no-downsampling` spelling remains an alias.
-
-## Minimal alternative
-
-The independent minimal workflow performs linear detrending, a 59–61 Hz
-fourth-order Butterworth band-stop, a 1–50 Hz fourth-order Butterworth
-band-pass, and resampling to 120 Hz before extracting 4-second windows. Run its
-pilot with:
-
-```bash
-bash simpler/run_simple_cleaning.sh pilot --overwrite
-```
-
-Its parameters, outputs, and the pilot's strict 100 µV rejection result are
-documented in [`simpler/README.md`](simpler/README.md). It writes only under
-`simpler/processed/`, so it cannot overwrite the complex pipeline outputs.
 
 ## Ordinal analysis
 
@@ -349,34 +334,30 @@ associations, and transparent prediction validation after requiring at least
 cohort and generates separate reports and figures without changing primary
 results.
 
-## Combined post-cleaning analysis runner
+## Pipeline entry point
 
-[`run_all_analyses.sh`](run_all_analyses.sh) combines all post-cleaning
-analyses in dependency order: PSD, primary ordinal quantities, the D={3,4,5,6}
-sweep at tau=1, scale-free bout properties, within-bout ordinal quantities,
-the eight-electrode sensitivity battery, PD-versus-Control exploration models,
-D-specific MOCA inputs, the final quantitative-behavioral analysis, and the
-whole-head UPDRS/MOCA disease-severity analysis. It then reports a sensitivity layer requiring
-at least 60 seconds (15 retained four-second epochs) without changing the
-primary feature definitions. It resumes from valid completed outputs by default
-and detects ordinal tables missing the configured Rényi alpha columns.
+Use [`run_reproducible_pipeline.sh`](run_reproducible_pipeline.sh) as the single
+public launcher. It handles environment and metadata bootstrap, cleaning, and
+the downstream dependency order. Three profiles keep routine use concise:
 
 ```bash
-bash run_all_analyses.sh
+bash run_reproducible_pipeline.sh run --profile compute  # base caches
+bash run_reproducible_pipeline.sh run --profile paper    # default report battery
+bash run_reproducible_pipeline.sh run --profile full-qc  # paper + bycycle
 ```
 
-By default the runner now executes the complete analysis twice: first on the
-full cohort and then on one canonical 49-Control/49-PD exact-sex, optimal-age
-matched cohort. Full outputs remain under `processed/`; matched outputs use
-`processed_matched/`, with the cohort manifest and generated configs documented
-in [`matched_analysis/README.md`](matched_analysis/README.md). Pass
-`--skip-matched` only when the matched sensitivity battery is not required.
+The `paper` and `full-qc` profiles analyze both the full cohort and one
+canonical 49-Control/49-PD exact-sex, optimal-age matched cohort. Full outputs
+remain under `processed/`; matched outputs use `processed_matched/`.
+`run_all_analyses.sh` remains the internal post-cleaning orchestrator and a
+supported expert entry point, but is not required for normal use.
 
 Useful controls include `--overwrite`, `--dry-run`, `--no-progress`,
 `--skip-sweep`, `--skip-exploration`, and the opt-in
-`--include-bycycle-bursts`. Cleaning is deliberately not invoked:
-manual ICA confirmation remains an explicit prerequisite through
-`scripts/run_full_cleaning.sh`.
+`--include-bycycle-bursts`. The D=6 primary ordinal calculation is reused by
+the dimension analysis; only D={3,4,5} are computed as additional sensitivity
+settings. Matched ordinal calculations reuse validated subject-level full-
+cohort values and recompute matched summaries, paired tests, and figures.
 
 ## Complete cleaning-to-report reproduction
 
@@ -388,13 +369,16 @@ fit-QC sensitivity, and repository tests:
 ```bash
 bash run_reproducible_pipeline.sh review --overwrite
 # Review ICA stages 08–10 and confirm the decisions.
-bash run_reproducible_pipeline.sh run --overwrite
+bash run_reproducible_pipeline.sh run --profile paper --overwrite
 ```
 
 For a resumable run, omit `--overwrite`. `--dry-run` prints the complete
 cleaning and downstream commands. The explicitly non-default
 `--skip-manual-ica-review` option applies automatic ICLabel decisions and is
 recorded in preprocessing QC.
+
+The compact repository and cache map is in [`PIPELINE_MAP.md`](PIPELINE_MAP.md),
+and copy-paste commands are in [`COMMAND.md`](COMMAND.md).
 
 ## 60 Hz notch decision
 

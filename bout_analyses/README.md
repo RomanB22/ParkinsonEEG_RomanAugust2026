@@ -9,24 +9,24 @@ Rényi quantity and does not modify preprocessing or scale-free outputs.
 ## Scientific sequence
 
 The analysis uses only accepted four-second cleaned epochs and only electrodes
-present in every analyzed subject. Its sequence is:
+present in every analyzed subject. Spectral fitting and bout detection are
+owned by the upstream `scale_free_analysis` stage and validated before reuse.
+Its sequence is:
 
-1. Calculate a subject/electrode Welch PSD over 1–50 Hz.
-2. Fit its 4–35 Hz portion with fixed-mode `specparam`; delta remains outside
-   the aperiodic background fit.
-3. Map the fitted aperiodic spectrum to the eBOSC Morlet-power scale.
-4. Detect samples above the 95th-percentile aperiodic-relative power threshold
-   for at least three cycles, independently within each accepted epoch.
-5. Collapse detections into theta (4–7 Hz), alpha (8–13 Hz), low-beta
+1. Validate the upstream 1–50 Hz PSD, 4–35 Hz fixed-mode `specparam`, bands,
+   wavelet, and eBOSC settings and require complete subject/electrode caches.
+2. Reuse eBOSC episodes detected above the 95th-percentile aperiodic-relative
+   power threshold for at least three cycles within each accepted epoch.
+3. Collapse detections into theta (4–7 Hz), alpha (8–13 Hz), low-beta
    (13–20 Hz), high-beta (20–30 Hz), and broad 5–15 Hz bouts. The broad band
    intentionally overlaps theta and alpha and is interpreted as a separate
    sensitivity representation, not an independent frequency partition.
-6. Zero-phase band-pass each complete accepted epoch before extracting the
+4. Zero-phase band-pass each complete accepted epoch before extracting the
    corresponding bout intervals. Short bouts are never filtered in isolation.
-7. Encode every bout independently into ordinal patterns. Pattern counts are
+5. Encode every bout independently into ordinal patterns. Pattern counts are
    pooled only after encoding, so no embedding crosses a bout boundary, epoch
    boundary, rejected interval, or join between bouts.
-8. Calculate regular H, C, and F from the pooled distribution for every
+6. Calculate regular H, C, and F from the pooled distribution for every
    subject/shared-electrode/band. Electrode metrics are then averaged to one
    value per subject/band for descriptive PD/Control figures and summaries.
 
@@ -96,6 +96,11 @@ bash bout_analyses/run_bout_analyses.sh \
 shared by every selected subject. `--no-progress` disables the live progress
 bar. The runner refuses to replace an existing primary result table unless
 `--overwrite` is supplied.
+
+`intermediate/episodes/` and `intermediate/thresholds/` retain their legacy
+paths as relative symbolic links to the scale-free cache, so downstream tools
+keep working without duplicating those files. Use `--skip-figures` for a fast
+metrics-only cache build.
 
 ## Outputs
 

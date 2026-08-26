@@ -19,7 +19,10 @@ from scale_free_analysis.metrics import (
     summarize_bouts,
     summarize_cycles,
 )
-from scale_free_analysis.pipeline import load_analysis_config
+from scale_free_analysis.pipeline import (
+    _load_reusable_subject_features,
+    load_analysis_config,
+)
 from scale_free_analysis.specparam_gallery import generate_specparam_gallery
 from scale_free_analysis.typical_bouts import (
     _representation_figure,
@@ -66,6 +69,81 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
             config["aperiodic_sensitivity"]["frequency_ranges_hz"],
             [[4.0, 35.0], [3.0, 35.0], [4.0, 40.0], [3.0, 40.0]],
         )
+        self.assertFalse(config["cache"]["save_raw_cycle_tables"])
+
+    def test_matched_cache_filters_complete_subject_features_and_links_inputs(self):
+        config = load_analysis_config("scale_free_analysis/config.json")
+        subjects = ["sub-001", "sub-002"]
+        electrodes = ["Fz", "Cz"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            output = root / "matched"
+            metrics = source / "metrics"
+            metrics.mkdir(parents=True)
+            (source / "manifest.json").write_text(
+                json.dumps({"analysis_config": config}), encoding="utf-8"
+            )
+            (metrics / "electrode_sets.json").write_text(
+                json.dumps({"common_electrodes": electrodes}), encoding="utf-8"
+            )
+            pd.DataFrame(
+                [
+                    {
+                        "subject_id": subject,
+                        "group": "old",
+                        "electrode": electrode,
+                        "aperiodic_exponent": 1.0,
+                    }
+                    for subject in subjects + ["sub-extra"]
+                    for electrode in electrodes
+                ]
+            ).to_csv(metrics / "electrode_aperiodic_metrics.csv", index=False)
+            pd.DataFrame(
+                [
+                    {
+                        "subject_id": subject,
+                        "group": "old",
+                        "electrode": electrode,
+                        "band": band,
+                        "n_bouts": 1,
+                    }
+                    for subject in subjects + ["sub-extra"]
+                    for electrode in electrodes
+                    for band in config["bands"]
+                ]
+            ).to_csv(metrics / "electrode_band_metrics.csv", index=False)
+            pd.DataFrame(
+                {
+                    "subject_id": subjects + ["sub-extra"],
+                    "group": ["old"] * 3,
+                }
+            ).to_csv(metrics / "analyzed_inputs.csv", index=False)
+            for subject in subjects:
+                for subdirectory, suffix in (
+                    ("spectra", "specparam_spectra.npz"),
+                    ("episodes", "bout_episodes.csv.gz"),
+                    ("thresholds", "ebosc_thresholds.csv.gz"),
+                ):
+                    path = source / "intermediate" / subdirectory / f"{subject}_{suffix}"
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.touch()
+
+            aperiodic, bands, inputs, provenance = _load_reusable_subject_features(
+                source,
+                output,
+                config=config,
+                expected_subjects=subjects,
+                common_channels=electrodes,
+                groups={"sub-001": "PD", "sub-002": "Control"},
+            )
+            self.assertEqual(len(aperiodic), 4)
+            self.assertEqual(len(bands), 4 * len(config["bands"]))
+            self.assertEqual(len(inputs), 2)
+            self.assertEqual(provenance["mode"], "filtered_subject_level_reuse")
+            linked = output / "intermediate" / "episodes" / "sub-001_bout_episodes.csv.gz"
+            self.assertTrue(linked.is_symlink())
+            self.assertTrue(linked.exists())
 
     def test_specparam_recovers_aperiodic_and_alpha_peak(self):
         np.random.seed(0)

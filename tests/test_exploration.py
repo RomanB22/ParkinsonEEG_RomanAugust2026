@@ -209,6 +209,20 @@ class ExplorationTests(unittest.TestCase):
                         config["input"]["reference_ebosc_output_dir"],
                         "scale_free_analysis/processed_matched",
                     )
+                if Path(config_path).name == "ordinal.json":
+                    self.assertEqual(
+                        config["input"]["feature_source_output_dir"],
+                        "ordinal_analysis/processed",
+                    )
+                    self.assertEqual(
+                        config["input"]["feature_source_sweep_root"],
+                        "ordinal_analysis/parameter_sweep",
+                    )
+                if Path(config_path).name == "scale_free.json":
+                    self.assertEqual(
+                        config["input"]["feature_source_output_dir"],
+                        "scale_free_analysis/processed",
+                    )
 
     def test_precomputed_pairs_are_validated_without_double_matching(self):
         table, _ = build_feature_table(self.config)

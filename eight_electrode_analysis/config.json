@@ -2,8 +2,8 @@
   "input": {
     "participants_file": "processed/metadata/subjects.csv",
     "psd_electrode_file": "psd_analysis/processed/metrics/subject_electrode_band_power.csv",
-    "ordinal_electrode_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/electrode_metrics.csv",
-    "ordinal_band_electrode_file": "ordinal_analysis/parameter_sweep/D6_tau1/metrics/band_electrode_metrics.csv",
+    "ordinal_electrode_file": "ordinal_analysis/processed/metrics/electrode_metrics.csv",
+    "ordinal_band_electrode_file": "ordinal_analysis/processed/metrics/band_electrode_metrics.csv",
     "aperiodic_electrode_file": "scale_free_analysis/processed/metrics/electrode_aperiodic_metrics.csv",
     "bout_electrode_file": "scale_free_analysis/processed/metrics/electrode_band_metrics.csv",
     "bout_ordinal_electrode_file": "bout_analyses/processed/metrics/subject_electrode_band_metrics.csv",

@@ -21,7 +21,8 @@ usage() {
 Usage: bash matched_analysis/run_matched_analyses.sh [options]
 
 Prepare one canonical exact-sex/optimal-age matched cohort, then run matched:
-PSD, ordinal quantities/planes/topomaps, ordinal D={3,4,5,6} inputs at tau=1,
+PSD, primary D=6 ordinal quantities/planes/topomaps, D={3,4,5} sensitivity
+inputs at tau=1,
 scale-free, bouts, the eight-electrode non-progression sensitivity battery,
 fit-QC sensitivity, typical bouts, prediction models, MOCA, the whole-head
 UPDRS/MOCA severity analysis, and the at-least-60-second
@@ -139,7 +140,8 @@ stage_current() {
                 && [[ -f psd_analysis/processed_matched/figures/group_statistics/relative_band_power_group_statistics.png ]]
             ;;
         ordinal_analysis/processed_matched/manifest.json)
-            [[ -f ordinal_analysis/processed_matched/figures/topomaps/renyi_alpha_10/group_mean_topomaps.png ]] \
+            grep -q '"mode": "filtered_subject_level_reuse"' "$sentinel" \
+                && [[ -f ordinal_analysis/processed_matched/figures/topomaps/renyi_alpha_10/group_mean_topomaps.png ]] \
                 && [[ -f ordinal_analysis/processed_matched/metrics/group_subject_statistics_broadband.csv ]] \
                 && [[ -f ordinal_analysis/processed_matched/metrics/group_electrode_statistics_by_band.csv ]] \
                 && [[ -f ordinal_analysis/processed_matched/figures/group_statistics/broadband/entropy_group_statistics.png ]]
@@ -147,6 +149,8 @@ stage_current() {
         scale_free_analysis/processed_matched/manifest.json)
             grep -q '"broad_5_15"' "$sentinel" \
                 && grep -q '"specparam_primary_fit_range_id": "4_35Hz"' "$sentinel" \
+                && grep -q '"raw_cycle_tables_saved": false' "$sentinel" \
+                && grep -q '"mode": "filtered_subject_level_reuse"' "$sentinel" \
                 && [[ -f scale_free_analysis/processed_matched/metrics/group_subject_statistics_aperiodic.csv ]] \
                 && [[ -f scale_free_analysis/processed_matched/metrics/group_electrode_statistics_periodic_bout.csv ]] \
                 && [[ -f scale_free_analysis/processed_matched/figures/group_statistics/aperiodic/aperiodic_exponent_group_statistics.png ]]
@@ -161,6 +165,8 @@ stage_current() {
         bout_analyses/processed_matched/manifest.json)
             grep -q '"broad_5_15"' "$sentinel" \
                 && grep -q '"specparam_primary_fit_range_id": "4_35Hz"' "$sentinel" \
+                && grep -q '"scale_free_manifest"' "$sentinel" \
+                && grep -q '"legacy_episode_threshold_paths_are_symlinks": true' "$sentinel" \
                 && [[ -f bout_analyses/processed_matched/metrics/group_subject_statistics.csv ]] \
                 && [[ -f bout_analyses/processed_matched/metrics/group_electrode_statistics.csv ]] \
                 && [[ -f bout_analyses/processed_matched/figures/group_statistics/entropy_group_statistics.png ]]
@@ -214,7 +220,7 @@ stage_current() {
 
 matched_sweep_current() {
     local dimension directory
-    for dimension in 3 4 5 6; do
+    for dimension in 3 4 5; do
         directory="ordinal_analysis/parameter_sweep_matched/D${dimension}_tau1"
         [[ -f "$directory/manifest.json" ]] || return 1
         grep -q 'renyi_entropy_alpha_10' \

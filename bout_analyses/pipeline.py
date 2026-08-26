@@ -24,16 +24,11 @@ import scipy
 from tqdm.auto import tqdm
 
 from ordinal_analysis.metrics import filter_epoch_data
-from psd_analysis.metrics import compute_subject_electrode_psd
 from scale_free_analysis.metrics import (
-    aperiodic_wavelet_background,
     detect_frequency_episodes,
     ebosc_wavelet_power,
-    extract_band_bouts,
-    fit_specparam_spectrum,
-    power_thresholds,
-    summarize_bouts,
 )
+from src.cache import replace_with_relative_symlink, same_json_settings
 from src.dataset import ordered_channel_inventory
 from src.group_statistics import compute_group_statistics
 from src.group_statistics_plots import plot_electrode_group_statistics
@@ -78,12 +73,15 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "ebosc",
         "ordinal",
         "band_filter",
+        "cache",
         "statistics",
         "plots",
     }
     missing = sorted(required - set(config))
     if missing:
         raise ValueError(f"Missing bout-analysis config sections: {missing}")
+    if not config["input"].get("scale_free_output_dir"):
+        raise ValueError("input.scale_free_output_dir is required")
 
     bands = config["bands"]
     if not isinstance(bands, dict) or not bands:
@@ -148,6 +146,16 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("band_filter.boundary_policy must filter epochs before slicing bouts")
     if not isinstance(band_filter.get("order"), int) or int(band_filter["order"]) < 1:
         raise ValueError("band_filter.order must be a positive integer")
+    cache = config["cache"]
+    if cache.get("reuse_scale_free_detection") is not True:
+        raise ValueError(
+            "cache.reuse_scale_free_detection must be true; bout detection belongs "
+            "to the upstream scale-free stage"
+        )
+    if not isinstance(cache.get("link_reused_episode_and_threshold_files"), bool):
+        raise ValueError(
+            "cache.link_reused_episode_and_threshold_files must be boolean"
+        )
     if int(config["plots"].get("dpi", 150)) < 50:
         raise ValueError("plots.dpi must be at least 50")
     statistics = config["statistics"]
@@ -212,6 +220,176 @@ def _write_csv(table: pd.DataFrame, path: Path) -> None:
     table.to_csv(path, index=False, float_format="%.17g", compression="infer")
 
 
+def _load_scale_free_cache(
+    config: dict[str, Any],
+    expected_subjects: list[str],
+    common_channels: list[str],
+) -> tuple[Path, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Validate and load the upstream per-subject detection cache.
+
+    PSD fitting, spectral parameterization, wavelets, and eBOSC detection are
+    cohort-independent feature calculations. They are owned by the scale-free
+    stage and reused here so within-bout ordinal encoding does not repeat them.
+    """
+    root = Path(config["input"]["scale_free_output_dir"])
+    manifest_path = root / "manifest.json"
+    if not manifest_path.exists():
+        raise FileNotFoundError(
+            f"Missing scale-free manifest: {manifest_path}. Run the scale-free "
+            "analysis before within-bout ordinal analysis."
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    source = manifest.get("analysis_config", {})
+    for section in ("bands", "specparam", "ebosc"):
+        if not same_json_settings(source.get(section), config.get(section)):
+            raise ValueError(
+                f"Scale-free cache has incompatible {section} settings: "
+                f"{manifest_path}"
+            )
+    source_psd = source.get("psd", {})
+    for key in ("fmin_hz", "fmax_hz"):
+        if float(source_psd.get(key, np.nan)) != float(config["psd"][key]):
+            raise ValueError(
+                f"Scale-free cache has incompatible psd.{key}: {manifest_path}"
+            )
+
+    inputs_path = root / "metrics" / "analyzed_inputs.csv"
+    aperiodic_path = root / "metrics" / "electrode_aperiodic_metrics.csv"
+    band_path = root / "metrics" / "electrode_band_metrics.csv"
+    for path in (inputs_path, aperiodic_path, band_path):
+        if not path.exists():
+            raise FileNotFoundError(f"Scale-free cache is incomplete: {path}")
+    source_inputs = pd.read_csv(inputs_path)
+    aperiodic = pd.read_csv(aperiodic_path)
+    band_metrics = pd.read_csv(band_path)
+
+    requested_subjects = set(expected_subjects)
+    missing_subjects = sorted(requested_subjects - set(source_inputs["subject_id"]))
+    if missing_subjects:
+        raise ValueError(
+            f"Scale-free cache is missing requested subjects: {missing_subjects}"
+        )
+    aperiodic = aperiodic.loc[
+        aperiodic["subject_id"].isin(expected_subjects)
+        & aperiodic["electrode"].isin(common_channels)
+    ].copy()
+    band_metrics = band_metrics.loc[
+        band_metrics["subject_id"].isin(expected_subjects)
+        & band_metrics["electrode"].isin(common_channels)
+        & band_metrics["band"].isin(config["bands"])
+    ].copy()
+    expected_electrodes = len(expected_subjects) * len(common_channels)
+    expected_bands = expected_electrodes * len(config["bands"])
+    if aperiodic.duplicated(["subject_id", "electrode"]).any() or len(aperiodic) != expected_electrodes:
+        raise ValueError("Scale-free aperiodic cache is not a complete subject/electrode grid")
+    if (
+        band_metrics.duplicated(["subject_id", "electrode", "band"]).any()
+        or len(band_metrics) != expected_bands
+    ):
+        raise ValueError(
+            "Scale-free bout cache is not a complete subject/electrode/band grid"
+        )
+    for subject_id in expected_subjects:
+        for subdirectory, suffix in (
+            ("episodes", "bout_episodes.csv.gz"),
+            ("thresholds", "ebosc_thresholds.csv.gz"),
+            ("spectra", "specparam_spectra.npz"),
+        ):
+            path = root / "intermediate" / subdirectory / f"{subject_id}_{suffix}"
+            if not path.exists():
+                raise FileNotFoundError(f"Scale-free cache is incomplete: {path}")
+    return root, source_inputs, aperiodic, band_metrics
+
+
+def _cached_detection_example(
+    source_root: Path,
+    subject_id: str,
+    electrode: str,
+    band: str,
+    signal_uv: np.ndarray,
+    episodes: pd.DataFrame,
+    config: dict[str, Any],
+    sfreq: float,
+) -> dict[str, Any]:
+    """Recreate one transparent TFR panel while reusing fitted cache values."""
+    threshold_table = pd.read_csv(
+        source_root
+        / "intermediate"
+        / "thresholds"
+        / f"{subject_id}_ebosc_thresholds.csv.gz"
+    )
+    selected = threshold_table.loc[
+        threshold_table["electrode"].eq(electrode)
+    ].sort_values("frequency_hz")
+    wavelet_frequencies = selected["frequency_hz"].to_numpy(dtype=float)
+    thresholds = selected["power_threshold"].to_numpy(dtype=float)
+    background = selected[
+        "specparam_aperiodic_wavelet_background"
+    ].to_numpy(dtype=float)
+    mean_wavelet_power = selected["mean_wavelet_power"].to_numpy(dtype=float)
+    wavelet_power = ebosc_wavelet_power(
+        signal_uv,
+        sfreq=sfreq,
+        frequencies=wavelet_frequencies,
+        wavenumber=float(config["ebosc"]["wavenumber"]),
+    )
+    edge_samples = int(
+        round(float(config["ebosc"]["edge_padding_seconds"]) * sfreq)
+    )
+    detected = detect_frequency_episodes(
+        wavelet_power,
+        sfreq=sfreq,
+        frequencies=wavelet_frequencies,
+        thresholds=thresholds,
+        minimum_cycles=float(config["ebosc"]["minimum_cycles"]),
+        edge_padding_samples=edge_samples,
+    )
+    example_epoch = int(episodes.iloc[0]["epoch_index"])
+    band_mask = np.zeros(signal_uv.shape, dtype=bool)
+    for row in episodes.itertuples(index=False):
+        band_mask[
+            int(row.epoch_index),
+            int(row.start_sample) : int(row.stop_sample_exclusive),
+        ] = True
+
+    with np.load(
+        source_root
+        / "intermediate"
+        / "spectra"
+        / f"{subject_id}_specparam_spectra.npz",
+        allow_pickle=False,
+    ) as spectra:
+        electrodes = spectra["electrodes"].astype(str).tolist()
+        index = electrodes.index(electrode)
+        curves = {
+            "frequencies_hz": spectra["frequencies_hz"].copy(),
+            **{
+                name: spectra[name][index].copy()
+                for name in (
+                    "observed_psd_uv2_hz",
+                    "modeled_psd_uv2_hz",
+                    "aperiodic_psd_uv2_hz",
+                    "periodic_psd_uv2_hz",
+                )
+            },
+        }
+    return {
+        "subject_id": subject_id,
+        "electrode": electrode,
+        "band": band,
+        "sfreq": sfreq,
+        "signal_uv": signal_uv[example_epoch].copy(),
+        "wavelet_frequencies_hz": wavelet_frequencies,
+        "wavelet_power": wavelet_power[example_epoch].copy(),
+        "thresholds": thresholds,
+        "background": background,
+        "mean_wavelet_power": mean_wavelet_power,
+        "detected": detected[example_epoch].copy(),
+        "band_mask": band_mask[example_epoch].copy(),
+        **curves,
+    }
+
+
 def _subject_band_means(electrode_metrics: pd.DataFrame) -> pd.DataFrame:
     keys = ["subject_id", "group", "band", "band_low_hz", "band_high_hz"]
     means = electrode_metrics.groupby(keys, sort=False)[list(METRICS)].mean().reset_index()
@@ -260,13 +438,19 @@ def run_analysis(
     subjects: list[str] | None = None,
     channels: list[str] | None = None,
     output_dir_override: str | Path | None = None,
+    scale_free_output_dir_override: str | Path | None = None,
     overwrite: bool = False,
     show_progress: bool = True,
+    generate_figures: bool = True,
 ) -> dict[str, Any]:
     config_path = Path(config_path)
     config = load_analysis_config(config_path)
     if output_dir_override is not None:
         config["output_dir"] = str(output_dir_override)
+    if scale_free_output_dir_override is not None:
+        config["input"]["scale_free_output_dir"] = str(
+            scale_free_output_dir_override
+        )
     output_dir = Path(config["output_dir"])
     result_path = output_dir / "metrics" / "subject_electrode_band_metrics.csv"
     if result_path.exists() and not overwrite:
@@ -315,19 +499,21 @@ def run_analysis(
     tau = int(config["ordinal"]["delay_samples"])
     tie_precision = config["ordinal"].get("tie_precision")
     state_space = math.factorial(dx)
-    ebosc = config["ebosc"]
-    wavelet_frequencies = np.arange(
-        float(ebosc["frequency_min_hz"]),
-        float(ebosc["frequency_max_hz"]) + 0.5 * float(ebosc["frequency_step_hz"]),
-        float(ebosc["frequency_step_hz"]),
+    scale_free_root, scale_free_inputs, cached_aperiodic, cached_bands = (
+        _load_scale_free_cache(config, expected_subjects, common_channels)
     )
+    aperiodic_lookup = cached_aperiodic.set_index(["subject_id", "electrode"])
+    band_lookup = cached_bands.set_index(["subject_id", "electrode", "band"])
+    scale_free_input_lookup = scale_free_inputs.set_index("subject_id")
     logger.info(
-        "Starting bout ordinal analysis | subjects=%d | shared_electrodes=%d | bands=%s | D=%d | tau=%d",
+        "Starting cached bout ordinal analysis | subjects=%d | shared_electrodes=%d | "
+        "bands=%s | D=%d | tau=%d | detection_source=%s",
         len(expected_subjects),
         len(common_channels),
         ",".join(band_order),
         dx,
         tau,
+        scale_free_root,
     )
 
     electrode_rows: list[dict[str, Any]] = []
@@ -338,7 +524,7 @@ def run_analysis(
     ordinal_example: dict[str, Any] | None = None
     progress = tqdm(
         total=len(expected_subjects) * len(common_channels),
-        desc="eBOSC + bout ordinal metrics",
+        desc="cached bouts + ordinal metrics",
         unit="electrode",
         dynamic_ncols=True,
         disable=not show_progress,
@@ -352,111 +538,75 @@ def run_analysis(
         data_v = epochs.get_data(picks=picks, copy=True)
         data_uv = data_v * 1e6
         sfreq = float(epochs.info["sfreq"])
-        if float(config["psd"]["fmax_hz"]) > sfreq / 2.0:
-            raise ValueError(f"{subject_id}: PSD maximum exceeds Nyquist")
-        edge_samples = int(round(float(ebosc["edge_padding_seconds"]) * sfreq))
-        if 2 * edge_samples >= data_uv.shape[2]:
-            raise ValueError(f"{subject_id}: eBOSC edge padding removes each epoch")
         info = mne.pick_info(epochs.info, picks, copy=True)
         info["bads"] = []
         subject_infos[subject_id] = info
-        psd_frequencies, electrode_psd = compute_subject_electrode_psd(
-            data_v,
-            sfreq,
-            fmin=float(config["psd"]["fmin_hz"]),
-            fmax=float(config["psd"]["fmax_hz"]),
+        cached_input = scale_free_input_lookup.loc[subject_id]
+        if (
+            int(cached_input["n_epochs"]) != len(epochs)
+            or int(cached_input["samples_per_epoch"]) != data_v.shape[2]
+            or not np.isclose(float(cached_input["sampling_frequency_hz"]), sfreq)
+        ):
+            raise ValueError(
+                f"{subject_id}: cleaned epochs changed after the scale-free cache "
+                "was created; rerun scale-free analysis"
+            )
+
+        episode_source = (
+            scale_free_root
+            / "intermediate"
+            / "episodes"
+            / f"{subject_id}_bout_episodes.csv.gz"
         )
+        subject_episodes = pd.read_csv(episode_source)
+        subject_episodes = subject_episodes.loc[
+            subject_episodes["electrode"].isin(common_channels)
+            & subject_episodes["band"].isin(band_order)
+        ].copy()
+        if len(subject_episodes):
+            diagnostic_episode_tables.append(
+                subject_episodes[
+                    ["subject_id", "group", "electrode", "band", "duration_s"]
+                ].copy()
+            )
+
+        filtered_by_band = {
+            band: filter_epoch_data(
+                data_uv,
+                sfreq=sfreq,
+                low_hz=limits[0],
+                high_hz=limits[1],
+                order=int(config["band_filter"]["order"]),
+            )
+            for band, limits in bands.items()
+        }
 
         subject_counts = np.zeros(
             (len(common_channels), len(band_order), state_space), dtype=np.int64
         )
-        subject_episode_tables: list[pd.DataFrame] = []
         subject_bout_metric_tables: list[pd.DataFrame] = []
-        threshold_rows: list[dict[str, Any]] = []
 
         for channel_index, electrode in enumerate(common_channels):
             progress.set_postfix_str(f"{subject_id} | {electrode}", refresh=False)
-            aperiodic, _, curves = fit_specparam_spectrum(
-                psd_frequencies,
-                electrode_psd[channel_index],
-                bands,
-                config["specparam"],
-            )
-            wavelet_power = ebosc_wavelet_power(
-                data_uv[:, channel_index, :],
-                sfreq=sfreq,
-                frequencies=wavelet_frequencies,
-                wavenumber=float(ebosc["wavenumber"]),
-            )
-            interior = (
-                wavelet_power
-                if edge_samples == 0
-                else wavelet_power[..., edge_samples:-edge_samples]
-            )
-            mean_wavelet_power = np.mean(interior, axis=(0, 2))
-            background = aperiodic_wavelet_background(
-                curves["frequencies_hz"],
-                curves["modeled_psd_uv2_hz"],
-                curves["aperiodic_psd_uv2_hz"],
-                wavelet_frequencies,
-                mean_wavelet_power,
-            )
-            thresholds = power_thresholds(background, float(ebosc["power_percentile"]))
-            detected = detect_frequency_episodes(
-                wavelet_power,
-                sfreq=sfreq,
-                frequencies=wavelet_frequencies,
-                thresholds=thresholds,
-                minimum_cycles=float(ebosc["minimum_cycles"]),
-                edge_padding_samples=edge_samples,
-            )
-            for frequency, observed, background_value, threshold in zip(
-                wavelet_frequencies, mean_wavelet_power, background, thresholds
-            ):
-                threshold_rows.append(
-                    {
-                        "subject_id": subject_id,
-                        "group": groups[subject_id],
-                        "electrode": electrode,
-                        "frequency_hz": float(frequency),
-                        "mean_wavelet_power": float(observed),
-                        "specparam_aperiodic_wavelet_background": float(background_value),
-                        "power_threshold": float(threshold),
-                    }
-                )
-
-            filtered_by_band = {
-                band: filter_epoch_data(
-                    data_uv[:, channel_index : channel_index + 1, :],
-                    sfreq=sfreq,
-                    low_hz=limits[0],
-                    high_hz=limits[1],
-                    order=int(config["band_filter"]["order"]),
-                )[:, 0, :]
-                for band, limits in bands.items()
-            }
+            aperiodic = aperiodic_lookup.loc[(subject_id, electrode)]
             for band_index, (band, limits) in enumerate(bands.items()):
-                episodes, band_mask = extract_band_bouts(
-                    detected,
-                    wavelet_power,
-                    thresholds,
-                    wavelet_frequencies,
-                    band=band,
-                    band_limits=limits,
-                    sfreq=sfreq,
+                episodes = subject_episodes.loc[
+                    subject_episodes["electrode"].eq(electrode)
+                    & subject_episodes["band"].eq(band)
+                ].copy()
+                analysis_episodes = episodes.drop(
+                    columns=["subject_id", "group", "electrode"],
+                    errors="ignore",
                 )
-                bout_summary = summarize_bouts(
-                    episodes,
-                    band_mask,
-                    sfreq=sfreq,
-                    edge_padding_samples=edge_samples,
-                )
-                pooled_counts, ordinal_summary, bout_metrics, segment_example = analyze_bout_segments(
-                    filtered_by_band[band],
-                    episodes,
-                    dx=dx,
-                    tau=tau,
-                    tie_precision=tie_precision,
+                cached_band = band_lookup.loc[(subject_id, electrode, band)]
+                pooled_counts, ordinal_summary, bout_metrics, segment_example = (
+                    analyze_bout_segments(
+                        filtered_by_band[band][:, channel_index, :],
+                        analysis_episodes,
+                        dx=dx,
+                        tau=tau,
+                        tie_precision=tie_precision,
+                    )
                 )
                 subject_counts[channel_index, band_index] = pooled_counts
                 electrode_rows.append(
@@ -468,30 +618,29 @@ def run_analysis(
                         "band_low_hz": limits[0],
                         "band_high_hz": limits[1],
                         **ordinal_summary,
-                        "oscillatory_occupancy": bout_summary["oscillatory_occupancy"],
-                        "bouts_per_minute": bout_summary["bouts_per_minute"],
-                        "bout_duration_mean_s": bout_summary["bout_duration_mean_s"],
-                        "bout_duration_median_s": bout_summary["bout_duration_median_s"],
+                        "oscillatory_occupancy": cached_band[
+                            "oscillatory_occupancy"
+                        ],
+                        "bouts_per_minute": cached_band["bouts_per_minute"],
+                        "bout_duration_mean_s": cached_band[
+                            "bout_duration_mean_s"
+                        ],
+                        "bout_duration_median_s": cached_band[
+                            "bout_duration_median_s"
+                        ],
                         "sampling_frequency_hz": sfreq,
                         "embedding_dimension": dx,
                         "delay_samples": tau,
                         "delay_seconds": tau / sfreq,
                         "tie_precision": "full_float64",
-                        "aperiodic_exponent": aperiodic["aperiodic_exponent"],
-                        "specparam_r_squared": aperiodic["specparam_r_squared"],
+                        "aperiodic_exponent": float(
+                            aperiodic["aperiodic_exponent"]
+                        ),
+                        "specparam_r_squared": float(
+                            aperiodic["specparam_r_squared"]
+                        ),
                     }
                 )
-                if len(episodes):
-                    enriched_episodes = episodes.copy()
-                    enriched_episodes.insert(0, "electrode", electrode)
-                    enriched_episodes.insert(0, "group", groups[subject_id])
-                    enriched_episodes.insert(0, "subject_id", subject_id)
-                    subject_episode_tables.append(enriched_episodes)
-                    diagnostic_episode_tables.append(
-                        enriched_episodes[
-                            ["subject_id", "group", "electrode", "band", "duration_s"]
-                        ].copy()
-                    )
                 if len(bout_metrics):
                     enriched_bout_metrics = bout_metrics.copy()
                     enriched_bout_metrics.insert(0, "electrode", electrode)
@@ -511,40 +660,37 @@ def run_analysis(
                     }
                     example_epoch = int(segment_example["epoch_index"])
                     detection_example = {
-                        "subject_id": subject_id,
                         "group": groups[subject_id],
-                        "electrode": electrode,
-                        "band": band,
-                        "sfreq": sfreq,
-                        "signal_uv": data_uv[example_epoch, channel_index].copy(),
-                        "wavelet_frequencies_hz": wavelet_frequencies.copy(),
-                        "wavelet_power": wavelet_power[example_epoch].copy(),
-                        "thresholds": thresholds.copy(),
-                        "background": background.copy(),
-                        "mean_wavelet_power": mean_wavelet_power.copy(),
-                        "detected": detected[example_epoch].copy(),
-                        "band_mask": band_mask[example_epoch].copy(),
-                        **curves,
+                        **_cached_detection_example(
+                            scale_free_root,
+                            subject_id,
+                            electrode,
+                            band,
+                            data_uv[:, channel_index, :],
+                            episodes,
+                            config,
+                            sfreq,
+                        ),
                     }
             progress.update()
 
         intermediate = output_dir / "intermediate"
-        _write_csv(
-            pd.concat(subject_episode_tables, ignore_index=True)
-            if subject_episode_tables
-            else pd.DataFrame(),
-            intermediate / "episodes" / f"{subject_id}_bout_episodes.csv.gz",
-        )
         _write_csv(
             pd.concat(subject_bout_metric_tables, ignore_index=True)
             if subject_bout_metric_tables
             else pd.DataFrame(),
             intermediate / "bout_metrics" / f"{subject_id}_bout_ordinal_metrics.csv.gz",
         )
-        _write_csv(
-            pd.DataFrame.from_records(threshold_rows),
-            intermediate / "thresholds" / f"{subject_id}_ebosc_thresholds.csv.gz",
-        )
+        for subdirectory, suffix in (
+            ("episodes", "bout_episodes.csv.gz"),
+            ("thresholds", "ebosc_thresholds.csv.gz"),
+        ):
+            destination = intermediate / subdirectory / f"{subject_id}_{suffix}"
+            source_path = scale_free_root / "intermediate" / subdirectory / destination.name
+            if bool(config["cache"]["link_reused_episode_and_threshold_files"]):
+                replace_with_relative_symlink(source_path, destination)
+            elif destination.is_symlink() or destination.exists():
+                destination.unlink()
         counts_path = intermediate / "ordinal_counts" / f"{subject_id}_ordinal_counts.npz"
         counts_path.parent.mkdir(parents=True, exist_ok=True)
         np.savez_compressed(
@@ -569,6 +715,9 @@ def run_analysis(
                 "n_available_electrodes": int(len(available_channels[subject_id])),
                 "samples_per_epoch": int(data_v.shape[2]),
                 "sampling_frequency_hz": sfreq,
+                "scale_free_cache_manifest": str(
+                    (scale_free_root / "manifest.json").resolve()
+                ),
             }
         )
     progress.close()
@@ -632,14 +781,17 @@ def run_analysis(
         band: str(config["plots"]["band_display_names"].get(band, band))
         for band in band_order
     }
-    if detection_example is not None:
+    if generate_figures and detection_example is not None:
         plot_detection_example(
             detection_example, figures_dir / "steps" / "01_bout_detection.png", dpi
         )
     if ordinal_example is not None:
-        plot_ordinal_example(
-            ordinal_example, figures_dir / "steps" / "02_ordinal_encoding.png", dpi
-        )
+        if generate_figures:
+            plot_ordinal_example(
+                ordinal_example,
+                figures_dir / "steps" / "02_ordinal_encoding.png",
+                dpi,
+            )
         counts = np.asarray(ordinal_example["counts"], dtype=np.int64)
         probability_table = pd.DataFrame(
             {
@@ -652,73 +804,75 @@ def run_analysis(
             }
         )
         _write_csv(probability_table, metrics_dir / "example_bout_ordinal_distribution.csv")
-    plot_bout_diagnostics(
-        diagnostic_episodes,
-        electrode_metrics,
-        group_order,
-        colors,
-        band_order,
-        band_labels,
-        figures_dir / "quality" / "bout_and_ordinal_diagnostics.png",
-        dpi,
-    )
-    plot_subject_metric_violins(
-        subject_metrics,
-        group_order,
-        colors,
-        band_order,
-        band_labels,
-        figures_dir / "group" / "subject_metric_violins.png",
-        dpi,
-    )
-    plot_ordinal_planes(
-        subject_metrics,
-        group_order,
-        colors,
-        band_order,
-        band_labels,
-        figures_dir / "group" / "subject_ordinal_planes.png",
-        dpi,
-    )
-    plot_electrode_violins(
-        electrode_metrics,
-        common_channels,
-        group_order,
-        colors,
-        band_order,
-        band_labels,
-        figures_dir / "electrodes",
-        dpi,
-    )
-    common_info = next(iter(subject_infos.values())).copy()
-    statistical_figures = plot_electrode_group_statistics(
-        electrode_statistics,
-        common_info,
-        strata=("band",),
-        output_dir=figures_dir / "group_statistics",
-        dpi=dpi,
-        stratum_labels={band: band_labels[band] for band in inferential_bands},
-    )
-    plot_group_topomaps(
-        electrode_metrics,
-        common_info,
-        group_order,
-        band_order,
-        band_labels,
-        common_channels,
-        figures_dir / "topomaps" / "group_mean_topomaps.png",
-        dpi,
-    )
-    if bool(config["plots"].get("subject_topomaps", True)):
-        plot_subject_topomaps(
+    statistical_figures: list[Path] = []
+    if generate_figures:
+        plot_bout_diagnostics(
+            diagnostic_episodes,
             electrode_metrics,
-            subject_infos,
+            group_order,
+            colors,
+            band_order,
+            band_labels,
+            figures_dir / "quality" / "bout_and_ordinal_diagnostics.png",
+            dpi,
+        )
+        plot_subject_metric_violins(
+            subject_metrics,
+            group_order,
+            colors,
+            band_order,
+            band_labels,
+            figures_dir / "group" / "subject_metric_violins.png",
+            dpi,
+        )
+        plot_ordinal_planes(
+            subject_metrics,
+            group_order,
+            colors,
+            band_order,
+            band_labels,
+            figures_dir / "group" / "subject_ordinal_planes.png",
+            dpi,
+        )
+        plot_electrode_violins(
+            electrode_metrics,
+            common_channels,
+            group_order,
+            colors,
+            band_order,
+            band_labels,
+            figures_dir / "electrodes",
+            dpi,
+        )
+        common_info = next(iter(subject_infos.values())).copy()
+        statistical_figures = plot_electrode_group_statistics(
+            electrode_statistics,
+            common_info,
+            strata=("band",),
+            output_dir=figures_dir / "group_statistics",
+            dpi=dpi,
+            stratum_labels={band: band_labels[band] for band in inferential_bands},
+        )
+        plot_group_topomaps(
+            electrode_metrics,
+            common_info,
+            group_order,
             band_order,
             band_labels,
             common_channels,
-            figures_dir / "topomaps" / "subjects",
+            figures_dir / "topomaps" / "group_mean_topomaps.png",
             dpi,
         )
+        if bool(config["plots"].get("subject_topomaps", True)):
+            plot_subject_topomaps(
+                electrode_metrics,
+                subject_infos,
+                band_order,
+                band_labels,
+                common_channels,
+                figures_dir / "topomaps" / "subjects",
+                dpi,
+            )
 
     manifest = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -747,11 +901,32 @@ def run_analysis(
             f"{float(config['specparam']['frequency_range_hz'][1]):g}Hz"
         ),
         "n_subject_electrode_band_rows": len(electrode_metrics),
+        "feature_cache": {
+            "scale_free_manifest": str(
+                (scale_free_root / "manifest.json").resolve()
+            ),
+            "reused_calculations": [
+                "welch_psd",
+                "specparam",
+                "ebosc_wavelet_power",
+                "ebosc_detection",
+                "bout_properties",
+            ],
+            "calculated_here": [
+                "bandpass_filtering",
+                "within_bout_ordinal_encoding",
+                "within_bout_ordinal_metrics",
+            ],
+            "legacy_episode_threshold_paths_are_symlinks": bool(
+                config["cache"]["link_reused_episode_and_threshold_files"]
+            ),
+        },
         "n_detected_bouts": int(electrode_metrics["n_detected_bouts"].sum()),
         "n_analyzable_ordinal_bouts": int(electrode_metrics["n_analyzable_ordinal_bouts"].sum()),
         "ordinal_state_space_size": state_space,
         "ordinal_metrics": list(METRICS),
         "renyi_metrics_included": False,
+        "figures_generated": bool(generate_figures),
         "bout_boundary_policy": (
             "Each ordinal representation is created inside one detected bout. Pattern counts "
             "are pooled only after encoding, so embeddings never cross bout or epoch boundaries."

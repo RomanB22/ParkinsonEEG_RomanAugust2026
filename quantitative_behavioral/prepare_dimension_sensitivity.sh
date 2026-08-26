@@ -9,7 +9,7 @@ cd "$PROJECT_ROOT"
 BASE_CONFIG="${ORDINAL_BASE_CONFIG:-ordinal_analysis/config.json}"
 OUTPUT_ROOT="${ORDINAL_SWEEP_OUTPUT_ROOT:-ordinal_analysis/parameter_sweep}"
 CONDA_ENV="${ORDINAL_CONDA_ENV:-${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}}"
-dimensions=(3 4 5 6)
+dimensions=(3 4 5)
 delay=1
 overwrite=false
 
@@ -22,8 +22,8 @@ for argument in "$@"; do
             cat <<'EOF'
 Usage: bash quantitative_behavioral/prepare_dimension_sensitivity.sh [--overwrite]
 
-Prepare metric-only D=3,4,5,6, tau=1 ordinal inputs. Existing tables are
-reused only when they include every configured Rényi alpha column.
+Prepare metric-only D=3,4,5, tau=1 ordinal sensitivity inputs. D=6 is the
+primary ordinal output and is reused rather than recalculated.
 EOF
             exit 0
             ;;
@@ -110,6 +110,11 @@ with Path(base_path).open(encoding="utf-8") as stream:
 config["ordinal"]["embedding_dimension"] = int(dimension)
 config["ordinal"]["delay_samples"] = int(delay)
 config["output_dir"] = output_dir
+source_root = config["input"].get("feature_source_sweep_root")
+if source_root:
+    config["input"]["feature_source_output_dir"] = str(
+        Path(source_root) / f"D{dimension}_tau{delay}"
+    )
 Path(config_path).write_text(json.dumps(config, indent=2) + "\n", encoding="utf-8")
 ' "$BASE_CONFIG" "$config_path" "$output_dir" "$dimension" "$delay"
 
@@ -122,4 +127,5 @@ Path(config_path).write_text(json.dumps(config, indent=2) + "\n", encoding="utf-
         --overwrite
 done
 
-printf 'D=3,4,5,6, tau=1 sensitivity inputs are ready under %s\n' "$OUTPUT_ROOT"
+printf 'D=3,4,5 sensitivity inputs are ready under %s; primary D=6 is reused\n' \
+    "$OUTPUT_ROOT"

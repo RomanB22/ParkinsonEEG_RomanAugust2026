@@ -93,9 +93,10 @@ sensitivity analysis.
 ## Run
 
 The upstream ordinal, scale-free, and within-bout pipelines must be complete.
-First generate any missing D=3,4,5,6 ordinal inputs. Existing complete D=4 and
-D=6 tables are reused; missing runs save all metric tables while intentionally
-skipping the hundreds of upstream ordinal diagnostic figures:
+First generate any missing D=3,4,5 ordinal sensitivity inputs. The primary D=6
+tables are always reused from `ordinal_analysis/processed`; existing complete
+sensitivity tables are also reused. Missing runs save metric tables while
+intentionally skipping the hundreds of upstream ordinal diagnostic figures:
 
 ```bash
 bash quantitative_behavioral/prepare_dimension_sensitivity.sh

@@ -143,6 +143,8 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("The ordinal embedding-dimension sensitivity must be enabled")
     if sensitivity.get("embedding_dimensions") != [3, 4, 5, 6]:
         raise ValueError("Dimension sensitivity must prespecify D=3,4,5,6")
+    if not sensitivity.get("primary_output_dir"):
+        raise ValueError("Dimension sensitivity must reuse the primary D=6 output")
     if int(sensitivity.get("delay_samples", -1)) != 1:
         raise ValueError("Dimension sensitivity must use tau=1")
     if sensitivity.get("metrics") != list(DIMENSION_METRICS):
@@ -275,10 +277,17 @@ def _validate_upstream_manifests(config: dict[str, Any]) -> dict[str, Any]:
     }
     sensitivity = config["dimension_sensitivity"]
     sensitivity_root = Path(sensitivity["ordinal_output_root"])
+    primary_dimension = int(config["expected"]["embedding_dimension"])
     sensitivity_delay = int(sensitivity["delay_samples"])
     for dimension in sensitivity["embedding_dimensions"]:
         name = f"ordinal_D{int(dimension)}_tau{sensitivity_delay}"
-        path = sensitivity_root / f"D{int(dimension)}_tau{sensitivity_delay}" / "manifest.json"
+        path = (
+            Path(sensitivity["primary_output_dir"]) / "manifest.json"
+            if int(dimension) == primary_dimension
+            else sensitivity_root
+            / f"D{int(dimension)}_tau{sensitivity_delay}"
+            / "manifest.json"
+        )
         if not path.exists():
             raise FileNotFoundError(
                 f"Missing dimension-sensitivity manifest: {path}. Run "
