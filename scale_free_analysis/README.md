@@ -29,10 +29,28 @@ union-only electrode contributes to a table, summary, statistic, or figure.
 
 For each subject/shared electrode, accepted epochs are concatenated in stored
 order and passed to one Welch PSD calculation. Non-overlapping four-second Hann
-windows produce a 0.25 Hz grid. The PSD is retained over 1–50 Hz, while
-`specparam.SpectralModel` fits the fixed aperiodic model over 4–35 Hz. This
-prespecified fitting range excludes the less reliable delta region and avoids
-the upper edge of the selected 1–50 Hz descriptive PSD range.
+windows produce a 0.25 Hz grid. The PSD and both `specparam.SpectralModel`
+candidates cover 1–50 Hz. One candidate uses fixed mode and the other uses knee
+mode. Both use the paper-aligned settings: peak widths 1–12 Hz, at most eight
+peaks, minimum peak height 0, and peak threshold 2.
+
+BIC compares the two candidates for each subject/electrode while penalizing the
+knee model's extra parameter. It is calculated on log10-power residuals as
+`n × ln(RSS/n) + k × ln(n)`, where `k` includes the aperiodic parameters and
+three parameters per fitted Gaussian peak. This avoids selecting knee merely
+because its unpenalized R² cannot be worse. Fixed wins ties. Knee frequency is calculated as
+`knee^(1/exponent)`; knee frequencies more than 2 SD from that subject's mean
+across shared electrodes, non-finite knees, and knees outside 1–50 Hz are
+ineligible, causing a transparent fallback to fixed. Both candidate fits,
+selection reason, BIC values, and selected model are saved.
+
+The meaning of the selected exponent depends on the selected model. In fixed
+mode it is the single slope across 1–50 Hz; in knee mode it is the asymptotic
+slope above the bend. The selected exponent is appropriate for constructing
+the selected aperiodic background used by eBOSC, but pooled group analyses of
+that value must retain the model label and be interpreted cautiously. The
+candidate-specific fixed and knee exponents are preserved in the model
+comparison tables for transparent sensitivity analyses.
 
 Saved broadband parameters are:
 
@@ -59,23 +77,21 @@ electrodes and requires at least 48/60 passing fits per subject. The original
 all-electrode bout, cycle, and within-bout ordinal outputs are preserved; the
 QC-qualified versions are written alongside them.
 
-Fixed-mode sensitivity fits use identical peak settings over 4–35 Hz (primary),
-3–35 Hz, 4–40 Hz, and 3–40 Hz. This isolates dependence on nearby fitting-range
-choices without conflating them with a different peak model. The ranges are
-parallel sensitivity analyses; the pipeline does not choose the most favorable
-result.
+The former 4–35 Hz range remains a prespecified sensitivity analysis. Fixed and
+knee candidates use the same peak settings and BIC/2-SD selection policy in
+both ranges; the pipeline does not choose the most favorable range.
 
 The highest fitted peak in each theta (4–7 Hz), alpha (8–13 Hz), low-beta
 (13–20 Hz), and high-beta (20–30 Hz) band supplies center frequency, power,
 and bandwidth. A `peak_present` indicator distinguishes a missing peak from a
 numerical value.
 
-For visual inspection, the pipeline also writes one decomposition PNG for
-every analyzed subject and shared electrode. The files are organized by group
-and subject, and HTML indexes allow navigation without manually opening 8,940
-filenames in a file browser. Each title includes group, exponent, R², MAE, and
-QC status. Every figure shows the observed spectrum, full model, aperiodic and
-fitted periodic components, and the signed observed-minus-full-model residual.
+For visual inspection, the pipeline writes one overview PNG per subject with
+all shared-electrode decompositions in the same figure. The PNGs share one flat
+folder and a root HTML index. Electrode titles include the selected mode,
+exponent, R², and QC status. The separate detailed example also shows the
+observed spectrum, full model, aperiodic and fitted periodic components, and
+the signed observed-minus-full-model residual.
 Observed power may lie below the aperiodic curve because that curve is a fitted
 baseline, not a pointwise lower bound; negative residuals are shown explicitly.
 These plots reuse the saved fitted curves and never refit specparam.
@@ -87,7 +103,8 @@ full-convolution crop in `ebosc.BOSC.BOSC_tf`, vectorized across epochs so it is
 practical and boundary-safe. A test compares its output directly with the
 installed eBOSC function.
 
-The power threshold is explicitly based on the `specparam` aperiodic curve:
+The power threshold is explicitly based on the BIC-selected fixed or knee
+`specparam` aperiodic curve for that subject and electrode:
 
 1. Compute mean eBOSC wavelet power at every analyzed frequency.
 2. Map the fitted aperiodic PSD into wavelet-power units using the ratio between
@@ -261,6 +278,8 @@ scale_free_analysis/processed/
 │   ├── analyzed_inputs.csv
 │   ├── electrode_sets.json
 │   ├── electrode_aperiodic_metrics.csv
+│   ├── electrode_aperiodic_model_comparison.csv.gz
+│   ├── subject_aperiodic_model_comparison.csv
 │   ├── electrode_aperiodic_range_sensitivity.csv.gz
 │   ├── subject_aperiodic_qc_metrics.csv
 │   ├── subject_aperiodic_range_sensitivity.csv
@@ -293,6 +312,7 @@ scale_free_analysis/processed/
     ├── group_comparisons/*.png
     ├── aperiodic_diagnostics/
     │   ├── fit_qc_dashboard.png
+    │   ├── fixed_vs_knee_model_selection.png
     │   ├── frequency_range_sensitivity.png
     │   ├── group_median_decomposition_and_residuals.png
     │   └── fit_failures_by_group.png
@@ -315,7 +335,9 @@ scale_free_analysis/processed/
 The single flat gallery contains one overview figure per subject. Each overview
 contains every shared electrode on the same linear-frequency/log-power canvas:
 observed PSD in black, the full specparam model in blue, and the aperiodic
-component in orange. Red electrode labels indicate formal QC failures. No
+component in orange. The fixed candidate is dashed gray and the knee candidate
+is dotted magenta; each electrode title identifies the selected mode. Red
+electrode labels indicate formal QC failures. No
 individual-electrode PNGs or per-subject folders are generated; poor fits stay
 visible in the combined figure rather than being hidden.
 
@@ -333,6 +355,6 @@ conda run -n MNE_August2026 python -m unittest discover \
   -s tests -p 'test_scale_free_analysis.py' -v
 ```
 
-The tests cover configuration, synthetic aperiodic/peak recovery, exact eBOSC
-wavelet equivalence, duration and edge rules, bout summaries, and bycycle units
-and selection.
+The tests cover fixed and knee recovery, BIC selection, within-subject knee
+outlier handling, exact eBOSC wavelet equivalence, duration and edge rules,
+bout summaries, and bycycle units and selection.

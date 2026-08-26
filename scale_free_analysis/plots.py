@@ -81,6 +81,26 @@ def plot_spectral_example(example: dict[str, Any], path: Path, dpi: int) -> None
         linewidth=2,
         label="Aperiodic component",
     )
+    if "fixed_aperiodic_psd_uv2_hz" in example:
+        axes[0].loglog(
+            frequencies,
+            example["fixed_aperiodic_psd_uv2_hz"],
+            color="#666666",
+            linestyle="--",
+            linewidth=1.0,
+            label="Fixed aperiodic candidate",
+        )
+    if "knee_aperiodic_psd_uv2_hz" in example and np.isfinite(
+        example["knee_aperiodic_psd_uv2_hz"]
+    ).all():
+        axes[0].loglog(
+            frequencies,
+            example["knee_aperiodic_psd_uv2_hz"],
+            color="#CC79A7",
+            linestyle=":",
+            linewidth=1.2,
+            label="Knee aperiodic candidate",
+        )
     axes[0].set(xlabel="Frequency (Hz)", ylabel="PSD (µV²/Hz)", title="Spectral decomposition")
     axes[0].grid(alpha=0.2)
     axes[0].legend(frameon=False)
@@ -149,6 +169,8 @@ def plot_spectral_example(example: dict[str, Any], path: Path, dpi: int) -> None
     if example.get("group"):
         title += f" — {example['group']}"
     details = []
+    if example.get("specparam_aperiodic_mode"):
+        details.append(f"selected={example['specparam_aperiodic_mode']}")
     if np.isfinite(float(example.get("aperiodic_exponent", np.nan))):
         details.append(f"exponent={float(example['aperiodic_exponent']):.3f}")
     if np.isfinite(float(example.get("specparam_r_squared", np.nan))):

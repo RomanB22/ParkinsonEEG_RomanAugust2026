@@ -204,6 +204,8 @@ psd_current() {
 ordinal_primary_current() {
     [[ -f ordinal_analysis/processed/manifest.json ]] || return 1
     ! grep -q 'broad_5_15' ordinal_analysis/processed/manifest.json || return 1
+    grep -q '"subject_topomaps_generated": false' \
+        ordinal_analysis/processed/manifest.json || return 1
     header_has_extended_renyi \
         ordinal_analysis/processed/metrics/subject_electrode_mean_metrics.csv
     header_has_extended_renyi \
@@ -237,7 +239,9 @@ ordinal_sweep_current() {
 scale_free_current() {
     [[ -f scale_free_analysis/processed/manifest.json ]] || return 1
     ! grep -q 'broad_5_15' scale_free_analysis/processed/manifest.json || return 1
-    grep -q '"specparam_primary_fit_range_id": "4_35Hz"' \
+    grep -q '"specparam_primary_fit_range_id": "1_50Hz"' \
+        scale_free_analysis/processed/manifest.json || return 1
+    grep -q '"criterion": "bic"' \
         scale_free_analysis/processed/manifest.json || return 1
     grep -q '"raw_cycle_tables_saved": false' \
         scale_free_analysis/processed/manifest.json || return 1
@@ -294,7 +298,9 @@ bout_current() {
     grep -q '"legacy_episode_threshold_paths_are_symlinks": true' \
         bout_analyses/processed/manifest.json || return 1
     ! grep -q 'broad_5_15' bout_analyses/processed/manifest.json || return 1
-    grep -q '"specparam_primary_fit_range_id": "4_35Hz"' \
+    grep -q '"specparam_primary_fit_range_id": "1_50Hz"' \
+        bout_analyses/processed/manifest.json || return 1
+    grep -q '"criterion": "bic"' \
         bout_analyses/processed/manifest.json || return 1
     [[ -f bout_analyses/processed/metrics/group_subject_statistics.csv ]] || return 1
     [[ -f bout_analyses/processed/metrics/group_electrode_statistics.csv ]] || return 1

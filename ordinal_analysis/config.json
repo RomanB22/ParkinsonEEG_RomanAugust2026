@@ -47,6 +47,7 @@
   "plots": {
     "dpi": 150,
     "channels_per_plane_page": 12,
+    "subject_topomaps": false,
     "group_order": [
       "PD",
       "Control"

@@ -8,14 +8,20 @@ import pandas as pd
 from ebosc.BOSC import BOSC_tf
 from specparam.sim import sim_power_spectrum
 
-from scale_free_analysis.aperiodic_diagnostics import assess_specparam_fit
+from scale_free_analysis.aperiodic_diagnostics import (
+    assess_specparam_fit,
+    fit_range_sensitivity,
+)
 from scale_free_analysis.fit_qc_sensitivity import _fit_coverage
 from scale_free_analysis.metrics import (
     cycles_within_bouts,
     detect_frequency_episodes,
     ebosc_wavelet_power,
     extract_band_bouts,
+    fit_specparam_candidates,
     fit_specparam_spectrum,
+    knee_frequency_outlier_flags,
+    select_specparam_candidate,
     summarize_bouts,
     summarize_cycles,
 )
@@ -58,15 +64,18 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
 
             plt.close(figure)
 
-    def test_config_keeps_full_psd_and_uses_reliable_aperiodic_range(self):
+    def test_config_fits_fixed_and_knee_models_over_full_psd_range(self):
         config = load_analysis_config("scale_free_analysis/config.json")
         self.assertEqual(config["psd"]["fmin_hz"], 1.0)
         self.assertEqual(config["psd"]["fmax_hz"], 50.0)
-        self.assertEqual(config["specparam"]["frequency_range_hz"], [4.0, 35.0])
+        self.assertEqual(config["specparam"]["frequency_range_hz"], [1.0, 50.0])
+        self.assertEqual(config["specparam"]["aperiodic_modes"], ["fixed", "knee"])
+        self.assertEqual(config["specparam"]["model_selection_criterion"], "bic")
+        self.assertEqual(config["specparam"]["peak_width_limits_hz"], [1.0, 12.0])
         self.assertEqual(config["aperiodic_fit_qc"]["minimum_r_squared"], 0.9)
         self.assertEqual(
             config["aperiodic_sensitivity"]["frequency_ranges_hz"],
-            [[4.0, 35.0], [3.0, 35.0], [4.0, 40.0], [3.0, 40.0]],
+            [[1.0, 50.0], [4.0, 35.0]],
         )
         self.assertFalse(config["cache"]["save_raw_cycle_tables"])
 
@@ -147,7 +156,7 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
     def test_specparam_recovers_aperiodic_and_alpha_peak(self):
         np.random.seed(0)
         frequencies, power = sim_power_spectrum(
-            [1, 40],
+            [1, 50],
             {"fixed": [1.0, 1.5]},
             {"gaussian": [10.0, 0.5, 2.0]},
             nlv=0.005,
@@ -164,6 +173,132 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
         self.assertEqual(alpha["peak_present"], 1)
         self.assertAlmostEqual(alpha["peak_frequency_hz"], 10.0, delta=0.5)
         self.assertTrue(np.all(curves["aperiodic_psd_uv2_hz"] > 0.0))
+        self.assertEqual(aperiodic["specparam_aperiodic_mode"], "fixed")
+        self.assertTrue(np.isfinite(aperiodic["fixed_specparam_bic"]))
+        self.assertTrue(np.isfinite(aperiodic["knee_specparam_bic"]))
+
+    def test_specparam_bic_selects_a_clear_knee(self):
+        np.random.seed(1)
+        frequencies, power = sim_power_spectrum(
+            [1, 50],
+            {"knee": [1.0, 100.0, 2.0]},
+            {"gaussian": [10.0, 0.4, 2.0]},
+            nlv=0.002,
+            freq_res=0.25,
+        )
+        aperiodic, _, curves = fit_specparam_spectrum(
+            frequencies,
+            power,
+            self.config["bands"],
+            self.config["specparam"],
+        )
+        self.assertEqual(aperiodic["specparam_aperiodic_mode"], "knee")
+        self.assertEqual(aperiodic["specparam_model_selection_reason"], "knee_lower_bic")
+        self.assertAlmostEqual(
+            aperiodic["aperiodic_knee_frequency_hz"], 10.0, delta=2.0
+        )
+        np.testing.assert_allclose(
+            curves["aperiodic_psd_uv2_hz"],
+            curves["knee_aperiodic_psd_uv2_hz"],
+        )
+
+    def test_knee_frequency_outliers_are_computed_within_subject(self):
+        candidates = [
+            {"knee": {"metrics": {"aperiodic_knee_frequency_hz": value}}}
+            for value in (10.0, 10.0, 10.0, 10.0, 10.0, 50.0)
+        ]
+        zscores, outliers = knee_frequency_outlier_flags(candidates, 2.0)
+        self.assertFalse(outliers[:-1].any())
+        self.assertTrue(outliers[-1])
+        self.assertGreater(zscores[-1], 2.0)
+
+    def test_outlier_knee_falls_back_to_fixed_threshold_model(self):
+        np.random.seed(2)
+        frequencies, power = sim_power_spectrum(
+            [1, 50],
+            {"knee": [1.0, 100.0, 2.0]},
+            {"gaussian": [10.0, 0.4, 2.0]},
+            nlv=0.002,
+            freq_res=0.25,
+        )
+        candidates = fit_specparam_candidates(
+            frequencies,
+            power,
+            self.config["bands"],
+            self.config["specparam"],
+        )
+        selected, _, curves = select_specparam_candidate(
+            candidates,
+            self.config["specparam"],
+            knee_frequency_outlier=True,
+        )
+        self.assertEqual(selected["specparam_aperiodic_mode"], "fixed")
+        self.assertEqual(
+            selected["specparam_model_selection_reason"],
+            "knee_frequency_outlier_within_subject",
+        )
+        np.testing.assert_allclose(
+            curves["aperiodic_psd_uv2_hz"],
+            curves["fixed_aperiodic_psd_uv2_hz"],
+        )
+
+    def test_range_sensitivity_repeats_fixed_knee_selection_policy(self):
+        np.random.seed(3)
+        simulations = [
+            sim_power_spectrum(
+                [1, 50],
+                aperiodic,
+                {"gaussian": [10.0, 0.35, 2.0]},
+                nlv=0.002,
+                freq_res=0.25,
+            )
+            for aperiodic in (
+                {"fixed": [1.0, 1.5]},
+                {"knee": [1.0, 100.0, 2.0]},
+            )
+        ]
+        frequencies = tuple(item[0] for item in simulations)
+        powers = tuple(item[1] for item in simulations)
+        np.testing.assert_allclose(frequencies[0], frequencies[1])
+        primary_rows = []
+        observed = []
+        modeled = []
+        for electrode, power in zip(("Fz", "Cz"), powers):
+            metrics, _, curves = fit_specparam_spectrum(
+                frequencies[0], power, self.config["bands"], self.config["specparam"]
+            )
+            metrics.update(
+                {
+                    "subject_id": "sub-001",
+                    "group": "PD",
+                    "electrode": electrode,
+                    "knee_frequency_zscore_within_subject": 0.0,
+                    "knee_frequency_outlier_within_subject": False,
+                }
+            )
+            primary_rows.append(metrics)
+            observed.append(curves["observed_psd_uv2_hz"])
+            modeled.append(curves["modeled_psd_uv2_hz"])
+        with tempfile.TemporaryDirectory() as directory:
+            np.savez_compressed(
+                Path(directory) / "sub-001_specparam_spectra.npz",
+                electrodes=np.asarray(["Fz", "Cz"]),
+                frequencies_hz=frequencies[0],
+                observed_psd_uv2_hz=np.asarray(observed),
+                modeled_psd_uv2_hz=np.asarray(modeled),
+            )
+            result = fit_range_sensitivity(
+                directory,
+                pd.DataFrame.from_records(primary_rows),
+                self.config["specparam"],
+                {**self.config["aperiodic_sensitivity"], "workers": 1},
+                self.config["aperiodic_fit_qc"],
+            )
+        self.assertEqual(len(result), 4)
+        self.assertEqual(set(result["fit_range_id"]), {"1_50Hz", "4_35Hz"})
+        self.assertEqual(
+            set(result["specparam_aperiodic_mode"]), {"fixed", "knee"}
+        )
 
     def test_fit_qc_uses_signed_residuals_and_flags_low_r_squared(self):
         observed = np.asarray([10.0, 5.0, 2.0, 1.0])
@@ -332,6 +467,7 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
                     "electrode": ["Fz", "Cz"],
                     "aperiodic_offset": [1.0, 0.9],
                     "aperiodic_exponent": [1.0, 1.0],
+                    "specparam_aperiodic_mode": ["fixed", "knee"],
                     "specparam_r_squared": [0.98, 0.97],
                     "specparam_error_mae": [0.01, 0.02],
                 }

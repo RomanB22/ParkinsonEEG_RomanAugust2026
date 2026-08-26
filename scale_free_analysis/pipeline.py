@@ -39,8 +39,10 @@ from .metrics import (
     detect_frequency_episodes,
     ebosc_wavelet_power,
     extract_band_bouts,
-    fit_specparam_spectrum,
+    fit_specparam_candidates,
+    knee_frequency_outlier_flags,
     power_thresholds,
+    select_specparam_candidate,
     summarize_bouts,
     summarize_cycles,
 )
@@ -80,8 +82,26 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     missing = sorted(required - set(config))
     if missing:
         raise ValueError(f"Missing scale-free analysis config sections: {missing}")
-    if str(config["specparam"]["aperiodic_mode"]) != "fixed":
-        raise ValueError("This pipeline requires specparam.aperiodic_mode='fixed'")
+    specparam = config["specparam"]
+    if str(specparam.get("aperiodic_mode")) != "best_bic":
+        raise ValueError("specparam.aperiodic_mode must be 'best_bic'")
+    if specparam.get("aperiodic_modes") != ["fixed", "knee"]:
+        raise ValueError("specparam.aperiodic_modes must be ['fixed', 'knee']")
+    if str(specparam.get("model_selection_criterion")) != "bic":
+        raise ValueError("specparam.model_selection_criterion must be 'bic'")
+    if [float(value) for value in specparam["frequency_range_hz"]] != [1.0, 50.0]:
+        raise ValueError("The primary fixed and knee models must use 1–50 Hz")
+    if float(specparam.get("knee_frequency_outlier_z_threshold", 0.0)) != 2.0:
+        raise ValueError("The within-subject knee-frequency outlier threshold must be 2 SD")
+    paper_settings = {
+        "peak_width_limits_hz": [1.0, 12.0],
+        "max_n_peaks": 8,
+        "min_peak_height": 0.0,
+        "peak_threshold": 2.0,
+    }
+    for name, expected in paper_settings.items():
+        if specparam.get(name) != expected:
+            raise ValueError(f"specparam.{name} must be {expected!r}")
     qc = config["aperiodic_fit_qc"]
     if not 0.0 <= float(qc["minimum_r_squared"]) <= 1.0:
         raise ValueError("aperiodic_fit_qc.minimum_r_squared must be in [0, 1]")
@@ -627,18 +647,41 @@ def run_analysis(
             "modeled_psd_uv2_hz": [],
             "aperiodic_psd_uv2_hz": [],
             "periodic_psd_uv2_hz": [],
+            "fixed_modeled_psd_uv2_hz": [],
+            "fixed_aperiodic_psd_uv2_hz": [],
+            "fixed_periodic_psd_uv2_hz": [],
+            "knee_modeled_psd_uv2_hz": [],
+            "knee_aperiodic_psd_uv2_hz": [],
+            "knee_periodic_psd_uv2_hz": [],
         }
         subject_episode_tables = []
         subject_cycle_tables = []
         subject_threshold_rows = []
 
-        for channel_index, electrode in enumerate(common_channels):
-            progress.set_postfix_str(f"{subject_id} | {electrode}", refresh=False)
-            aperiodic, periodic_bands, curves = fit_specparam_spectrum(
+        spectral_candidates = [
+            fit_specparam_candidates(
                 psd_frequencies,
                 electrode_psd[channel_index],
                 bands,
                 config["specparam"],
+            )
+            for channel_index in range(len(common_channels))
+        ]
+        knee_zscores, knee_outliers = knee_frequency_outlier_flags(
+            spectral_candidates,
+            float(config["specparam"]["knee_frequency_outlier_z_threshold"]),
+            config["specparam"]["frequency_range_hz"],
+        )
+
+        for channel_index, electrode in enumerate(common_channels):
+            progress.set_postfix_str(f"{subject_id} | {electrode}", refresh=False)
+            aperiodic, periodic_bands, curves = select_specparam_candidate(
+                spectral_candidates[channel_index],
+                config["specparam"],
+                knee_frequency_outlier=bool(knee_outliers[channel_index]),
+            )
+            aperiodic["knee_frequency_zscore_within_subject"] = float(
+                knee_zscores[channel_index]
             )
             aperiodic_rows.append(
                 {
@@ -699,6 +742,22 @@ def run_analysis(
                         "mean_wavelet_power": float(observed),
                         "specparam_aperiodic_wavelet_background": float(background_value),
                         "power_threshold": float(threshold),
+                        "specparam_aperiodic_mode": str(
+                            aperiodic["specparam_aperiodic_mode"]
+                        ),
+                        "specparam_model_selection_criterion": "bic",
+                        "specparam_selected_bic": float(aperiodic["specparam_bic"]),
+                        "specparam_fixed_bic": float(aperiodic["fixed_specparam_bic"]),
+                        "specparam_knee_bic": float(aperiodic["knee_specparam_bic"]),
+                        "aperiodic_knee_frequency_hz": float(
+                            aperiodic["aperiodic_knee_frequency_hz"]
+                        ),
+                        "knee_candidate_frequency_hz": float(
+                            aperiodic["knee_aperiodic_knee_frequency_hz"]
+                        ),
+                        "knee_frequency_outlier_within_subject": bool(
+                            aperiodic["knee_frequency_outlier_within_subject"]
+                        ),
                     }
                 )
 
@@ -862,7 +921,9 @@ def run_analysis(
 
     aperiodic_electrodes = pd.DataFrame.from_records(aperiodic_rows)
     band_electrodes = pd.DataFrame.from_records(band_rows)
-    logger.info("Running specparam fit QC and fixed-mode frequency-range sensitivity")
+    logger.info(
+        "Running specparam fit QC and fixed-versus-knee frequency-range sensitivity"
+    )
     aperiodic_diagnostics = run_aperiodic_diagnostics(
         output_dir,
         aperiodic_electrodes,
@@ -1002,6 +1063,9 @@ def run_analysis(
                 "aperiodic_exponent": example_metrics["aperiodic_exponent"],
                 "specparam_r_squared": example_metrics["specparam_r_squared"],
                 "specparam_error_mae": example_metrics["specparam_error_mae"],
+                "specparam_aperiodic_mode": example_metrics[
+                    "specparam_aperiodic_mode"
+                ],
                 "specparam_fit_qc_pass": example_metrics["specparam_fit_qc_pass"],
                 "specparam_fit_qc_reasons": example_metrics[
                     "specparam_fit_qc_reasons"
@@ -1120,6 +1184,19 @@ def run_analysis(
             f"{float(config['specparam']['frequency_range_hz'][0]):g}_"
             f"{float(config['specparam']['frequency_range_hz'][1]):g}Hz"
         ),
+        "specparam_model_selection": {
+            "candidate_modes": config["specparam"]["aperiodic_modes"],
+            "criterion": config["specparam"]["model_selection_criterion"],
+            "knee_frequency_outlier_z_threshold": config["specparam"][
+                "knee_frequency_outlier_z_threshold"
+            ],
+            "n_fixed_selected": int(
+                aperiodic_electrodes["specparam_aperiodic_mode"].eq("fixed").sum()
+            ),
+            "n_knee_selected": int(
+                aperiodic_electrodes["specparam_aperiodic_mode"].eq("knee").sum()
+            ),
+        },
         "n_specparam_decomposition_figures": int(len(specparam_gallery_index)),
         "raw_cycle_tables_saved": bool(
             config.get("cache", {}).get("save_raw_cycle_tables", False)
@@ -1161,7 +1238,10 @@ def run_analysis(
             "epoch so no bout or cycle crosses an epoch boundary."
         ),
         "aperiodic_threshold_policy": (
-            "specparam fixed-mode aperiodic PSD is mapped to the exact eBOSC Morlet-power "
+            "Both fixed and knee specparam models are fit over 1–50 Hz. BIC selects the "
+            "aperiodic model independently for each subject/electrode after excluding "
+            "within-subject knee-frequency outliers beyond 2 SD. The selected aperiodic "
+            "PSD is mapped to the exact eBOSC Morlet-power "
             "scale using the ratio between mean wavelet power and the full specparam model. "
             "The BOSC chi-square percentile and frequency-specific duration thresholds are "
             "then applied to this aperiodic background."

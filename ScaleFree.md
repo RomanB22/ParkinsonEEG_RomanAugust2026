@@ -10,8 +10,15 @@ For each subject and channel:
 * Use `specparam` to separate **aperiodic (1/f)** and **periodic** components.
 * Audit every fit with R², log-error, exponent-range, and signed-residual QC;
   retain failed fits for inspection and report QC-qualified summaries separately.
-* Repeat fixed-mode fits over prespecified alternative frequency ranges to test
-  exponent stability without changing peak settings.
+* Fit both fixed and knee aperiodic models over 1–50 Hz using peak widths of
+  1–12 Hz, at most eight peaks, minimum peak height 0, and peak threshold 2.
+* Compare candidates with BIC, prefer fixed on ties, and exclude knee
+  frequencies more than 2 within-subject SD from the subject mean before model
+  selection. Retain the former 4–35 Hz range as a sensitivity analysis without
+  changing peak settings.
+* Preserve the selected mode with every exponent: a fixed exponent is the
+  single 1–50 Hz slope, whereas a knee exponent is the asymptotic slope above
+  the bend.
 * Extract:
 
   * aperiodic exponent and offset
@@ -24,7 +31,7 @@ For each subject and channel:
 
 Detect transient oscillatory episodes rather than assuming oscillations are continuously present.
 
-Importantly, define oscillatory power relative to the **aperiodic background estimated with `specparam`**, so differences in 1/f activity between PD and Control are not incorrectly interpreted as differences in oscillatory activity.
+Importantly, define oscillatory power relative to the **aperiodic background estimated with `specparam`**. Use the BIC-selected fixed or knee background for each subject and electrode, so differences in 1/f activity between PD and Control are not incorrectly interpreted as differences in oscillatory activity.
 
 Use the 95th-percentile BOSC/eBOSC chi-square power threshold and require at
 least three cycles above threshold at each frequency. Exclude 0.75 seconds at

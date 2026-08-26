@@ -216,6 +216,7 @@ class OrdinalMetricTests(unittest.TestCase):
         )
         self.assertEqual(config["statistics"]["exclude_bands"], [])
         self.assertEqual(config["band_filter"]["order"], 4)
+        self.assertFalse(config["plots"]["subject_topomaps"])
         with open("ordinal_analysis/config.json", encoding="utf-8") as stream:
             self.assertIsNone(json.load(stream)["ordinal"]["tie_precision"])
 

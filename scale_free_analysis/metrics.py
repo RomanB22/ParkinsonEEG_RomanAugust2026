@@ -55,8 +55,20 @@ def fit_specparam_spectrum(
     power_spectrum: np.ndarray,
     bands: Mapping[str, tuple[float, float] | list[float]],
     settings: Mapping[str, Any],
-) -> tuple[dict[str, float], list[dict[str, Any]], dict[str, np.ndarray]]:
-    """Fit one linear PSD and return aperiodic, band-peak, and curve results."""
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, np.ndarray]]:
+    """Fit fixed and knee models and return the BIC-selected decomposition."""
+    candidates = fit_specparam_candidates(frequencies, power_spectrum, bands, settings)
+    return select_specparam_candidate(candidates, settings)
+
+
+def _fit_specparam_candidate(
+    frequencies: np.ndarray,
+    power_spectrum: np.ndarray,
+    bands: Mapping[str, tuple[float, float] | list[float]],
+    settings: Mapping[str, Any],
+    aperiodic_mode: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, np.ndarray]]:
+    """Fit one candidate aperiodic mode and calculate penalized fit criteria."""
     freqs = np.asarray(frequencies, dtype=float)
     power = np.asarray(power_spectrum, dtype=float)
     if freqs.ndim != 1 or power.shape != freqs.shape:
@@ -65,7 +77,7 @@ def fit_specparam_spectrum(
         raise ValueError("specparam requires finite positive linear power")
 
     model = SpectralModel(
-        aperiodic_mode=str(settings["aperiodic_mode"]),
+        aperiodic_mode=str(aperiodic_mode),
         peak_width_limits=tuple(float(value) for value in settings["peak_width_limits_hz"]),
         max_n_peaks=int(settings["max_n_peaks"]),
         min_peak_height=float(settings["min_peak_height"]),
@@ -78,14 +90,48 @@ def fit_specparam_spectrum(
         raise RuntimeError("specparam failed to fit the power spectrum")
 
     aperiodic = np.asarray(model.get_params("aperiodic"), dtype=float)
-    if aperiodic.shape != (2,):
-        raise RuntimeError("Fixed specparam mode did not return [offset, exponent]")
+    expected_shape = (2,) if aperiodic_mode == "fixed" else (3,)
+    if aperiodic.shape != expected_shape:
+        raise RuntimeError(
+            f"{aperiodic_mode} specparam mode returned {aperiodic.shape}, "
+            f"expected {expected_shape}"
+        )
+    if aperiodic_mode == "fixed":
+        offset, exponent = aperiodic
+        knee = np.nan
+        knee_frequency = np.nan
+    else:
+        offset, knee, exponent = aperiodic
+        knee_frequency = (
+            float(knee ** (1.0 / exponent))
+            if np.isfinite(knee) and np.isfinite(exponent) and knee > 0.0 and exponent > 0.0
+            else np.nan
+        )
     metrics = model.results.metrics.results
+    observed_log = model.data.get_data("full", "log").copy()
+    modeled_log = model.results.model.get_component("full", "log").copy()
+    residual = observed_log - modeled_log
+    residual_sum_squares = max(float(np.sum(residual**2)), np.finfo(float).tiny)
+    n_observations = int(len(residual))
+    n_parameters = (2 if aperiodic_mode == "fixed" else 3) + 3 * int(
+        model.results.n_peaks
+    )
+    information_term = n_observations * math.log(residual_sum_squares / n_observations)
     aperiodic_row = {
-        "aperiodic_offset": float(aperiodic[0]),
-        "aperiodic_exponent": float(aperiodic[1]),
+        "aperiodic_mode": str(aperiodic_mode),
+        "aperiodic_offset": float(offset),
+        "aperiodic_knee": float(knee),
+        "aperiodic_exponent": float(exponent),
+        "aperiodic_knee_frequency_hz": float(knee_frequency),
         "specparam_r_squared": float(metrics.get("gof_rsquared", np.nan)),
         "specparam_error_mae": float(metrics.get("error_mae", np.nan)),
+        "specparam_residual_sum_squares_log10": residual_sum_squares,
+        "specparam_n_observations": n_observations,
+        "specparam_n_parameters": n_parameters,
+        "specparam_aic": float(information_term + 2.0 * n_parameters),
+        "specparam_bic": float(
+            information_term + math.log(n_observations) * n_parameters
+        ),
         "n_detected_peaks": int(model.results.n_peaks),
     }
 
@@ -127,6 +173,176 @@ def fit_specparam_spectrum(
         ).copy(),
     }
     return aperiodic_row, band_rows, curves
+
+
+def fit_specparam_candidates(
+    frequencies: np.ndarray,
+    power_spectrum: np.ndarray,
+    bands: Mapping[str, tuple[float, float] | list[float]],
+    settings: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Fit every configured aperiodic model without selecting between them."""
+    modes = [str(value) for value in settings.get("aperiodic_modes", ["fixed", "knee"])]
+    if modes != ["fixed", "knee"]:
+        raise ValueError("specparam.aperiodic_modes must be ['fixed', 'knee']")
+    candidates: dict[str, dict[str, Any]] = {}
+    for mode in modes:
+        try:
+            metrics, band_rows, curves = _fit_specparam_candidate(
+                frequencies, power_spectrum, bands, settings, mode
+            )
+            candidates[mode] = {
+                "metrics": metrics,
+                "band_rows": band_rows,
+                "curves": curves,
+                "error": None,
+            }
+        except Exception as error:
+            if mode == "fixed":
+                raise
+            candidates[mode] = {
+                "metrics": None,
+                "band_rows": None,
+                "curves": None,
+                "error": f"{type(error).__name__}: {error}",
+            }
+    return candidates
+
+
+def knee_frequency_outlier_flags(
+    candidates: list[Mapping[str, Mapping[str, Any]]],
+    z_threshold: float,
+    frequency_range_hz: tuple[float, float] | list[float] | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Flag interpretable knee frequencies beyond the within-subject SD threshold."""
+    if float(z_threshold) <= 0.0:
+        raise ValueError("The knee-frequency z threshold must be positive")
+    knee_frequencies = np.asarray(
+        [
+            (
+                candidate["knee"]["metrics"]["aperiodic_knee_frequency_hz"]
+                if candidate["knee"].get("metrics") is not None
+                else np.nan
+            )
+            for candidate in candidates
+        ],
+        dtype=float,
+    )
+    valid = np.isfinite(knee_frequencies)
+    if frequency_range_hz is not None:
+        low, high = (float(value) for value in frequency_range_hz)
+        if not low < high:
+            raise ValueError("The knee-frequency range must increase")
+        valid &= (knee_frequencies >= low) & (knee_frequencies <= high)
+    zscores = np.full(len(candidates), np.nan, dtype=float)
+    if valid.any():
+        mean = float(np.mean(knee_frequencies[valid]))
+        standard_deviation = float(np.std(knee_frequencies[valid]))
+        zscores[valid] = (
+            0.0
+            if standard_deviation == 0.0
+            else (knee_frequencies[valid] - mean) / standard_deviation
+        )
+    return zscores, np.abs(zscores) > float(z_threshold)
+
+
+def select_specparam_candidate(
+    candidates: Mapping[str, Mapping[str, Any]],
+    settings: Mapping[str, Any],
+    *,
+    knee_frequency_outlier: bool = False,
+) -> tuple[dict[str, Any], list[dict[str, Any]], dict[str, np.ndarray]]:
+    """Select the best interpretable model using BIC, preferring fixed on ties."""
+    if str(settings.get("model_selection_criterion")) != "bic":
+        raise ValueError("specparam.model_selection_criterion must be 'bic'")
+    fixed = candidates["fixed"]
+    knee = candidates["knee"]
+    fixed_metrics = fixed.get("metrics")
+    if fixed_metrics is None:
+        raise RuntimeError("The required fixed specparam candidate is unavailable")
+    knee_metrics = knee.get("metrics")
+    fit_low, fit_high = (float(value) for value in settings["frequency_range_hz"])
+    knee_frequency = (
+        float(knee_metrics["aperiodic_knee_frequency_hz"])
+        if knee_metrics is not None
+        else np.nan
+    )
+    knee_eligible = bool(
+        knee_metrics is not None
+        and np.isfinite(knee_frequency)
+        and fit_low <= knee_frequency <= fit_high
+        and not knee_frequency_outlier
+    )
+    knee_better = bool(
+        knee_eligible
+        and float(knee_metrics["specparam_bic"]) < float(fixed_metrics["specparam_bic"])
+    )
+    selected_mode = "knee" if knee_better else "fixed"
+    selected = candidates[selected_mode]
+    selected_metrics = dict(selected["metrics"])
+    if knee_better:
+        reason = "knee_lower_bic"
+    elif knee_metrics is None:
+        reason = "knee_fit_failed"
+    elif not np.isfinite(knee_frequency):
+        reason = "knee_frequency_nonfinite"
+    elif not fit_low <= knee_frequency <= fit_high:
+        reason = "knee_frequency_outside_fit_range"
+    elif knee_frequency_outlier:
+        reason = "knee_frequency_outlier_within_subject"
+    else:
+        reason = "fixed_lower_or_equal_bic"
+    selected_metrics.update(
+        {
+            "specparam_aperiodic_mode": selected_mode,
+            "specparam_model_selection_criterion": "bic",
+            "specparam_model_selection_reason": reason,
+            "knee_model_fit_success": knee_metrics is not None,
+            "knee_model_eligible": knee_eligible,
+            "knee_frequency_outlier_within_subject": bool(knee_frequency_outlier),
+            "knee_model_fit_error": str(knee.get("error") or ""),
+            "specparam_delta_bic_knee_minus_fixed": (
+                float(knee_metrics["specparam_bic"] - fixed_metrics["specparam_bic"])
+                if knee_metrics is not None
+                else np.nan
+            ),
+        }
+    )
+    metric_names = (
+        "aperiodic_offset",
+        "aperiodic_knee",
+        "aperiodic_exponent",
+        "aperiodic_knee_frequency_hz",
+        "specparam_r_squared",
+        "specparam_error_mae",
+        "specparam_residual_sum_squares_log10",
+        "specparam_n_observations",
+        "specparam_n_parameters",
+        "specparam_aic",
+        "specparam_bic",
+        "n_detected_peaks",
+    )
+    for mode, candidate_metrics in (("fixed", fixed_metrics), ("knee", knee_metrics)):
+        for name in metric_names:
+            selected_metrics[f"{mode}_{name}"] = (
+                candidate_metrics.get(name, np.nan)
+                if candidate_metrics is not None
+                else np.nan
+            )
+    curves = dict(selected["curves"])
+    for mode, candidate in (("fixed", fixed), ("knee", knee)):
+        candidate_curves = candidate.get("curves")
+        for name in (
+            "modeled_psd_uv2_hz",
+            "aperiodic_psd_uv2_hz",
+            "periodic_psd_uv2_hz",
+        ):
+            curves[f"{mode}_{name}"] = (
+                np.asarray(candidate_curves[name], dtype=float).copy()
+                if candidate_curves is not None
+                else np.full_like(curves["frequencies_hz"], np.nan, dtype=float)
+            )
+    return selected_metrics, list(selected["band_rows"]), curves
 
 
 def ebosc_wavelet_power(

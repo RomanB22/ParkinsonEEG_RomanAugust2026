@@ -21,8 +21,9 @@ from scale_free_analysis.pipeline import load_analysis_config
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit every saved specparam fit and refit the configured fixed-mode "
-            "frequency-range sensitivity models without rerunning eBOSC/bycycle."
+            "Audit every saved selected specparam fit and refit the configured "
+            "fixed-versus-knee frequency-range sensitivity models without "
+            "rerunning eBOSC/bycycle."
         )
     )
     parser.add_argument("--config", default="scale_free_analysis/config.json")

@@ -15,10 +15,12 @@ from bout_analyses.pipeline import load_analysis_config
 
 
 class BoutAnalysesTests(unittest.TestCase):
-    def test_config_uses_regular_metrics_and_restricted_aperiodic_fit(self):
+    def test_config_uses_regular_metrics_and_selected_aperiodic_fit(self):
         config = load_analysis_config("bout_analyses/config.json")
         self.assertEqual(config["psd"], {"fmin_hz": 1.0, "fmax_hz": 50.0})
-        self.assertEqual(config["specparam"]["frequency_range_hz"], [4.0, 35.0])
+        self.assertEqual(config["specparam"]["frequency_range_hz"], [1.0, 50.0])
+        self.assertEqual(config["specparam"]["aperiodic_modes"], ["fixed", "knee"])
+        self.assertEqual(config["specparam"]["model_selection_criterion"], "bic")
         self.assertEqual(config["ordinal"]["embedding_dimension"], 6)
         self.assertEqual(config["ordinal"]["delay_samples"], 1)
         self.assertEqual(METRICS, ("entropy", "complexity", "fisher_information"))

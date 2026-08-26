@@ -187,11 +187,9 @@ ordinal_analysis/processed/
     ├── topomaps/
     │   ├── group_mean_topomaps.png
     │   ├── group_mean_zscored_topomaps.png
-    │   ├── subjects/sub-*_ordinal_topomaps.png
     │   └── renyi_alpha_<alpha>/
     │       ├── group_mean_topomaps.png
-    │       ├── group_mean_zscored_topomaps.png
-    │       └── subjects/sub-*_renyi_alpha_<alpha>_topomaps.png
+    │       └── group_mean_zscored_topomaps.png
     └── bands/
         ├── delta|theta|alpha|beta|low_gamma/
         │   ├── violins/*.png
@@ -199,12 +197,14 @@ ordinal_analysis/processed/
         └── topomaps/
             ├── group_means/<band>_group_mean_topomaps.png
             ├── group_means_zscored/<band>_group_mean_zscored_topomaps.png
-            ├── subjects/sub-*_band_ordinal_topomaps.png
             └── renyi_alpha_<alpha>/
                 ├── group_means/<band>_group_mean_topomaps.png
-                ├── group_means_zscored/<band>_group_mean_zscored_topomaps.png
-                └── subjects/sub-*_band_renyi_alpha_<alpha>_topomaps.png
+                └── group_means_zscored/<band>_group_mean_zscored_topomaps.png
 ```
+
+Per-subject topomaps are disabled by default to keep the output compact. The
+pipeline retains the group-mean and pooled electrode-z-scored group topomaps
+for broadband, frequency-band, Shannon/Fisher, and every Rényi metric set.
 
 ### Tables
 

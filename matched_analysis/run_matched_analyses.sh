@@ -143,6 +143,7 @@ stage_current() {
         ordinal_analysis/processed_matched/manifest.json)
             ! grep -q 'broad_5_15' "$sentinel" \
                 && grep -q '"mode": "filtered_subject_level_reuse"' "$sentinel" \
+                && grep -q '"subject_topomaps_generated": false' "$sentinel" \
                 && [[ -f ordinal_analysis/processed_matched/figures/topomaps/renyi_alpha_10/group_mean_topomaps.png ]] \
                 && [[ -f ordinal_analysis/processed_matched/metrics/group_subject_statistics_broadband.csv ]] \
                 && [[ -f ordinal_analysis/processed_matched/metrics/group_electrode_statistics_by_band.csv ]] \
@@ -150,7 +151,8 @@ stage_current() {
             ;;
         scale_free_analysis/processed_matched/manifest.json)
             ! grep -q 'broad_5_15' "$sentinel" \
-                && grep -q '"specparam_primary_fit_range_id": "4_35Hz"' "$sentinel" \
+                && grep -q '"specparam_primary_fit_range_id": "1_50Hz"' "$sentinel" \
+                && grep -q '"criterion": "bic"' "$sentinel" \
                 && grep -q '"raw_cycle_tables_saved": false' "$sentinel" \
                 && grep -q '"mode": "filtered_subject_level_reuse"' "$sentinel" \
                 && [[ -f scale_free_analysis/processed_matched/metrics/group_subject_statistics_aperiodic.csv ]] \
@@ -166,7 +168,8 @@ stage_current() {
             ;;
         bout_analyses/processed_matched/manifest.json)
             ! grep -q 'broad_5_15' "$sentinel" \
-                && grep -q '"specparam_primary_fit_range_id": "4_35Hz"' "$sentinel" \
+                && grep -q '"specparam_primary_fit_range_id": "1_50Hz"' "$sentinel" \
+                && grep -q '"criterion": "bic"' "$sentinel" \
                 && grep -q '"scale_free_manifest"' "$sentinel" \
                 && grep -q '"legacy_episode_threshold_paths_are_symlinks": true' "$sentinel" \
                 && [[ -f bout_analyses/processed_matched/metrics/group_subject_statistics.csv ]] \

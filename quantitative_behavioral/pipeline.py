@@ -230,8 +230,15 @@ def _validate_upstream_manifests(config: dict[str, Any]) -> dict[str, Any]:
     if actual_range != [float(value) for value in expected["scale_free_psd_range_hz"]]:
         raise ValueError("Scale-free source does not use the expected PSD range")
     specparam = manifests["scale_free"]["analysis_config"]["specparam"]
-    if specparam.get("aperiodic_mode") != "fixed":
-        raise ValueError("Aperiodic exponent source must use fixed-mode specparam")
+    if specparam.get("aperiodic_mode") != "best_bic":
+        raise ValueError("Aperiodic exponent source must use BIC-selected specparam")
+    if specparam.get("aperiodic_modes") != expected["aperiodic_modes"]:
+        raise ValueError("Aperiodic source must fit fixed and knee models")
+    if (
+        specparam.get("model_selection_criterion")
+        != expected["aperiodic_model_selection_criterion"]
+    ):
+        raise ValueError("Aperiodic source uses the wrong model-selection criterion")
     actual_fit_range = [
         float(value) for value in specparam["frequency_range_hz"]
     ]
@@ -384,8 +391,10 @@ def _write_report(
         "## Aperiodic exponent",
         "",
         (
-            "The exponent is estimated by fixed-mode specparam over 4–35 Hz at each of the "
-            "60 shared electrodes, then averaged within subject before inference."
+            "Fixed and knee specparam candidates are fit over 1–50 Hz at each of the "
+            "60 shared electrodes. BIC selects the threshold model after the prespecified "
+            "within-subject 2-SD knee-frequency exclusion; its exponent is then averaged "
+            "within subject before inference."
         ),
         (
             f"PD mean={exponent_group['pd_mean']:.3f} (n={int(exponent_group['n_pd'])}); "

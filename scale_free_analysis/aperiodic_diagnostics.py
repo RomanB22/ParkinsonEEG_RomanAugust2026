@@ -17,7 +17,11 @@ import numpy as np
 import pandas as pd
 from scipy.stats import mannwhitneyu, ttest_ind
 
-from .metrics import fit_specparam_spectrum
+from .metrics import (
+    fit_specparam_candidates,
+    knee_frequency_outlier_flags,
+    select_specparam_candidate,
+)
 from .plots import plot_spectral_example
 
 
@@ -145,11 +149,51 @@ def _fit_subject_ranges(task: tuple[Any, ...]) -> list[dict[str, Any]]:
         modeled_primary = spectra["modeled_psd_uv2_hz"].copy()
     metric_lookup = {str(row["electrode"]): row for row in subject_rows}
     rows = []
-    for electrode_index, electrode in enumerate(electrodes):
-        primary = metric_lookup[electrode]
-        for range_order, limits in enumerate(ranges):
-            limits = [float(value) for value in limits]
-            is_primary = limits == primary_range
+    for range_order, limits in enumerate(ranges):
+        limits = [float(value) for value in limits]
+        is_primary = limits == primary_range
+        settings = dict(specparam_settings)
+        settings["frequency_range_hz"] = limits
+        candidates = (
+            None
+            if is_primary
+            else [
+                fit_specparam_candidates(
+                    frequencies,
+                    observed_primary[electrode_index],
+                    {},
+                    settings,
+                )
+                for electrode_index in range(len(electrodes))
+            ]
+        )
+        if candidates is None:
+            knee_zscores = np.asarray(
+                [
+                    float(metric_lookup[electrode].get(
+                        "knee_frequency_zscore_within_subject", np.nan
+                    ))
+                    for electrode in electrodes
+                ],
+                dtype=float,
+            )
+            knee_outliers = np.asarray(
+                [
+                    bool(metric_lookup[electrode].get(
+                        "knee_frequency_outlier_within_subject", False
+                    ))
+                    for electrode in electrodes
+                ],
+                dtype=bool,
+            )
+        else:
+            knee_zscores, knee_outliers = knee_frequency_outlier_flags(
+                candidates,
+                float(settings["knee_frequency_outlier_z_threshold"]),
+                limits,
+            )
+        for electrode_index, electrode in enumerate(electrodes):
+            primary = metric_lookup[electrode]
             if is_primary:
                 metrics = {
                     key: primary[key]
@@ -159,21 +203,23 @@ def _fit_subject_ranges(task: tuple[Any, ...]) -> list[dict[str, Any]]:
                         "specparam_r_squared",
                         "specparam_error_mae",
                         "n_detected_peaks",
+                        "specparam_aperiodic_mode",
+                        "specparam_model_selection_reason",
                     )
                 }
                 observed = observed_primary[electrode_index]
                 modeled = modeled_primary[electrode_index]
             else:
-                settings = dict(specparam_settings)
-                settings["frequency_range_hz"] = limits
-                metrics, _, curves = fit_specparam_spectrum(
-                    frequencies,
-                    observed_primary[electrode_index],
-                    {},
+                metrics, _, curves = select_specparam_candidate(
+                    candidates[electrode_index],
                     settings,
+                    knee_frequency_outlier=bool(knee_outliers[electrode_index]),
                 )
                 observed = curves["observed_psd_uv2_hz"]
                 modeled = curves["modeled_psd_uv2_hz"]
+            metrics["knee_frequency_zscore_within_subject"] = float(
+                knee_zscores[electrode_index]
+            )
             rows.append(
                 {
                     "subject_id": str(primary["subject_id"]),
@@ -422,6 +468,166 @@ def qc_summary(electrode_metrics: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame.from_records(rows)
 
 
+def summarize_model_selection(
+    electrode_metrics: pd.DataFrame,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return electrode provenance and one fixed-versus-knee summary per subject."""
+    comparison_columns = [
+        "subject_id",
+        "group",
+        "electrode",
+        "specparam_aperiodic_mode",
+        "specparam_model_selection_criterion",
+        "specparam_model_selection_reason",
+        "specparam_delta_bic_knee_minus_fixed",
+        "knee_model_fit_success",
+        "knee_model_eligible",
+        "knee_frequency_outlier_within_subject",
+        "knee_frequency_zscore_within_subject",
+        "fixed_aperiodic_offset",
+        "fixed_aperiodic_exponent",
+        "fixed_specparam_r_squared",
+        "fixed_specparam_error_mae",
+        "fixed_specparam_aic",
+        "fixed_specparam_bic",
+        "knee_aperiodic_offset",
+        "knee_aperiodic_knee",
+        "knee_aperiodic_exponent",
+        "knee_aperiodic_knee_frequency_hz",
+        "knee_specparam_r_squared",
+        "knee_specparam_error_mae",
+        "knee_specparam_aic",
+        "knee_specparam_bic",
+    ]
+    missing = sorted(set(comparison_columns) - set(electrode_metrics.columns))
+    if missing:
+        raise ValueError(f"Model-comparison metrics are missing columns: {missing}")
+    electrode = electrode_metrics[comparison_columns].copy()
+    rows = []
+    for (subject_id, group), selected in electrode.groupby(
+        ["subject_id", "group"], sort=False
+    ):
+        valid_knees = selected.loc[selected["knee_model_eligible"]]
+        rows.append(
+            {
+                "subject_id": subject_id,
+                "group": group,
+                "n_electrodes": int(selected["electrode"].nunique()),
+                "n_knee_selected": int(
+                    selected["specparam_aperiodic_mode"].eq("knee").sum()
+                ),
+                "fraction_knee_selected": float(
+                    selected["specparam_aperiodic_mode"].eq("knee").mean()
+                ),
+                "n_knee_frequency_outliers": int(
+                    selected["knee_frequency_outlier_within_subject"].sum()
+                ),
+                "fixed_aperiodic_exponent_mean": float(
+                    selected["fixed_aperiodic_exponent"].mean()
+                ),
+                "knee_aperiodic_exponent_mean": float(
+                    valid_knees["knee_aperiodic_exponent"].mean()
+                ),
+                "knee_frequency_hz_mean": float(
+                    valid_knees["knee_aperiodic_knee_frequency_hz"].mean()
+                ),
+                "delta_bic_knee_minus_fixed_mean": float(
+                    selected["specparam_delta_bic_knee_minus_fixed"].mean()
+                ),
+                "fixed_r_squared_mean": float(
+                    selected["fixed_specparam_r_squared"].mean()
+                ),
+                "knee_r_squared_mean": float(
+                    selected["knee_specparam_r_squared"].mean()
+                ),
+            }
+        )
+    return electrode, pd.DataFrame.from_records(rows)
+
+
+def plot_model_selection_summary(
+    electrode: pd.DataFrame,
+    subject: pd.DataFrame,
+    colors: Mapping[str, str],
+    path: Path,
+    dpi: int,
+) -> None:
+    """Visualize BIC selection, knee frequencies, and group coverage."""
+    fig, axes = plt.subplots(2, 2, figsize=(13, 9))
+    groups = subject["group"].drop_duplicates().astype(str).tolist()
+    for group_index, group in enumerate(groups):
+        group_subject = subject.loc[subject["group"].eq(group)]
+        x = np.full(len(group_subject), group_index, dtype=float)
+        jitter = np.linspace(-0.12, 0.12, max(len(group_subject), 1))[: len(group_subject)]
+        axes[0, 0].scatter(
+            x + jitter,
+            group_subject["fraction_knee_selected"],
+            color=colors.get(group, "0.4"),
+            alpha=0.65,
+            s=18,
+        )
+        group_electrode = electrode.loc[electrode["group"].eq(group)]
+        axes[0, 1].hist(
+            group_electrode["specparam_delta_bic_knee_minus_fixed"].dropna(),
+            bins=40,
+            histtype="step",
+            density=True,
+            linewidth=1.7,
+            color=colors.get(group, "0.4"),
+            label=group,
+        )
+        valid = group_electrode.loc[group_electrode["knee_model_eligible"]]
+        axes[1, 0].hist(
+            valid["knee_aperiodic_knee_frequency_hz"].dropna(),
+            bins=40,
+            histtype="step",
+            density=True,
+            linewidth=1.7,
+            color=colors.get(group, "0.4"),
+            label=group,
+        )
+    axes[0, 0].set_xticks(range(len(groups)), groups)
+    axes[0, 0].set(
+        ylabel="Fraction of electrodes",
+        title="Knee model selected within each subject",
+        ylim=(-0.03, 1.03),
+    )
+    axes[0, 1].axvline(0.0, color="black", linestyle="--", linewidth=1.0)
+    axes[0, 1].set(
+        xlabel="BIC(knee) − BIC(fixed)",
+        ylabel="Density",
+        title="Negative values favor knee",
+    )
+    axes[1, 0].set(
+        xlabel="Knee frequency (Hz)",
+        ylabel="Density",
+        title="Interpretable knee fits after 2-SD exclusion",
+    )
+    counts = (
+        electrode.groupby(["group", "specparam_aperiodic_mode"], sort=False)
+        .size()
+        .unstack(fill_value=0)
+        .reindex(index=groups, columns=["fixed", "knee"], fill_value=0)
+    )
+    axes[1, 1].bar(groups, counts["fixed"], color="#999999", label="Fixed")
+    axes[1, 1].bar(
+        groups,
+        counts["knee"],
+        bottom=counts["fixed"],
+        color="#CC79A7",
+        label="Knee",
+    )
+    axes[1, 1].set(ylabel="Electrode fits", title="BIC-selected threshold model")
+    axes[1, 1].legend(frameon=False)
+    for axis in axes.flat:
+        axis.grid(alpha=0.2)
+    axes[0, 1].legend(frameon=False)
+    axes[1, 0].legend(frameon=False)
+    fig.suptitle("Fixed versus knee specparam audit — both fitted over 1–50 Hz")
+    fig.tight_layout()
+    _save(fig, path, dpi)
+
+
 def plot_fit_qc_dashboard(
     metrics: pd.DataFrame,
     qc: Mapping[str, Any],
@@ -519,7 +725,7 @@ def plot_range_sensitivity(
     path: Path,
     dpi: int,
 ) -> None:
-    """Show exponent and QC stability across fixed-mode frequency ranges."""
+    """Show exponent and QC stability across fixed-versus-knee fit ranges."""
     order = (
         subjects[["fit_range_id", "fit_range_order"]]
         .drop_duplicates()
@@ -727,6 +933,7 @@ def run_aperiodic_diagnostics(
     subject_sensitivity = summarize_range_sensitivity(sensitivity, qc)
     range_comparisons = compare_ranges(subject_sensitivity)
     summary = qc_summary(augmented)
+    model_electrode, model_subject = summarize_model_selection(augmented)
     augmented.to_csv(
         metrics_dir / "electrode_aperiodic_metrics.csv",
         index=False,
@@ -758,6 +965,17 @@ def run_aperiodic_diagnostics(
         index=False,
         float_format="%.17g",
     )
+    model_electrode.to_csv(
+        metrics_dir / "electrode_aperiodic_model_comparison.csv.gz",
+        index=False,
+        float_format="%.17g",
+        compression="gzip",
+    )
+    model_subject.to_csv(
+        metrics_dir / "subject_aperiodic_model_comparison.csv",
+        index=False,
+        float_format="%.17g",
+    )
     colors = {
         str(group): str(config["plots"]["group_colors"].get(group, "0.4"))
         for group in augmented["group"].drop_duplicates()
@@ -768,6 +986,13 @@ def run_aperiodic_diagnostics(
         qc,
         colors,
         figures_dir / "fit_qc_dashboard.png",
+        dpi,
+    )
+    plot_model_selection_summary(
+        model_electrode,
+        model_subject,
+        colors,
+        figures_dir / "fixed_vs_knee_model_selection.png",
         dpi,
     )
     plot_range_sensitivity(
@@ -793,6 +1018,9 @@ def run_aperiodic_diagnostics(
             "group": str(example_row["group"]),
             "electrode": str(example_row["electrode"]),
             "frequencies_hz": spectra["frequencies_hz"].copy(),
+            "specparam_aperiodic_mode": str(
+                example_row["specparam_aperiodic_mode"]
+            ),
             "aperiodic_exponent": float(example_row["aperiodic_exponent"]),
             "specparam_r_squared": float(example_row["specparam_r_squared"]),
             "specparam_error_mae": float(example_row["specparam_error_mae"]),
@@ -809,6 +1037,8 @@ def run_aperiodic_diagnostics(
                     "modeled_psd_uv2_hz",
                     "aperiodic_psd_uv2_hz",
                     "periodic_psd_uv2_hz",
+                    "fixed_aperiodic_psd_uv2_hz",
+                    "knee_aperiodic_psd_uv2_hz",
                 )
             },
         }
@@ -823,4 +1053,6 @@ def run_aperiodic_diagnostics(
         "subject_sensitivity": subject_sensitivity,
         "range_comparisons": range_comparisons,
         "qc_summary": summary,
+        "model_comparison_electrode": model_electrode,
+        "model_comparison_subject": model_subject,
     }

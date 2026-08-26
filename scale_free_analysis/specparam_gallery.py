@@ -27,6 +27,10 @@ CURVE_NAMES = (
     "aperiodic_psd_uv2_hz",
     "periodic_psd_uv2_hz",
 )
+OPTIONAL_CURVE_NAMES = (
+    "fixed_aperiodic_psd_uv2_hz",
+    "knee_aperiodic_psd_uv2_hz",
+)
 
 def _safe_name(value: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("._")
@@ -78,8 +82,26 @@ def _plot_subject_overview(
             frequencies,
             arrays["aperiodic_psd_uv2_hz"][index],
             color="#D55E00",
-            linewidth=1.05,
+            linewidth=1.35,
         )
+        if "fixed_aperiodic_psd_uv2_hz" in arrays:
+            axis.semilogy(
+                frequencies,
+                arrays["fixed_aperiodic_psd_uv2_hz"][index],
+                color="#666666",
+                linestyle="--",
+                linewidth=0.75,
+            )
+        if "knee_aperiodic_psd_uv2_hz" in arrays and np.isfinite(
+            arrays["knee_aperiodic_psd_uv2_hz"][index]
+        ).all():
+            axis.semilogy(
+                frequencies,
+                arrays["knee_aperiodic_psd_uv2_hz"][index],
+                color="#CC79A7",
+                linestyle=":",
+                linewidth=0.85,
+            )
         axis.fill_between(
             frequencies,
             arrays["aperiodic_psd_uv2_hz"][index],
@@ -93,7 +115,8 @@ def _plot_subject_overview(
         qc_passes += int(qc_known and qc_pass)
         title_color = "#007A3D" if qc_pass else ("#B22222" if qc_known else "0.2")
         axis.set_title(
-            f"{electrode}  |  R²={float(row['specparam_r_squared']):.2f}  "
+            f"{electrode} [{row['specparam_aperiodic_mode']}] | "
+            f"R²={float(row['specparam_r_squared']):.2f}  "
             f"E={float(row['aperiodic_exponent']):.2f}",
             fontsize=8,
             color=title_color,
@@ -122,7 +145,7 @@ def _plot_subject_overview(
     )
     fig.suptitle(
         f"{subject_id} — {group}: all-electrode spectral fits\n{qc_text}; "
-        "judge fit by blue vs black; orange is background only; red labels fail QC",
+        "blue is selected full fit; orange is selected background; dashed fixed and dotted knee",
         fontsize=14,
     )
     fig.legend(
@@ -130,11 +153,13 @@ def _plot_subject_overview(
             Line2D([0], [0], color="0.15", linewidth=1.0, label="Observed PSD"),
             Line2D([0], [0], color="#0072B2", linewidth=1.6, label="Full model"),
             Line2D([0], [0], color="#D55E00", linewidth=1.4, label="Aperiodic component"),
+            Line2D([0], [0], color="#666666", linestyle="--", label="Fixed background"),
+            Line2D([0], [0], color="#CC79A7", linestyle=":", label="Knee background"),
             Patch(facecolor="#009E73", alpha=0.2, label="Periodic contribution"),
         ],
         loc="upper center",
         bbox_to_anchor=(0.5, 0.965),
-        ncol=4,
+        ncol=6,
         frameon=False,
         fontsize=9,
     )
@@ -166,6 +191,13 @@ def _render_subject(
         electrode_indices = {electrode: index for index, electrode in enumerate(electrodes)}
         frequencies = spectra["frequencies_hz"].copy()
         arrays = {name: spectra[name].copy() for name in CURVE_NAMES}
+        arrays.update(
+            {
+                name: spectra[name].copy()
+                for name in OPTIONAL_CURVE_NAMES
+                if name in spectra.files
+            }
+        )
     for name, values in arrays.items():
         if values.shape != (len(electrodes), len(frequencies)):
             raise ValueError(
@@ -205,6 +237,7 @@ def _render_subject(
     errors = np.asarray(
         [float(row["specparam_error_mae"]) for row in subject_rows], dtype=float
     )
+    selected_modes = [str(row["specparam_aperiodic_mode"]) for row in subject_rows]
     return [
         {
             "subject_id": subject_id,
@@ -221,6 +254,9 @@ def _render_subject(
             "median_aperiodic_exponent": float(np.median(exponents)),
             "median_specparam_r_squared": float(np.median(r_squared)),
             "median_specparam_error_mae": float(np.median(errors)),
+            "fraction_knee_selected": float(
+                np.mean(np.asarray(selected_modes) == "knee")
+            ),
         }
     ]
 
@@ -253,7 +289,8 @@ a { color: #0067a5; }
                 f'src="{html.escape(figure)}" alt="{html.escape(str(row["subject_id"]))}"></a>'
                 f'<div class="meta"><strong>{html.escape(str(row["subject_id"]))}</strong> — '
                 f'{qc_text}; median exponent={row["median_aperiodic_exponent"]:.3f}, '
-                f'median R²={row["median_specparam_r_squared"]:.3f}</div></div>'
+                f'median R²={row["median_specparam_r_squared"]:.3f}; '
+                f'knee selected={100 * row["fraction_knee_selected"]:.1f}%</div></div>'
             )
         root_sections.append(
             f"<h2>{html.escape(str(group))}</h2>"
@@ -293,6 +330,7 @@ def generate_specparam_gallery(
         "aperiodic_exponent",
         "specparam_r_squared",
         "specparam_error_mae",
+        "specparam_aperiodic_mode",
     }
     missing = sorted(required_columns - set(aperiodic_metrics.columns))
     if missing:

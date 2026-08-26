@@ -120,6 +120,8 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     unknown_exclusions = sorted(set(statistics.get("exclude_bands", [])) - set(bands))
     if unknown_exclusions:
         raise ValueError(f"Unknown statistics.exclude_bands: {unknown_exclusions}")
+    if not isinstance(config["plots"].get("subject_topomaps", False), bool):
+        raise ValueError("plots.subject_topomaps must be true or false")
     return config
 
 
@@ -386,7 +388,11 @@ def run_analysis(
         len(common_channels),
     )
 
+    generate_subject_topomaps = bool(
+        generate_figures and config["plots"].get("subject_topomaps", False)
+    )
     subject_infos: dict[str, mne.Info] = {}
+    common_info: mne.Info | None = None
     reusable_output = input_config.get("feature_source_output_dir")
     feature_cache: dict[str, Any]
     if reusable_output:
@@ -407,14 +413,20 @@ def run_analysis(
             groups=groups,
         )
         if generate_figures:
-            for subject_id in expected_subjects:
+            info_subjects = (
+                expected_subjects if generate_subject_topomaps else expected_subjects[:1]
+            )
+            for subject_id in info_subjects:
                 epochs = mne.read_epochs(
                     files[subject_id], preload=False, verbose="ERROR"
                 )
                 picks = [epochs.ch_names.index(channel) for channel in common_channels]
                 info = mne.pick_info(epochs.info, picks, copy=True)
                 info["bads"] = []
-                subject_infos[subject_id] = info
+                if common_info is None:
+                    common_info = info.copy()
+                if generate_subject_topomaps:
+                    subject_infos[subject_id] = info
     else:
         metric_tables = []
         band_metric_tables = []
@@ -436,7 +448,10 @@ def run_analysis(
             channel_names = list(common_channels)
             info = mne.pick_info(epochs.info, picks, copy=True)
             info["bads"] = []
-            subject_infos[subject_id] = info
+            if common_info is None:
+                common_info = info.copy()
+            if generate_subject_topomaps:
+                subject_infos[subject_id] = info
             analysis_progress.set_postfix_str(f"{subject_id} | broadband", refresh=True)
             subject_metrics = analyze_epoch_data(
                 data,
@@ -661,7 +676,24 @@ def run_analysis(
         return manifest
 
     electrode_order = list(common_channels)
-    common_info = next(iter(subject_infos.values())).copy()
+    if common_info is None:
+        raise RuntimeError("No EEG channel layout was available for group figures")
+
+    if not generate_subject_topomaps:
+        retired_subject_topomap_dirs = [
+            output_dir / "figures" / "topomaps" / "subjects",
+            output_dir / "figures" / "bands" / "topomaps" / "subjects",
+        ]
+        retired_subject_topomap_dirs.extend(
+            (output_dir / "figures" / "topomaps").glob("renyi_*/subjects")
+        )
+        retired_subject_topomap_dirs.extend(
+            (output_dir / "figures" / "bands" / "topomaps").glob(
+                "renyi_*/subjects"
+            )
+        )
+        for retired_dir in retired_subject_topomap_dirs:
+            shutil.rmtree(retired_dir, ignore_errors=True)
 
     logger.info("Creating electrode-wise PD-Control statistical maps")
     broadband_statistical_figures = plot_electrode_group_statistics(
@@ -756,9 +788,8 @@ def run_analysis(
     topomap_limits: dict[str, dict[str, tuple[float, float]]] = {}
     standardized_topomap_limits: dict[str, dict[str, tuple[float, float]]] = {}
     logger.info(
-        "Creating broadband topomaps for %d metric sets and %d subjects",
+        "Creating broadband group topomaps for %d metric sets",
         len(topomap_metric_sets),
-        len(subject_infos),
     )
     for metric_set in topomap_metric_sets:
         metric_set_metrics = metric_set["metrics"]
@@ -767,16 +798,17 @@ def run_analysis(
             electrode_metrics, metric_set_metrics
         )
         topomap_limits[metric_set["key"]] = metric_set_limits
-        plot_subject_topomaps(
-            electrode_metrics,
-            subject_infos,
-            metric_set_limits,
-            metric_set_dir / "subjects",
-            dpi,
-            metrics=metric_set_metrics,
-            metric_set_label=metric_set["label"],
-            filename_suffix=metric_set["subject_suffix"],
-        )
+        if generate_subject_topomaps:
+            plot_subject_topomaps(
+                electrode_metrics,
+                subject_infos,
+                metric_set_limits,
+                metric_set_dir / "subjects",
+                dpi,
+                metrics=metric_set_metrics,
+                metric_set_label=metric_set["label"],
+                filename_suffix=metric_set["subject_suffix"],
+            )
         plot_group_topomaps(
             electrode_metrics,
             common_info,
@@ -865,9 +897,8 @@ def run_analysis(
         str, dict[str, dict[str, tuple[float, float]]]
     ] = {}
     logger.info(
-        "Creating band-resolved topomaps for %d metric sets and %d subjects",
+        "Creating band-resolved group topomaps for %d metric sets",
         len(topomap_metric_sets),
-        len(subject_infos),
     )
     for metric_set in topomap_metric_sets:
         metric_set_metrics = metric_set["metrics"]
@@ -886,18 +917,19 @@ def run_analysis(
             band_electrode_metrics, band_order, metric_set_metrics
         )
         band_topomap_limits[metric_set["key"]] = metric_set_band_limits
-        plot_subject_band_topomaps(
-            band_electrode_metrics,
-            subject_infos,
-            band_order,
-            band_labels,
-            metric_set_band_limits,
-            band_topomap_dir / "subjects",
-            dpi,
-            metrics=metric_set_metrics,
-            metric_set_label=metric_set["label"],
-            filename_suffix=subject_suffix,
-        )
+        if generate_subject_topomaps:
+            plot_subject_band_topomaps(
+                band_electrode_metrics,
+                subject_infos,
+                band_order,
+                band_labels,
+                metric_set_band_limits,
+                band_topomap_dir / "subjects",
+                dpi,
+                metrics=metric_set_metrics,
+                metric_set_label=metric_set["label"],
+                filename_suffix=subject_suffix,
+            )
         plot_group_band_topomaps(
             band_electrode_metrics,
             common_info,
@@ -1028,6 +1060,11 @@ def run_analysis(
             "Arithmetic mean of every subject's electrode-level Shannon, Fisher, and Rényi "
             "quantities across the electrodes shared by every analyzed subject; the average-"
             "referenced EEG waveform is not averaged across channels."
+        ),
+        "subject_topomaps_generated": bool(generate_subject_topomaps),
+        "topomap_output_policy": (
+            "Group-mean and group-mean electrode-z-scored topomaps are generated; "
+            "per-subject topomaps are disabled by default."
         ),
         "topomap_metric_sets": {
             metric_set["key"]: {

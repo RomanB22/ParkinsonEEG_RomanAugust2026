@@ -106,6 +106,17 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError(
             "specparam.frequency_range_hz must be contained within the PSD range"
         )
+    specparam = config["specparam"]
+    if str(specparam.get("aperiodic_mode")) != "best_bic":
+        raise ValueError("specparam.aperiodic_mode must be 'best_bic'")
+    if specparam.get("aperiodic_modes") != ["fixed", "knee"]:
+        raise ValueError("specparam.aperiodic_modes must be ['fixed', 'knee']")
+    if str(specparam.get("model_selection_criterion")) != "bic":
+        raise ValueError("specparam.model_selection_criterion must be 'bic'")
+    if fit_range != [1.0, 50.0]:
+        raise ValueError("Fixed and knee bout-threshold models must use 1–50 Hz")
+    if float(specparam.get("knee_frequency_outlier_z_threshold", 0.0)) != 2.0:
+        raise ValueError("The within-subject knee-frequency outlier threshold must be 2 SD")
 
     ebosc = config["ebosc"]
     frequency_min = float(ebosc["frequency_min_hz"])
@@ -322,6 +333,11 @@ def _cached_detection_example(
     selected = threshold_table.loc[
         threshold_table["electrode"].eq(electrode)
     ].sort_values("frequency_hz")
+    selected_modes = selected["specparam_aperiodic_mode"].dropna().unique()
+    if len(selected_modes) != 1:
+        raise ValueError(
+            f"Threshold cache must identify one selected aperiodic mode for {electrode}"
+        )
     wavelet_frequencies = selected["frequency_hz"].to_numpy(dtype=float)
     thresholds = selected["power_threshold"].to_numpy(dtype=float)
     background = selected[
@@ -362,22 +378,32 @@ def _cached_detection_example(
     ) as spectra:
         electrodes = spectra["electrodes"].astype(str).tolist()
         index = electrodes.index(electrode)
+        curve_names = [
+            "observed_psd_uv2_hz",
+            "modeled_psd_uv2_hz",
+            "aperiodic_psd_uv2_hz",
+            "periodic_psd_uv2_hz",
+        ]
+        curve_names.extend(
+            name
+            for name in (
+                "fixed_aperiodic_psd_uv2_hz",
+                "knee_aperiodic_psd_uv2_hz",
+            )
+            if name in spectra.files
+        )
         curves = {
             "frequencies_hz": spectra["frequencies_hz"].copy(),
             **{
                 name: spectra[name][index].copy()
-                for name in (
-                    "observed_psd_uv2_hz",
-                    "modeled_psd_uv2_hz",
-                    "aperiodic_psd_uv2_hz",
-                    "periodic_psd_uv2_hz",
-                )
+                for name in curve_names
             },
         }
     return {
         "subject_id": subject_id,
         "electrode": electrode,
         "band": band,
+        "specparam_aperiodic_mode": str(selected_modes[0]),
         "sfreq": sfreq,
         "signal_uv": signal_uv[example_epoch].copy(),
         "wavelet_frequencies_hz": wavelet_frequencies,
@@ -903,6 +929,14 @@ def run_analysis(
             f"{float(config['specparam']['frequency_range_hz'][0]):g}_"
             f"{float(config['specparam']['frequency_range_hz'][1]):g}Hz"
         ),
+        "specparam_model_selection": {
+            "candidate_modes": config["specparam"]["aperiodic_modes"],
+            "criterion": config["specparam"]["model_selection_criterion"],
+            "threshold_background": "selected_subject_electrode_model",
+            "knee_frequency_outlier_z_threshold": config["specparam"][
+                "knee_frequency_outlier_z_threshold"
+            ],
+        },
         "n_subject_electrode_band_rows": len(electrode_metrics),
         "feature_cache": {
             "scale_free_manifest": str(

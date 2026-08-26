@@ -116,6 +116,26 @@ def plot_detection_example(example: dict[str, Any], path: Path, dpi: int) -> Non
         linewidth=2,
         label="Aperiodic background",
     )
+    if "fixed_aperiodic_psd_uv2_hz" in example:
+        axes[0, 0].loglog(
+            example["frequencies_hz"],
+            example["fixed_aperiodic_psd_uv2_hz"],
+            color="#666666",
+            linestyle="--",
+            linewidth=1.0,
+            label="Fixed candidate",
+        )
+    if "knee_aperiodic_psd_uv2_hz" in example and np.isfinite(
+        example["knee_aperiodic_psd_uv2_hz"]
+    ).all():
+        axes[0, 0].loglog(
+            example["frequencies_hz"],
+            example["knee_aperiodic_psd_uv2_hz"],
+            color="#CC79A7",
+            linestyle=":",
+            linewidth=1.1,
+            label="Knee candidate",
+        )
     axes[0, 0].set(
         xlabel="Frequency (Hz)", ylabel="PSD (µV²/Hz)", title="1. Specparam decomposition"
     )
@@ -169,7 +189,8 @@ def plot_detection_example(example: dict[str, Any], path: Path, dpi: int) -> Non
     )
     fig.colorbar(image, ax=axes[1, 1], label="Power / threshold (dB)")
     fig.suptitle(
-        f"{example['subject_id']} — {example['electrode']} — {example['band']}"
+        f"{example['subject_id']} — {example['electrode']} — {example['band']} — "
+        f"threshold background: {example.get('specparam_aperiodic_mode', 'unknown')}"
     )
     fig.tight_layout()
     _save(fig, path, dpi)
@@ -479,4 +500,3 @@ def plot_subject_topomaps(
         fig.suptitle(f"{subject_id} — {group} — ordinal metrics within detected bouts")
         fig.tight_layout()
         _save(fig, output_dir / f"{subject_id}_bout_ordinal_topomaps.png", dpi)
-
