@@ -19,6 +19,10 @@
     "group": "PD",
     "primary_outcome": "updrs",
     "secondary_outcomes": ["moca"],
+    "cognitive_status": {
+      "impairment_below": 26,
+      "normal_range": [26, 30]
+    },
     "covariates": ["age_years", "sex_male"],
     "minimum_subjects": 30,
     "bootstrap_resamples": 1000,

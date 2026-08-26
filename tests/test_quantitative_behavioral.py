@@ -6,6 +6,7 @@ import pandas as pd
 from quantitative_behavioral.features import (
     build_dimension_sensitivity_features,
     build_subject_features,
+    load_cohort,
 )
 from quantitative_behavioral.pipeline import load_analysis_config
 from quantitative_behavioral.statistics import (
@@ -22,6 +23,10 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         config = load_analysis_config("quantitative_behavioral/config.json")
         self.assertEqual(config["analysis"]["primary_group"], "PD")
         self.assertEqual(config["analysis"]["outcome_column"], "MOCA")
+        self.assertEqual(
+            config["analysis"]["cognitive_status"],
+            {"impairment_below": 26, "normal_range": [26, 30]},
+        )
         self.assertEqual(config["analysis"]["covariates"], ["AGE", "GENDER"])
         self.assertEqual(
             config["features"]["ordinal_metrics"],
@@ -44,6 +49,20 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         self.assertNotIn("broad_5_15", config["features"]["ordinal_bands"])
         self.assertNotIn("broad_5_15", config["features"]["bout_bands"])
         self.assertNotIn("broad_5_15", config["dimension_sensitivity"]["bands"])
+
+    def test_cognitive_status_uses_the_prespecified_moca_boundary(self):
+        config = load_analysis_config("quantitative_behavioral/config.json")
+        cohort = load_cohort(config)
+        self.assertTrue(
+            cohort.loc[cohort["moca"].lt(26), "cognitive_status"]
+            .eq("cognitive_impairment")
+            .all()
+        )
+        self.assertTrue(
+            cohort.loc[cohort["moca"].between(26, 30), "cognitive_status"]
+            .eq("cognitively_normal")
+            .all()
+        )
 
     def test_partial_spearman_removes_age_confounding(self):
         rng = np.random.default_rng(42)

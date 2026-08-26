@@ -36,6 +36,8 @@ DIMENSION_METRIC_TITLES = {
     "renyi_complexity_alpha_10": "Rényi complexity Cα (α=10)",
 }
 
+MOCA_CATEGORY_BOUNDARY = 25.5
+
 
 def plot_aperiodic_exponent_group_comparison(
     features: pd.DataFrame,
@@ -143,6 +145,10 @@ def plot_cohort_audit(
         values = cohort.loc[cohort["group"].eq(group), "moca"].to_numpy(dtype=float)
         axes[0, 0].hist(values, bins=bins, alpha=0.45, color=color, label=f"{group} (n={len(values)})")
     axes[0, 0].set(xlabel="MOCA score", ylabel="Subjects", title="MOCA distribution")
+    axes[0, 0].axvline(
+        MOCA_CATEGORY_BOUNDARY, color="black", linestyle="--", linewidth=1.2,
+        label="Impaired <26 | Normal 26–30",
+    )
     axes[0, 0].legend(frameon=False)
 
     for gender, marker, color in (("F", "o", "#CC79A7"), ("M", "^", "#009E73")):
@@ -151,6 +157,9 @@ def plot_cohort_audit(
             values["age_years"], values["moca"], marker=marker, color=color, alpha=0.7, label=f"{gender} (n={len(values)})"
         )
     axes[0, 1].set(xlabel="Age (years)", ylabel="MOCA", title=f"{primary_group}: MOCA, age, and sex")
+    axes[0, 1].axhline(
+        MOCA_CATEGORY_BOUNDARY, color="black", linestyle="--", linewidth=1.2,
+    )
     axes[0, 1].grid(alpha=0.2)
     axes[0, 1].legend(frameon=False)
 
@@ -312,6 +321,9 @@ def plot_family_scatter_grid(
             fontsize=9,
         )
         axis.set(xlabel=f"EEG feature ({specification['unit']})", ylabel="MOCA")
+        axis.axhline(
+            MOCA_CATEGORY_BOUNDARY, color="0.35", linestyle=":", linewidth=1.0
+        )
         axis.grid(alpha=0.2)
     for axis in axes.flat[len(specifications) :]:
         axis.set_visible(False)

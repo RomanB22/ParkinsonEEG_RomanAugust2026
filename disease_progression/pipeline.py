@@ -54,6 +54,11 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("UPDRS must be the primary progression axis")
     if analysis.get("secondary_outcomes") != ["moca"]:
         raise ValueError("MOCA must be the prespecified complementary axis")
+    cognitive_status = analysis.get("cognitive_status", {})
+    if cognitive_status.get("impairment_below") != 26 or cognitive_status.get(
+        "normal_range"
+    ) != [26, 30]:
+        raise ValueError("Cognitive status must define impairment <26 and normal 26–30")
     if analysis.get("covariates") != ["age_years", "sex_male"]:
         raise ValueError("Primary correlations must adjust for age and sex")
     if int(analysis["minimum_subjects"]) < 10:
@@ -139,6 +144,7 @@ def _write_report(
     clinical = clinical_axes.loc[
         clinical_axes["method"].eq("partial_spearman_age_sex")
     ].iloc[0]
+    cognitive_counts = cohort["cognitive_status"].value_counts()
     lines = [
         "# Whole-head Parkinson disease severity report",
         "",
@@ -154,6 +160,14 @@ def _write_report(
         f"PD participants: {len(cohort)}.",
         f"UPDRS range: {cohort['updrs'].min():g}–{cohort['updrs'].max():g}.",
         f"MOCA range: {cohort['moca'].min():g}–{cohort['moca'].max():g}.",
+        (
+            "Cognitive status definition: cognitive impairment = MOCA < 26; "
+            "cognitively normal = MOCA 26–30."
+        ),
+        (
+            f"PD cognitive impairment: {int(cognitive_counts.get('cognitive_impairment', 0))}; "
+            f"PD cognitively normal: {int(cognitive_counts.get('cognitively_normal', 0))}."
+        ),
         f"Prespecified EEG features: {len(dictionary)}.",
         f"Cohort-shared electrodes: {len(electrodes)}.",
         "Electrodes: " + ", ".join(electrodes) + ".",
@@ -310,6 +324,11 @@ def run_analysis(
         "n_pd_subjects": int(len(cohort)),
         "updrs_range": [float(cohort["updrs"].min()), float(cohort["updrs"].max())],
         "moca_range": [float(cohort["moca"].min()), float(cohort["moca"].max())],
+        "cognitive_status_definition": {
+            "cognitive_impairment": "MOCA < 26",
+            "cognitively_normal": "MOCA 26-30",
+        },
+        "cognitive_status_counts": cohort["cognitive_status"].value_counts().to_dict(),
         "electrodes": electrodes,
         "n_electrodes": int(len(electrodes)),
         "n_features": int(len(dictionary)),

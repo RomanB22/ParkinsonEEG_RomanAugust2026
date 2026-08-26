@@ -8,6 +8,11 @@ axis and MOCA is a complementary cognitive axis. Because the dataset is
 cross-sectional, this is a disease-severity analysis—not a longitudinal rate
 of progression, prognostic model, or causal analysis.
 
+Cognitive impairment is defined descriptively as MOCA < 26 and cognitively
+normal as MOCA 26–30. The derived status is exported and the boundary is shown
+in MOCA figures. Inferential associations continue to use continuous MOCA;
+the status does not create an additional hypothesis-test family.
+
 ## Electrode scope
 
 Every feature is recalculated from the complete electrode intersection across

@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from quantitative_behavioral.features import BAND_LABELS, METRIC_LABELS, METRIC_UNITS
+from src.cognitive_status import classify_moca
 
 
 def resolve_shared_electrodes(config: dict[str, Any]) -> list[str]:
@@ -72,6 +73,13 @@ def load_pd_cohort(config: dict[str, Any]) -> pd.DataFrame:
         cohort[column] = pd.to_numeric(cohort[column], errors="raise")
     if not np.all(np.isfinite(cohort[numeric].to_numpy(float))):
         raise ValueError("PD age, sex, MOCA, and UPDRS must be complete")
+    status = config["analysis"]["cognitive_status"]
+    cohort["cognitive_status"] = classify_moca(
+        cohort["moca"],
+        impairment_below=float(status["impairment_below"]),
+        normal_minimum=float(status["normal_range"][0]),
+        normal_maximum=float(status["normal_range"][1]),
+    )
     if len(cohort) < int(config["analysis"]["minimum_subjects"]):
         raise ValueError("PD cohort is smaller than analysis.minimum_subjects")
     return cohort.sort_values("subject_id").reset_index(drop=True)
@@ -324,7 +332,10 @@ def build_shared_electrode_features(
         raise ValueError("Disease-progression features duplicate subject/feature rows")
     features = features.merge(
         cohort[
-            ["subject_id", "group", "age_years", "gender", "sex_male", "moca", "updrs"]
+            [
+                "subject_id", "group", "age_years", "gender", "sex_male",
+                "moca", "cognitive_status", "updrs",
+            ]
         ],
         on=["subject_id", "group"],
         how="left",

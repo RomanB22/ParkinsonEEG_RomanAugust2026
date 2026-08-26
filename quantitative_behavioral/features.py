@@ -9,6 +9,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.cognitive_status import classify_moca
+
 
 METRIC_LABELS = {
     "entropy": "Permutation entropy H",
@@ -206,6 +208,13 @@ def load_cohort(config: dict[str, Any]) -> pd.DataFrame:
     required_numeric = ["age_years", "moca", "sex_male"]
     if not np.all(np.isfinite(cohort[required_numeric].to_numpy(dtype=float))):
         raise ValueError("MOCA, age, and sex must be complete for the prespecified cohort")
+    status = config["analysis"]["cognitive_status"]
+    cohort["cognitive_status"] = classify_moca(
+        cohort["moca"],
+        impairment_below=float(status["impairment_below"]),
+        normal_minimum=float(status["normal_range"][0]),
+        normal_maximum=float(status["normal_range"][1]),
+    )
     return cohort.sort_values("subject_id").reset_index(drop=True)
 
 
@@ -348,7 +357,12 @@ def build_subject_features(
     if features.duplicated(["subject_id", "feature_id"]).any():
         raise ValueError("Subject features contain duplicated subject/feature rows")
     features = features.merge(
-        cohort[["subject_id", "group", "moca", "age_years", "gender", "sex_male"]],
+        cohort[
+            [
+                "subject_id", "group", "moca", "cognitive_status",
+                "age_years", "gender", "sex_male",
+            ]
+        ],
         on="subject_id",
         how="left",
         validate="many_to_one",

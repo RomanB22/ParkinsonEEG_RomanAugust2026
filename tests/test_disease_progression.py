@@ -28,6 +28,10 @@ class DiseaseProgressionTests(unittest.TestCase):
         self.assertEqual(len(resolve_shared_electrodes(self.config)), 60)
         self.assertEqual(self.config["analysis"]["primary_outcome"], "updrs")
         self.assertEqual(self.config["analysis"]["secondary_outcomes"], ["moca"])
+        self.assertEqual(
+            self.config["analysis"]["cognitive_status"],
+            {"impairment_below": 26, "normal_range": [26, 30]},
+        )
         self.assertEqual(self.config["analysis"]["covariates"], ["age_years", "sex_male"])
         self.assertNotIn("broad_5_15", self.config["features"]["ordinal_bands"])
         self.assertNotIn("broad_5_15", self.config["features"]["psd_bands"])
@@ -45,6 +49,16 @@ class DiseaseProgressionTests(unittest.TestCase):
         self.assertEqual(len(electrodes), 60)
         self.assertTrue(features["n_electrodes_contributing"].between(0, 60).all())
         self.assertFalse(dictionary["feature_id"].str.contains("broad_5_15").any())
+        self.assertTrue(
+            cohort.loc[cohort["moca"].lt(26), "cognitive_status"]
+            .eq("cognitive_impairment")
+            .all()
+        )
+        self.assertTrue(
+            cohort.loc[cohort["moca"].between(26, 30), "cognitive_status"]
+            .eq("cognitively_normal")
+            .all()
+        )
 
     def test_statistics_keep_updrs_and_moca_as_separate_axes(self) -> None:
         subjects = pd.DataFrame(

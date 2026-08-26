@@ -18,6 +18,9 @@ import numpy as np
 import pandas as pd
 
 
+MOCA_CATEGORY_BOUNDARY = 25.5
+
+
 def _token(value: str) -> str:
     return re.sub(r"[^a-zA-Z0-9]+", "_", value).strip("_").lower()
 
@@ -50,6 +53,10 @@ def plot_clinical_axes(
     coefficients = np.polyfit(cohort["updrs"], cohort["moca"], 1)
     x = np.linspace(cohort["updrs"].min(), cohort["updrs"].max(), 100)
     ax.plot(x, np.polyval(coefficients, x), color="0.2", linewidth=1.5)
+    ax.axhline(
+        MOCA_CATEGORY_BOUNDARY, color="0.25", linestyle="--", linewidth=1.2,
+        label="Impaired <26 | Normal 26–30",
+    )
     adjusted = association.loc[
         association["method"].eq("partial_spearman_age_sex")
     ].iloc[0]
@@ -110,6 +117,10 @@ def plot_feature_scatter_pages(
                 coefficients = np.polyfit(table[outcome], table["value"], 1)
                 x = np.linspace(table[outcome].min(), table[outcome].max(), 100)
                 axis.plot(x, np.polyval(coefficients, x), color="0.2", linewidth=1.2)
+            if outcome == "moca":
+                axis.axvline(
+                    MOCA_CATEGORY_BOUNDARY, color="0.35", linestyle=":", linewidth=1.0
+                )
             result = adjusted.loc[feature_id]
             q_text = "NA" if not np.isfinite(result["p_fdr_bh"]) else f"{result['p_fdr_bh']:.3g}"
             marker = " ★" if bool(result["fdr_reject"]) else ""

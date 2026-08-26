@@ -20,6 +20,10 @@
     "primary_group": "PD",
     "outcome_column": "MOCA",
     "outcome_label": "Montreal Cognitive Assessment (MOCA)",
+    "cognitive_status": {
+      "impairment_below": 26,
+      "normal_range": [26, 30]
+    },
     "covariates": ["AGE", "GENDER"],
     "primary_method": "partial_spearman_adjusted_for_age_and_sex",
     "sensitivity_method": "unadjusted_spearman",

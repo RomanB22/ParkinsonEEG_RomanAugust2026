@@ -85,6 +85,11 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("The prespecified primary cohort must be PD")
     if analysis.get("outcome_column") != "MOCA":
         raise ValueError("The prespecified outcome must be MOCA")
+    cognitive_status = analysis.get("cognitive_status", {})
+    if cognitive_status.get("impairment_below") != 26 or cognitive_status.get(
+        "normal_range"
+    ) != [26, 30]:
+        raise ValueError("Cognitive status must define impairment <26 and normal 26–30")
     if analysis.get("covariates") != ["AGE", "GENDER"]:
         raise ValueError("Covariates must be prespecified as age and sex")
     if int(analysis["minimum_subjects"]) < 10:
@@ -313,6 +318,7 @@ def _write_report(
 ) -> None:
     settings = config["analysis"]
     pd_cohort = cohort.loc[cohort["group"].eq(settings["primary_group"])]
+    cognitive_counts = pd_cohort["cognitive_status"].value_counts()
     primary = correlations.loc[correlations["method"].eq("partial_spearman_age_sex")]
     exponent_moca = primary.loc[
         primary["feature_id"].eq("aperiodic_exponent")
@@ -344,6 +350,14 @@ def _write_report(
         "",
         f"Primary cohort: {settings['primary_group']} (n={len(pd_cohort)}).",
         f"MOCA range: {pd_cohort['moca'].min():g}–{pd_cohort['moca'].max():g}.",
+        (
+            "Cognitive status definition: cognitive impairment = MOCA < 26; "
+            "cognitively normal = MOCA 26–30."
+        ),
+        (
+            f"PD cognitive impairment: {int(cognitive_counts.get('cognitive_impairment', 0))}; "
+            f"PD cognitively normal: {int(cognitive_counts.get('cognitively_normal', 0))}."
+        ),
         f"Prespecified EEG features: {len(dictionary)}.",
         (
             "Primary estimates are partial Spearman correlations after rank-residualizing "
@@ -822,6 +836,15 @@ def run_analysis(
         "n_primary_pd_subjects": primary_n,
         "moca_missing_primary": int(
             cohort.loc[cohort["group"].eq(primary_group), "moca"].isna().sum()
+        ),
+        "cognitive_status_definition": {
+            "cognitive_impairment": "MOCA < 26",
+            "cognitively_normal": "MOCA 26-30",
+        },
+        "primary_cognitive_status_counts": (
+            cohort.loc[cohort["group"].eq(primary_group), "cognitive_status"]
+            .value_counts()
+            .to_dict()
         ),
         "n_features": len(dictionary),
         "feature_family_counts": dictionary["family"].value_counts().to_dict(),

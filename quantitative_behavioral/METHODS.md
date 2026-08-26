@@ -54,6 +54,10 @@ exponent–MOCA maps are secondary localization results.
 
 - Primary cohort: PD participants only.
 - Outcome: MOCA score.
+- Descriptive cognitive status: cognitive impairment for MOCA < 26 and
+  cognitively normal for MOCA 26–30. This category is exported and marked in
+  figures, but the association models retain continuous MOCA to avoid losing
+  information at an arbitrary dichotomy.
 - Covariates: age in years and recorded sex.
 - Sex coding: `sex_male = 1` for `M` and `sex_male = 0` for `F`.
 - Minimum sample size: 30 complete participants for a reported estimate.
