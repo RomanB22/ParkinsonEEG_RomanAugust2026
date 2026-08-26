@@ -354,11 +354,13 @@ remain under `processed/`; matched outputs use `processed_matched/`.
 supported expert entry point, but is not required for normal use.
 
 Useful controls include `--overwrite`, `--dry-run`, `--no-progress`,
-`--skip-sweep`, `--skip-exploration`, and the opt-in
+`--log-file PATH`, `--skip-sweep`, `--skip-exploration`, and the opt-in
 `--include-bycycle-bursts`. The D=6 primary ordinal calculation is reused by
 the dimension analysis; only D={3,4,5} are computed as additional sensitivity
 settings. Matched ordinal calculations reuse validated subject-level full-
 cohort values and recompute matched summaries, paired tests, and figures.
+Real top-level runs automatically mirror stdout and stderr to timestamped files
+under `pipeline_logs/`; dry runs create no files.
 
 ## Complete cleaning-to-report reproduction
 

@@ -11,6 +11,26 @@ missing, they create it with Python 3.14 and install the pinned
 without reinstalling packages. Use `--env NAME` only when an intentional
 override is needed.
 
+Every real `review` or `run` invocation writes the complete stdout/stderr stream
+to a timestamped file under `pipeline_logs/` while continuing to display it in
+the terminal. The final lines record `SUCCESS` or `FAILED` and the exit code.
+Override the destination when needed:
+
+```bash
+bash run_reproducible_pipeline.sh run \
+  --log-file pipeline_logs/my_full_run.log \
+  --no-progress
+```
+
+`--no-progress` is optional, but produces a cleaner text log without progress-
+bar redraw characters. After the run, list warnings and errors with:
+
+```bash
+rg -n -i "warning|error|traceback|exception|failed" pipeline_logs/*.log
+```
+
+Dry runs remain read-only and do not create a log.
+
 Run the pipeline from ICA review through every full-cohort and matched-cohort
 analysis using the reviewed two-step workflow.
 

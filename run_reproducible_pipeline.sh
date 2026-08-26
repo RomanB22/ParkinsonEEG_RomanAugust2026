@@ -8,6 +8,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+ORIGINAL_ARGUMENTS=("$@")
 MODE="${1:-help}"
 if [[ $# -gt 0 ]]; then
     shift
@@ -25,6 +26,7 @@ INCLUDE_BYCYCLE_BURSTS=false
 PROFILE="paper"
 PREPROCESSING_WORKERS="${PARKINSON_EEG_PREPROCESSING_WORKERS:-2}"
 CONDA_ENV="${PARKINSON_EEG_CONDA_ENV:-MNE_August2026}"
+PIPELINE_LOG="${PARKINSON_EEG_PIPELINE_LOG:-}"
 
 usage() {
     cat <<'EOF'
@@ -47,6 +49,7 @@ Options:
   --include-bycycle-bursts   Also run the optional independent bycycle sensitivity
   --profile NAME             compute, paper (default), or full-qc
   --preprocessing-workers N  Concurrent cleaning subjects (default: 2)
+  --log-file PATH            Override the timestamped consolidated log path
   --skip-manual-ica-review   Explicitly use automatic ICLabel proposals during cleaning
   --env NAME                 Conda environment (default: MNE_August2026)
   -h, --help                 Show this help
@@ -78,6 +81,12 @@ while [[ $# -gt 0 ]]; do
         --preprocessing-workers)
             [[ $# -ge 2 ]] || { printf 'ERROR: --preprocessing-workers requires a number\n' >&2; exit 2; }
             PREPROCESSING_WORKERS="$2"
+            shift
+            ;;
+        --log-file)
+            [[ $# -ge 2 ]] || { printf 'ERROR: --log-file requires a path\n' >&2; exit 2; }
+            [[ -n "$2" ]] || { printf 'ERROR: --log-file cannot be empty\n' >&2; exit 2; }
+            PIPELINE_LOG="$2"
             shift
             ;;
         --skip-manual-ica-review) SKIP_MANUAL_ICA_REVIEW=true ;;
@@ -122,6 +131,43 @@ if [[ "$MODE" == "review" && "$DRY_RUN" == true ]]; then
     exit 2
 fi
 
+finish_pipeline_log() {
+    pipeline_exit_code=$?
+    trap - EXIT
+    if [[ "$pipeline_exit_code" -eq 0 ]]; then
+        pipeline_state="SUCCESS"
+    else
+        pipeline_state="FAILED"
+    fi
+    printf '\nPipeline status: %s (exit code %d)\n' \
+        "$pipeline_state" "$pipeline_exit_code"
+    printf 'Finished: %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+    printf 'Consolidated log: %s\n' "$PIPELINE_LOG"
+    exit "$pipeline_exit_code"
+}
+
+# Keep dry-run read-only. Real review/run executions mirror both stdout and
+# stderr to one timestamped file while preserving the pipeline exit status.
+if [[ "$DRY_RUN" == false ]]; then
+    if [[ -z "$PIPELINE_LOG" ]]; then
+        PIPELINE_LOG="pipeline_logs/$(date '+%Y%m%d_%H%M%S')_${MODE}.log"
+    fi
+    if [[ "$PIPELINE_LOG" != /* ]]; then
+        PIPELINE_LOG="$SCRIPT_DIR/$PIPELINE_LOG"
+    fi
+    mkdir -p "$(dirname "$PIPELINE_LOG")"
+    : >> "$PIPELINE_LOG"
+    exec > >(tee -a "$PIPELINE_LOG") 2>&1
+    trap finish_pipeline_log EXIT
+    printf 'Consolidated log: %s\n' "$PIPELINE_LOG"
+    printf 'Started: %s\n' "$(date '+%Y-%m-%d %H:%M:%S %Z')"
+    printf 'Command:'
+    printf ' %q' "$0" "${ORIGINAL_ARGUMENTS[@]}"
+    printf '\n'
+elif [[ -n "$PIPELINE_LOG" ]]; then
+    printf 'Dry-run mode: --log-file is accepted but no log is created.\n'
+fi
+
 export PARKINSON_EEG_CONDA_ENV="$CONDA_ENV"
 environment_arguments=(--env "$CONDA_ENV")
 if [[ "$DRY_RUN" == true ]]; then environment_arguments+=(--dry-run); fi
@@ -138,7 +184,9 @@ if [[ "$MODE" == "review" ]]; then
     if [[ "$OVERWRITE" == true ]]; then
         command+=(--overwrite)
     fi
-    exec "${command[@]}"
+    "${command[@]}"
+    printf '\nICA review stage finished successfully.\n'
+    exit 0
 fi
 
 if [[ ! -f processed/metadata/subjects.csv ]]; then

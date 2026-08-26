@@ -21,6 +21,8 @@ replacing current products. `run_all_analyses.sh` is the internal downstream
 orchestrator; individual analysis scripts remain available for focused reruns.
 Preprocessing uses two subject-level workers by default and displays completed
 subjects plus an ETA. Set `--preprocessing-workers 1` when memory is limited.
+Each real top-level run also writes a consolidated timestamped stdout/stderr log
+under `pipeline_logs/`; use `--log-file PATH` to override its location.
 
 ## Data flow and ownership
 

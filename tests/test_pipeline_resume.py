@@ -95,6 +95,9 @@ class PipelineResumeTests(unittest.TestCase):
         self.assertIn('desc="ICA cleaning"', batch)
         self.assertIn("check_preprocessing_outputs.py", wrapper)
         self.assertIn('"$cleaning_rebuilt" == true', wrapper)
+        self.assertIn("--log-file", wrapper)
+        self.assertIn('exec > >(tee -a "$PIPELINE_LOG") 2>&1', wrapper)
+        self.assertIn("trap finish_pipeline_log EXIT", wrapper)
 
 
 if __name__ == "__main__":
