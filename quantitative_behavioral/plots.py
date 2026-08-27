@@ -264,7 +264,7 @@ def plot_family_heatmap(
         selected.drop_duplicates("feature_id").set_index("feature_id")["feature_label"].reindex(feature_order)
     )
     fig, axis = plt.subplots(figsize=(7, max(4.5, 0.34 * len(matrix))))
-    image = axis.imshow(matrix.to_numpy(), vmin=-1.0, vmax=1.0, cmap="coolwarm", aspect="auto")
+    image = axis.imshow(matrix.to_numpy(), vmin=-1.0, vmax=1.0, cmap="viridis", aspect="auto")
     axis.set_xticks([0, 1], ["Partial Spearman\n(age + sex)", "Spearman\nunadjusted"])
     axis.set_yticks(np.arange(len(labels)), labels, fontsize=8)
     for row in range(len(matrix)):
@@ -358,7 +358,7 @@ def _plot_topomap(
         show=False,
         sensors=True,
         contours=6,
-        cmap="coolwarm",
+        cmap="viridis",
         vlim=vlim,
     )
     return image
@@ -433,7 +433,7 @@ def plot_dimension_sensitivity_heatmaps(
             values.to_numpy(dtype=float),
             vmin=-0.5,
             vmax=0.5,
-            cmap="coolwarm",
+            cmap="viridis",
             aspect="auto",
         )
         axis.set_xticks(np.arange(len(dimensions)), [f"D={value}" for value in dimensions])
@@ -482,7 +482,7 @@ def plot_dimension_stability_lines(
     ]
     dimensions = sorted(selected["embedding_dimension"].astype(int).unique())
     bands = selected["band"].drop_duplicates().tolist()
-    colors = plt.get_cmap("tab10")(np.linspace(0.0, 0.9, len(bands)))
+    colors = plt.get_cmap("viridis")(np.linspace(0.0, 0.9, len(bands)))
     columns = 3
     rows = math.ceil(len(metrics) / columns)
     fig, axes = plt.subplots(

@@ -199,7 +199,7 @@ def plot_group_band_topomaps(
                 show=False,
                 sensors=True,
                 contours=6,
-                cmap="magma",
+                cmap="viridis",
                 vlim=(low, high),
             )
             images[column] = image

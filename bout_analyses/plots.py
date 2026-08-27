@@ -25,8 +25,8 @@ METRIC_LABELS = {
 }
 METRIC_CMAPS = {
     "entropy": "viridis",
-    "complexity": "magma",
-    "fisher_information": "cividis",
+    "complexity": "viridis",
+    "fisher_information": "viridis",
 }
 
 
@@ -172,7 +172,7 @@ def plot_detection_example(example: dict[str, Any], path: Path, dpi: int) -> Non
         frequencies,
         10.0 * np.log10(np.maximum(ratio, np.finfo(float).tiny)),
         shading="auto",
-        cmap="magma",
+        cmap="viridis",
     )
     axes[1, 1].contour(
         times,

@@ -154,7 +154,7 @@ def plot_electrode_heatmaps(
             limit = np.nanmax(np.abs(matrix.to_numpy(float)))
             limit = 1.0 if not np.isfinite(limit) or limit == 0 else limit
             fig, ax = plt.subplots(figsize=(10.5, max(4.2, 0.3 * len(matrix) + 2.0)))
-            image = ax.imshow(matrix, aspect="auto", cmap="RdBu_r", vmin=-limit, vmax=limit)
+            image = ax.imshow(matrix, aspect="auto", cmap="viridis", vmin=-limit, vmax=limit)
             reject = page.pivot(
                 index="feature_label", columns="electrode",
                 values="primary_fdr_reject_domain",

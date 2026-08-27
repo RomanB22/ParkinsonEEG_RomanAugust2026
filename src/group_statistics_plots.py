@@ -117,7 +117,7 @@ def plot_electrode_group_statistics(
                 info,
                 axes=axes[row_index, 0],
                 show=False,
-                cmap="RdBu_r",
+                cmap="viridis",
                 vlim=(-effect_limit, effect_limit),
                 contours=0,
                 sensors=True,

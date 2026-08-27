@@ -212,7 +212,7 @@ def plot_bout_example(example: dict[str, Any], path: Path, dpi: int) -> None:
         frequencies,
         10.0 * np.log10(np.maximum(power, np.finfo(float).tiny)),
         shading="auto",
-        cmap="magma",
+        cmap="viridis",
     )
     axes[1].contour(
         times,
@@ -405,7 +405,7 @@ def plot_band_topomaps(
                     axes[row, column],
                     values,
                     info,
-                    cmap="magma",
+                    cmap="viridis",
                     vlim=(low, high),
                 )
                 axes[row, column].set_title(band_labels[band])

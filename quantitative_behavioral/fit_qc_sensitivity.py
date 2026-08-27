@@ -27,6 +27,14 @@ def _write_csv(table: pd.DataFrame, path: Path) -> None:
     table.to_csv(path, index=False, float_format="%.17g")
 
 
+def _configured_bout_bands(config: dict[str, Any]) -> list[str]:
+    """Return the canonical, non-overlapping bands used for fit-QC inference."""
+    bands = [str(value) for value in config["features"]["bout_bands"]]
+    if not bands or len(bands) != len(set(bands)):
+        raise ValueError("features.bout_bands must contain unique canonical bands")
+    return bands
+
+
 def _append_family(
     rows: list[pd.DataFrame],
     dictionary: list[dict[str, Any]],
@@ -93,11 +101,8 @@ def run_behavioral_fit_qc_sensitivity(
     ordinal_path = Path(bout_ordinal_qc_subject_file)
     scale = pd.read_csv(scale_path)
     ordinal = pd.read_csv(ordinal_path)
-    bands = [str(value) for value in config["features"]["bout_bands"]]
-    descriptive_only_bands = [
-        str(value) for value in config["features"]["descriptive_only_bands"]
-    ]
-    expected_source_bands = set(bands) | set(descriptive_only_bands)
+    bands = _configured_bout_bands(config)
+    expected_source_bands = set(bands)
     bout_metrics = [str(value) for value in config["features"]["bout_properties"]]
     ordinal_metrics = [
         str(value) for value in config["features"]["bout_ordinal_metrics"]
@@ -121,7 +126,8 @@ def run_behavioral_fit_qc_sensitivity(
             raise ValueError(f"{name} includes nonqualified subjects")
         if set(table["band"].astype(str)) != expected_source_bands:
             raise ValueError(
-                f"{name} must contain the inferential and descriptive-only bands"
+                f"{name} must contain exactly the configured canonical bout bands: "
+                f"{sorted(expected_source_bands)}"
             )
     scale_subjects = set(scale["subject_id"].astype(str))
     ordinal_subjects = set(ordinal["subject_id"].astype(str))

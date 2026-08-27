@@ -300,7 +300,7 @@ def plot_feature_correlations(
     correlations = feature_table[features].corr(method="spearman")
     size = max(8.0, 0.65 * len(features))
     fig, axis = plt.subplots(figsize=(size, size))
-    image = axis.imshow(correlations, vmin=-1.0, vmax=1.0, cmap="coolwarm")
+    image = axis.imshow(correlations, vmin=-1.0, vmax=1.0, cmap="viridis")
     labels = [feature_label(feature) for feature in features]
     axis.set_xticks(np.arange(len(features)), labels, rotation=70, ha="right", fontsize=8)
     axis.set_yticks(np.arange(len(features)), labels, fontsize=8)
@@ -359,7 +359,7 @@ def plot_roc_and_precision_recall(
 ) -> None:
     """Plot ROC and precision-recall curves from averaged out-of-fold predictions."""
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
-    cmap = plt.get_cmap("tab10")
+    cmap = plt.get_cmap("viridis")
     available = [model for model in model_order if model in set(predictions["model"])]
     for index, model in enumerate(available):
         selected = predictions.loc[predictions["model"].eq(model)]
@@ -391,7 +391,7 @@ def plot_calibration(
 ) -> None:
     """Plot quantile-binned calibration curves and prediction histograms."""
     fig, axes = plt.subplots(1, 2, figsize=(13, 5.5))
-    cmap = plt.get_cmap("tab10")
+    cmap = plt.get_cmap("viridis")
     available = [model for model in model_order if model in set(predictions["model"])]
     for index, model in enumerate(available):
         selected = predictions.loc[predictions["model"].eq(model)]
@@ -430,7 +430,7 @@ def plot_confusion_matrices(
         matrix = confusion_matrix(
             selected["target_pd"], selected["predicted_class_pd"], labels=[0, 1]
         )
-        image = axis.imshow(matrix, cmap="Blues", vmin=0)
+        image = axis.imshow(matrix, cmap="viridis", vmin=0)
         for row in range(2):
             for column in range(2):
                 axis.text(column, row, str(matrix[row, column]), ha="center", va="center")

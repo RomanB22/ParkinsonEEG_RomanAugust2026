@@ -47,6 +47,8 @@ conda run -n MNE_August2026 python -m unittest discover -s tests -v
 ```
 
 The code configures non-interactive MNE/Matplotlib caches automatically.
+All scalar colormaps use `viridis` throughout the analysis battery. Explicit
+PD and Control colors are retained only for categorical group identity.
 
 ## Cleaning sequence
 

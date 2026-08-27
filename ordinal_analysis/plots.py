@@ -20,22 +20,22 @@ from .metrics import CORE_METRICS, METRICS
 
 METRIC_STYLE = {
     "entropy": ("Normalized permutation entropy (H)", "viridis"),
-    "complexity": ("Statistical complexity (C)", "magma"),
-    "fisher_information": ("Fisher information (F)", "cividis"),
+    "complexity": ("Statistical complexity (C)", "viridis"),
+    "fisher_information": ("Fisher information (F)", "viridis"),
     "renyi_entropy_alpha_0_1": ("Rényi entropy (Hα, α=0.1)", "viridis"),
-    "renyi_complexity_alpha_0_1": ("Rényi complexity (Cα, α=0.1)", "magma"),
+    "renyi_complexity_alpha_0_1": ("Rényi complexity (Cα, α=0.1)", "viridis"),
     "renyi_entropy_alpha_0_5": ("Rényi entropy (Hα, α=0.5)", "viridis"),
-    "renyi_complexity_alpha_0_5": ("Rényi complexity (Cα, α=0.5)", "magma"),
+    "renyi_complexity_alpha_0_5": ("Rényi complexity (Cα, α=0.5)", "viridis"),
     "renyi_entropy_alpha_0_9": ("Rényi entropy (Hα, α=0.9)", "viridis"),
-    "renyi_complexity_alpha_0_9": ("Rényi complexity (Cα, α=0.9)", "magma"),
+    "renyi_complexity_alpha_0_9": ("Rényi complexity (Cα, α=0.9)", "viridis"),
     "renyi_entropy_alpha_1_1": ("Rényi entropy (Hα, α=1.1)", "viridis"),
-    "renyi_complexity_alpha_1_1": ("Rényi complexity (Cα, α=1.1)", "magma"),
+    "renyi_complexity_alpha_1_1": ("Rényi complexity (Cα, α=1.1)", "viridis"),
     "renyi_entropy_alpha_2": ("Rényi entropy (Hα, α=2)", "viridis"),
-    "renyi_complexity_alpha_2": ("Rényi complexity (Cα, α=2)", "magma"),
+    "renyi_complexity_alpha_2": ("Rényi complexity (Cα, α=2)", "viridis"),
     "renyi_entropy_alpha_5": ("Rényi entropy (Hα, α=5)", "viridis"),
-    "renyi_complexity_alpha_5": ("Rényi complexity (Cα, α=5)", "magma"),
+    "renyi_complexity_alpha_5": ("Rényi complexity (Cα, α=5)", "viridis"),
     "renyi_entropy_alpha_10": ("Rényi entropy (Hα, α=10)", "viridis"),
-    "renyi_complexity_alpha_10": ("Rényi complexity (Cα, α=10)", "magma"),
+    "renyi_complexity_alpha_10": ("Rényi complexity (Cα, α=10)", "viridis"),
 }
 
 PLANE_PAIRS = (
@@ -432,7 +432,7 @@ def _plot_standardized_topomap_row(
             show=False,
             sensors=True,
             contours=6,
-            cmap="RdBu_r",
+            cmap="viridis",
             vlim=limits[metric],
         )
         axis.set_title(f"{label}\nMean pooled-cohort z-score", fontsize=9)

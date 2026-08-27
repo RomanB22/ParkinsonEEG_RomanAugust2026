@@ -8,6 +8,7 @@ from quantitative_behavioral.features import (
     build_subject_features,
     load_cohort,
 )
+from quantitative_behavioral.fit_qc_sensitivity import _configured_bout_bands
 from quantitative_behavioral.pipeline import load_analysis_config
 from quantitative_behavioral.statistics import (
     compare_aperiodic_exponent_groups,
@@ -62,6 +63,10 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             "within_each_dimension_across_all_102_features_per_method",
         )
         self.assertNotIn("descriptive_only_bands", config["features"])
+        self.assertEqual(
+            _configured_bout_bands(config),
+            ["theta", "alpha", "low_beta", "high_beta"],
+        )
         self.assertEqual(
             config["features"]["bout_bands"],
             ["theta", "alpha", "low_beta", "high_beta"],
