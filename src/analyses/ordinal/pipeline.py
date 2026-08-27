@@ -595,6 +595,7 @@ def run_analysis(
                 "metrics and included in every metric table."
             ),
             "figures_generated": False,
+            "subject_topomaps_generated": False,
             "feature_cache": feature_cache,
             "figure_policy": (
                 "Figures were intentionally skipped for this parameter-sensitivity input; "

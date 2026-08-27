@@ -293,7 +293,6 @@ def build_registry() -> dict[str, Stage]:
             (
                 _a(
                     "outputs/full/ordinal/manifest.json",
-                    contains=('"subject_topomaps_generated": false',),
                     excludes=RETIRED_BANDS,
                 ),
                 _a(

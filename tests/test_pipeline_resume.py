@@ -84,6 +84,15 @@ class PipelineRefactorTests(unittest.TestCase):
         command = self.registry["full.ordinal"].build_commands(context, True)[0]
         self.assertIn("--overwrite", command)
 
+    def test_compute_ordinal_manifest_does_not_require_figure_only_fields(self) -> None:
+        manifest = next(
+            artifact
+            for artifact in self.registry["full.ordinal"].artifacts
+            if artifact.path.name == "manifest.json"
+        )
+        self.assertNotIn('"subject_topomaps_generated": false', manifest.contains)
+        self.assertIn("paper", self.registry["full.ordinal"].profile_artifacts)
+
     def test_status_inspection_does_not_write_runner_state(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = StateStore(Path(directory) / "state")
