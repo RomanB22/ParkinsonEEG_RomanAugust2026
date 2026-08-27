@@ -26,7 +26,7 @@ class EightElectrodeAnalysisTests(unittest.TestCase):
         )
         self.assertEqual(
             tested,
-            {"delta", "theta", "alpha", "beta", "low_gamma", "low_beta", "high_beta"},
+            {"delta", "theta", "alpha", "beta", "gamma"},
         )
 
     @unittest.skipUnless(

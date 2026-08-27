@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from core.runtime import configure_runtime
+from core.frequency_bands import CANONICAL_BAND_NAMES, CANONICAL_BOUT_BAND_NAMES
 
 configure_runtime()
 
@@ -72,13 +73,12 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     if analysis.get("fdr_scope") != "within_outcome_feature_family_and_method":
         raise ValueError("Disease-progression FDR scope changed unexpectedly")
     features = config["features"]
-    canonical_ordinal = ["delta", "theta", "alpha", "beta", "low_gamma"]
-    canonical_bouts = ["theta", "alpha", "low_beta", "high_beta"]
-    if features["ordinal_bands"] != canonical_ordinal:
+    canonical_bands = list(CANONICAL_BAND_NAMES)
+    if features["ordinal_bands"] != canonical_bands:
         raise ValueError("Disease progression requires canonical ordinal bands")
-    if features["psd_bands"] != canonical_ordinal:
+    if features["psd_bands"] != canonical_bands:
         raise ValueError("Disease progression requires canonical PSD bands")
-    if features["bout_bands"] != canonical_bouts:
+    if features["bout_bands"] != list(CANONICAL_BOUT_BAND_NAMES):
         raise ValueError("Disease progression requires canonical bout bands")
     if int(features["embedding_dimension"]) != 6 or int(features["delay_samples"]) != 1:
         raise ValueError("Disease progression uses the primary D=6, tau=1 ordinal block")

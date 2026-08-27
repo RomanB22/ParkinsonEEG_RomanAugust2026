@@ -9,8 +9,8 @@
   "bands": {
     "theta": [4.0, 8.0],
     "alpha": [8.0, 13.0],
-    "low_beta": [13.0, 20.0],
-    "high_beta": [20.0, 30.0]
+    "beta": [13.0, 30.0],
+    "gamma": [30.0, 50.0]
   },
   "psd": {
     "fmin_hz": 1.0,
@@ -29,7 +29,7 @@
   },
   "ebosc": {
     "frequency_min_hz": 4.0,
-    "frequency_max_hz": 30.0,
+    "frequency_max_hz": 50.0,
     "frequency_step_hz": 1.0,
     "wavenumber": 6.0,
     "power_percentile": 0.95,
@@ -66,8 +66,8 @@
     "band_display_names": {
       "theta": "Theta",
       "alpha": "Alpha",
-      "low_beta": "Low beta",
-      "high_beta": "High beta"
+      "beta": "Beta",
+      "gamma": "Gamma"
     },
     "subject_topomaps": true
   }

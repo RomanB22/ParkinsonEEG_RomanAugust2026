@@ -14,6 +14,7 @@ from core.analysis_io import discover_epoch_files as _epoch_files
 from core.analysis_io import load_participants as _participants
 from core.analysis_logging import configure_analysis_logger
 from core.dataset import ordered_channel_inventory
+from core.frequency_bands import validate_frequency_bands
 from core.group_statistics import compute_group_statistics
 from core.group_statistics_plots import plot_electrode_group_statistics
 from core.output_cleanup import remove_retired_band_outputs
@@ -63,9 +64,7 @@ def load_psd_config(path: str | Path) -> dict[str, Any]:
     fmin, fmax = float(psd["fmin_hz"]), float(psd["fmax_hz"])
     if not 0 <= fmin < fmax:
         raise ValueError("psd requires 0 <= fmin_hz < fmax_hz")
-    expected_bands = ["delta", "theta", "alpha", "beta", "low_gamma"]
-    if list(config["bands"]) != expected_bands:
-        raise ValueError(f"bands must be ordered as {expected_bands}")
+    validate_frequency_bands(config["bands"], context="PSD bands")
     if int(config["bootstrap"]["n_resamples"]) < 100:
         raise ValueError("bootstrap.n_resamples must be at least 100")
     for name, limits in config["bands"].items():

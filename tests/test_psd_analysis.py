@@ -143,7 +143,7 @@ class PsdAnalysisTests(unittest.TestCase):
         config = load_psd_config("config/analyses/psd.json")
         self.assertEqual(
             list(config["bands"]),
-            ["delta", "theta", "alpha", "beta", "low_gamma"],
+            ["delta", "theta", "alpha", "beta", "gamma"],
         )
         self.assertEqual(config["statistics"]["exclude_bands"], [])
         self.assertEqual(config["bootstrap"]["confidence_level"], 0.95)

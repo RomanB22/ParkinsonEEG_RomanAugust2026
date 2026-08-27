@@ -26,8 +26,10 @@ class BoutAnalysesTests(unittest.TestCase):
         self.assertEqual(METRICS, ("entropy", "complexity", "fisher_information"))
         self.assertEqual(
             list(config["bands"]),
-            ["theta", "alpha", "low_beta", "high_beta"],
+            ["theta", "alpha", "beta", "gamma"],
         )
+        self.assertEqual(config["ebosc"]["frequency_min_hz"], 4.0)
+        self.assertEqual(config["ebosc"]["frequency_max_hz"], 50.0)
         self.assertEqual(config["statistics"]["exclude_bands"], [])
         self.assertEqual(
             config["input"]["scale_free_output_dir"],

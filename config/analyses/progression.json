@@ -42,12 +42,12 @@
       "renyi_entropy_alpha_5", "renyi_complexity_alpha_5",
       "renyi_entropy_alpha_10", "renyi_complexity_alpha_10"
     ],
-    "ordinal_bands": ["delta", "theta", "alpha", "beta", "low_gamma"],
+    "ordinal_bands": ["delta", "theta", "alpha", "beta", "gamma"],
     "psd_metric": "relative_band_power",
-    "psd_bands": ["delta", "theta", "alpha", "beta", "low_gamma"],
+    "psd_bands": ["delta", "theta", "alpha", "beta", "gamma"],
     "aperiodic_metrics": ["aperiodic_exponent", "aperiodic_exponent_qc"],
     "minimum_aperiodic_qc_fraction": 0.8,
-    "bout_bands": ["theta", "alpha", "low_beta", "high_beta"],
+    "bout_bands": ["theta", "alpha", "beta", "gamma"],
     "bout_properties": [
       "oscillatory_occupancy", "bouts_per_minute", "bout_duration_mean_s",
       "bout_cycles_mean", "bout_snr_mean"

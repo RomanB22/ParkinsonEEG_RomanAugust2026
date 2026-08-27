@@ -23,6 +23,7 @@ from analyses.bouts.pipeline import GROUP_METRICS
 from analyses.ordinal.metrics import METRICS as ORDINAL_METRICS
 from analyses.scale_free.metrics import APERIODIC_FEATURES, BAND_FEATURES
 from core.group_statistics import compute_group_statistics
+from core.frequency_bands import CANONICAL_BAND_NAMES, CANONICAL_BOUT_BAND_NAMES
 
 from .plots import (
     plot_effect_pages,
@@ -44,11 +45,10 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     if config["electrodes"] != ELECTRODES:
         raise ValueError(f"electrodes must be exactly {ELECTRODES}")
     bands = config["bands"]
-    canonical_ordinal = ["delta", "theta", "alpha", "beta", "low_gamma"]
-    canonical_bouts = ["theta", "alpha", "low_beta", "high_beta"]
-    if bands["psd"] != canonical_ordinal or bands["ordinal"] != canonical_ordinal:
+    canonical_bands = list(CANONICAL_BAND_NAMES)
+    if bands["psd"] != canonical_bands or bands["ordinal"] != canonical_bands:
         raise ValueError("Eight-electrode PSD and ordinal bands must be canonical")
-    if bands["bout"] != canonical_bouts:
+    if bands["bout"] != list(CANONICAL_BOUT_BAND_NAMES):
         raise ValueError("Eight-electrode bout bands must be canonical")
     if not 0 < float(config["statistics"]["confidence_level"]) < 1:
         raise ValueError("Invalid confidence level")

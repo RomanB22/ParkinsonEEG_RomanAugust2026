@@ -21,8 +21,9 @@ Its sequence is:
    gated by the later R²/MAE/residual QC classification.
 2. Reuse eBOSC episodes detected above the 95th-percentile aperiodic-relative
    power threshold for at least three cycles within each accepted epoch.
-3. Collapse detections into theta (4–7 Hz), alpha (8–13 Hz), low-beta
-   (13–20 Hz), and high-beta (20–30 Hz) bouts.
+3. Collapse detections into theta (4–8 Hz), alpha (8–13 Hz), beta
+   (13–30 Hz), and gamma (30–50 Hz) bouts. Delta is excluded because the
+   aperiodic background is fitted over 4–50 Hz.
 4. Zero-phase band-pass each complete accepted epoch before extracting the
    corresponding bout intervals. Short bouts are never filtered in isolation.
 5. Encode every bout independently into ordinal patterns. Pattern counts are

@@ -59,7 +59,7 @@ class BycycleBurstAnalysisTests(unittest.TestCase):
         self.assertEqual(config["detector"]["method"], "bycycle_cycle_consistency")
         self.assertEqual(
             list(config["bands"]),
-            ["theta", "alpha", "low_beta", "high_beta"],
+            ["theta", "alpha", "beta", "gamma"],
         )
         self.assertEqual(config["statistics"]["exclude_bands"], [])
         self.assertEqual(config["detector"]["minimum_consecutive_cycles"], 3)

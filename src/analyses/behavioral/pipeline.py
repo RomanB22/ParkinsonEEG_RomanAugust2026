@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from core.runtime import configure_runtime
+from core.frequency_bands import CANONICAL_BAND_NAMES, CANONICAL_BOUT_BAND_NAMES
 
 configure_runtime()
 
@@ -117,21 +118,11 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("Only regular ordinal H, C, and F are supported")
     if requested.get("bout_ordinal_metrics") != regular_metrics:
         raise ValueError("Within-bout ordinal features must be regular H, C, and F")
-    if requested.get("ordinal_bands") != [
-        "delta",
-        "theta",
-        "alpha",
-        "beta",
-        "low_gamma",
-    ]:
+    canonical_bands = list(CANONICAL_BAND_NAMES)
+    if requested.get("ordinal_bands") != canonical_bands:
         raise ValueError("Behavioral ordinal associations require the canonical bands")
-    if requested.get("bout_bands") != [
-        "theta",
-        "alpha",
-        "low_beta",
-        "high_beta",
-    ]:
-        raise ValueError("Behavioral bout associations require the four canonical bands")
+    if requested.get("bout_bands") != list(CANONICAL_BOUT_BAND_NAMES):
+        raise ValueError("Behavioral bout associations require the canonical bands")
     sensitivity = config.get("dimension_sensitivity")
     if not isinstance(sensitivity, dict) or not sensitivity.get("enabled"):
         raise ValueError("The ordinal embedding-dimension sensitivity must be enabled")
@@ -146,13 +137,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
             "Dimension analysis must include regular H/C/F plus Rényi Hα/Cα at "
             "alpha=0.1, 0.5, 0.9, 1.1, 2, 5, and 10"
         )
-    if sensitivity.get("bands") != [
-        "delta",
-        "theta",
-        "alpha",
-        "beta",
-        "low_gamma",
-    ]:
+    if sensitivity.get("bands") != canonical_bands:
         raise ValueError("Dimension sensitivity requires the canonical ordinal bands")
     if (
         sensitivity.get("analysis_block_policy")

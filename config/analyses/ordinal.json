@@ -27,7 +27,7 @@
       13.0,
       30.0
     ],
-    "low_gamma": [
+    "gamma": [
       30.0,
       50.0
     ]
@@ -61,7 +61,7 @@
       "theta": "Theta",
       "alpha": "Alpha",
       "beta": "Beta",
-      "low_gamma": "Low gamma"
+      "gamma": "Gamma"
     }
   }
 }

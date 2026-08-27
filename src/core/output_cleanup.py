@@ -7,7 +7,13 @@ from pathlib import Path
 
 
 def remove_retired_band_outputs(
-    output_dir: str | Path, retired_bands: tuple[str, ...] = ("broad_5_15",)
+    output_dir: str | Path,
+    retired_bands: tuple[str, ...] = (
+        "broad_5_15",
+        "low_gamma",
+        "low_beta",
+        "high_beta",
+    ),
 ) -> list[Path]:
     """Remove generated paths whose names contain a retired band identifier."""
     root = Path(output_dir)

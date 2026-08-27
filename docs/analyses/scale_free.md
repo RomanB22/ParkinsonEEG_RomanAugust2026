@@ -88,8 +88,8 @@ QC-qualified versions are written alongside them.
 No alternative frequency-range fit is run: every fixed and knee candidate uses
 4–50 Hz.
 
-The highest fitted peak in each theta (4–7 Hz), alpha (8–13 Hz), low-beta
-(13–20 Hz), and high-beta (20–30 Hz) band supplies center frequency, power,
+The highest fitted peak in each theta (4–8 Hz), alpha (8–13 Hz), beta
+(13–30 Hz), and gamma (30–50 Hz) band supplies center frequency, power,
 and bandwidth. A `peak_present` indicator distinguishes a missing peak from a
 numerical value.
 

@@ -7,6 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core.frequency_bands import (
+    CANONICAL_BOUT_BAND_NAMES,
+    validate_frequency_bands,
+)
+
 
 DEFAULT_CONFIG = Path("config/pipeline.yaml")
 VALID_COHORTS = ("full", "matched")
@@ -60,7 +65,7 @@ class ScientificDefaults:
     ordinal_dimensions: tuple[int, ...]
     ordinal_delay_samples: tuple[int, ...]
     renyi_alphas: tuple[float, ...]
-    bout_bands: dict[str, tuple[float, float]]
+    frequency_bands: dict[str, tuple[float, float]]
     eight_electrodes: tuple[str, ...]
     scalar_colormap: str
     fdr_alpha: float
@@ -78,10 +83,11 @@ class ScientificDefaults:
 
         bands = {
             str(name): (float(limits[0]), float(limits[1]))
-            for name, limits in value.get("bout_bands", {}).items()
+            for name, limits in value.get("frequency_bands", {}).items()
         }
         if not bands:
-            raise ValueError("science.bout_bands cannot be empty")
+            raise ValueError("science.frequency_bands cannot be empty")
+        validate_frequency_bands(bands, context="science.frequency_bands")
         dimensions = tuple(int(item) for item in value.get("ordinal_dimensions", []))
         delays = tuple(int(item) for item in value.get("ordinal_delay_samples", []))
         alphas = tuple(float(item) for item in value.get("renyi_alphas", []))
@@ -101,7 +107,7 @@ class ScientificDefaults:
             ordinal_dimensions=dimensions,
             ordinal_delay_samples=delays,
             renyi_alphas=alphas,
-            bout_bands=bands,
+            frequency_bands=bands,
             eight_electrodes=electrodes,
             scalar_colormap=str(value.get("scalar_colormap", "viridis")),
             fdr_alpha=fdr_alpha,
@@ -210,13 +216,28 @@ def validate_scientific_configs(config: PipelineConfig) -> None:
         problems.append("config/analyses/ordinal.json must contain primary D=6")
     if int(primary["delay_samples"]) != config.science.ordinal_delay_samples[0]:
         problems.append("config/analyses/ordinal.json must contain tau=1")
+    for name in ("psd", "ordinal"):
+        observed = {
+            band: _numeric_pair(limits)
+            for band, limits in values[name]["bands"].items()
+        }
+        if observed != config.science.frequency_bands:
+            problems.append(
+                f"{files[name]} frequency bands disagree with pipeline.yaml"
+            )
+    expected_bout_bands = {
+        name: config.science.frequency_bands[name]
+        for name in CANONICAL_BOUT_BAND_NAMES
+    }
     for name in ("scale_free", "bout", "bycycle"):
         observed = {
             band: _numeric_pair(limits)
             for band, limits in values[name]["bands"].items()
         }
-        if observed != config.science.bout_bands:
-            problems.append(f"{files[name]} bout bands disagree with pipeline.yaml")
+        if observed != expected_bout_bands:
+            problems.append(
+                f"{files[name]} bout bands disagree with pipeline.yaml"
+            )
     if tuple(values["eight"]["electrodes"]) != config.science.eight_electrodes:
         problems.append("config/analyses/eight_electrode.json electrode order disagrees")
     fdr_locations = {

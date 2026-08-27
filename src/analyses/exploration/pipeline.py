@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from core.runtime import configure_runtime
+from core.frequency_bands import CANONICAL_BOUT_BAND_NAMES
 
 configure_runtime()
 
@@ -103,13 +104,8 @@ def load_exploration_config(path: str | Path) -> dict[str, Any]:
         "renyi_complexity_alpha_10",
     ]:
         raise ValueError("Exploration Rényi predictors must remain the alpha endpoints")
-    if candidate.get("bout_bands") != [
-        "theta",
-        "alpha",
-        "low_beta",
-        "high_beta",
-    ]:
-        raise ValueError("Exploration bout predictors must use the four canonical bands")
+    if candidate.get("bout_bands") != list(CANONICAL_BOUT_BAND_NAMES):
+        raise ValueError("Exploration bout predictors must use the canonical bands")
     matching = config["demographic_matching"]
     if matching.get("exact_variables") != ["sex_male"]:
         raise ValueError("Demographic matching must require exact sex")
@@ -803,7 +799,7 @@ def run_analysis(
         "feature_policy": (
             "Every model uses one row per subject. Electrode and bout observations are "
             "aggregated within subject before modeling. PSD predictors are prespecified "
-            "log2 ratios against low gamma. Rényi "
+            "log2 ratios against gamma. Rényi "
             "models retain only the prespecified low/high Rényi endpoints because intermediate "
             "alphas are extremely redundant. Typical-bout curves are reduced to peak, "
             "half-height width, temporal asymmetry, and relative-phase consistency."

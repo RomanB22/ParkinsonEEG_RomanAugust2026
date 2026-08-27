@@ -212,7 +212,7 @@ class OrdinalMetricTests(unittest.TestCase):
         self.assertIsNone(config["ordinal"]["tie_precision"])
         self.assertEqual(
             list(config["bands"]),
-            ["delta", "theta", "alpha", "beta", "low_gamma"],
+            ["delta", "theta", "alpha", "beta", "gamma"],
         )
         self.assertEqual(config["statistics"]["exclude_bands"], [])
         self.assertEqual(config["band_filter"]["order"], 4)

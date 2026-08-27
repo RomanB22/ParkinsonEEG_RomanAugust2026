@@ -70,11 +70,11 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         self.assertNotIn("descriptive_only_bands", config["features"])
         self.assertEqual(
             _configured_bout_bands(config),
-            ["theta", "alpha", "low_beta", "high_beta"],
+            ["theta", "alpha", "beta", "gamma"],
         )
         self.assertEqual(
             config["features"]["bout_bands"],
-            ["theta", "alpha", "low_beta", "high_beta"],
+            ["theta", "alpha", "beta", "gamma"],
         )
 
     @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")

@@ -30,6 +30,7 @@ from core.analysis_logging import configure_analysis_logger
 from core.dataset import ordered_channel_inventory
 from core.group_statistics import compute_group_statistics
 from core.group_statistics_plots import plot_electrode_group_statistics
+from core.frequency_bands import CANONICAL_BOUT_BAND_NAMES, validate_frequency_bands
 from core.output_cleanup import remove_retired_band_outputs
 
 from .detector import METRICS, detect_epoch_bursts, summarize_detection
@@ -51,12 +52,11 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     missing = sorted(required - set(config))
     if missing:
         raise ValueError(f"Missing bycycle burst config sections: {missing}")
-    expected = ["theta", "alpha", "low_beta", "high_beta"]
-    if list(config["bands"]) != expected:
-        raise ValueError(f"bands must be ordered as {expected}")
-    for band, limits in config["bands"].items():
-        if len(limits) != 2 or not 0 < float(limits[0]) < float(limits[1]):
-            raise ValueError(f"Invalid band limits for {band}")
+    validate_frequency_bands(
+        config["bands"],
+        context="Bycycle bands",
+        expected_names=CANONICAL_BOUT_BAND_NAMES,
+    )
     detector = config["detector"]
     threshold_names = (
         "amplitude_fraction_threshold",
@@ -623,7 +623,7 @@ def run_analysis(
         "n_subject_average_violin_figures": len(subject_violin_figures),
         "subject_average_violin_policy": (
             "Each plotted point is one subject after arithmetic averaging across "
-            "all cohort-shared electrodes and the four canonical bands."
+            "all cohort-shared electrodes and the four canonical bout bands."
         ),
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

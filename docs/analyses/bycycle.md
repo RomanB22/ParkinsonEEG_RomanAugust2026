@@ -11,8 +11,10 @@ consecutive qualifying cycles. Each accepted four-second epoch is analyzed
 separately, with a 0.5-second edge margin. Thresholds are fixed in
 `config.json` and must not be tuned using PD-versus-Control significance.
 
-All analyses use only electrodes shared by every included subject. Theta,
-alpha, low-beta, and high-beta enter detection, figures, and formal inference.
+All analyses use only electrodes shared by every included subject. Theta
+(4–8 Hz), alpha (8–13 Hz), beta (13–30 Hz), and gamma (30–50 Hz) enter
+detection, figures, and formal inference. Delta is excluded from bout detection
+to match the 4–50 Hz aperiodic fit used by the primary eBOSC analysis.
 
 Run the complete full-cohort stage with:
 

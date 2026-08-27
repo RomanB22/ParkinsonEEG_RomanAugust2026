@@ -18,6 +18,7 @@ from core.analysis_logging import configure_analysis_logger
 from core.dataset import ordered_channel_inventory
 from core.group_statistics import compute_group_statistics
 from core.group_statistics_plots import plot_electrode_group_statistics
+from core.frequency_bands import validate_frequency_bands
 from core.output_cleanup import remove_retired_band_outputs
 
 configure_runtime()
@@ -78,19 +79,9 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
             "ordinal.tie_precision must be null"
         )
     bands = config["bands"]
-    if not isinstance(bands, dict) or not bands:
-        raise ValueError("bands must be a non-empty mapping")
-    expected_bands = ["delta", "theta", "alpha", "beta", "low_gamma"]
-    if list(bands) != expected_bands:
-        raise ValueError(f"bands must be ordered as {expected_bands}")
-    for name, limits in bands.items():
-        if not isinstance(name, str) or not name:
-            raise ValueError("Every band must have a non-empty string name")
-        if not isinstance(limits, list) or len(limits) != 2:
-            raise ValueError(f"bands.{name} must contain [low_hz, high_hz]")
-        low_hz, high_hz = (float(value) for value in limits)
-        if not 0.0 < low_hz < high_hz:
-            raise ValueError(f"bands.{name} must satisfy 0 < low_hz < high_hz")
+    if not isinstance(bands, dict):
+        raise ValueError("bands must be a mapping")
+    validate_frequency_bands(bands, context="Ordinal bands")
     filter_config = config["band_filter"]
     if filter_config.get("method") != "butterworth_sos_sosfiltfilt":
         raise ValueError(

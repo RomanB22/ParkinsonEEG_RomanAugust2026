@@ -48,12 +48,14 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
         self.assertEqual(
             config["bands"],
             {
-                "theta": [4.0, 7.0],
+                "theta": [4.0, 8.0],
                 "alpha": [8.0, 13.0],
-                "low_beta": [13.0, 20.0],
-                "high_beta": [20.0, 30.0],
+                "beta": [13.0, 30.0],
+                "gamma": [30.0, 50.0],
             },
         )
+        self.assertEqual(config["ebosc"]["frequency_min_hz"], 4.0)
+        self.assertEqual(config["ebosc"]["frequency_max_hz"], 50.0)
 
     def test_typical_bout_gallery_allocates_one_row_per_band(self):
         figure, axes = _representation_figure(len(self.config["bands"]))

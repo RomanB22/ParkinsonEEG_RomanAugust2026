@@ -61,27 +61,26 @@ and beta. Rényi sensitivity models add entropy and complexity only at the two
 prespecified endpoints, α=0.1 and α=10. Intermediate α values are available in
 the source tables but are not model predictors because they are extremely
 rank-redundant. Embedding dimensions are evaluated independently and are never
-concatenated into one feature vector. Delta and low gamma do not enter the
+concatenated into one feature vector. Delta and gamma do not enter the
 deliberately restricted band model.
 
 PSD uses the subject median across shared electrodes. Relative powers are
 compositional, so the model does not enter all percentages independently. It
-uses four interpretable base-2 log ratios against low gamma:
+uses four interpretable base-2 log ratios against gamma:
 
 ```text
-log2(delta / low_gamma)
-log2(theta / low_gamma)
-log2(alpha / low_gamma)
-log2(beta / low_gamma)
+log2(delta / gamma)
+log2(theta / gamma)
+log2(alpha / gamma)
+log2(beta / gamma)
 ```
 
-A one-unit increase means a doubling of the numerator-to-low-gamma ratio.
+A one-unit increase means a doubling of the numerator-to-gamma ratio.
 
 New scale-free and bout blocks are represented conservatively:
 
 - one subject-median aperiodic exponent;
-- occupancy, bouts/minute, and mean duration in theta, alpha, low beta, and
-  high beta;
+- occupancy, bouts/minute, and mean duration in theta, alpha, beta, and gamma;
 - within-bout H, C, and F in those four canonical bands;
 - four summaries of each typical bout: peak envelope/baseline ratio,
   half-height width, pre/post envelope asymmetry, and relative-phase

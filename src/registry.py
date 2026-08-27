@@ -14,7 +14,7 @@ from stages import (
 )
 
 
-RETIRED_BAND = "broad_5_15"
+RETIRED_BANDS = ("broad_5_15", "low_gamma", "low_beta", "high_beta")
 PRIMARY_FIT = '"specparam_primary_fit_range_id": "4_50Hz"'
 
 
@@ -212,7 +212,7 @@ def _sweep_artifacts(root: str) -> tuple[Artifact, ...]:
         base = f"{root}/D{dimension}_tau1"
         artifacts.extend(
             [
-                _a(f"{base}/manifest.json", excludes=(RETIRED_BAND,)),
+                _a(f"{base}/manifest.json", excludes=RETIRED_BANDS),
                 _a(
                     f"{base}/metrics/subject_electrode_mean_metrics.csv",
                     contains=("renyi_entropy_alpha_0_1", "renyi_entropy_alpha_10"),
@@ -273,7 +273,7 @@ def build_registry() -> dict[str, Stage]:
             ("clean",),
             _python_builder("analyses.psd.run_psd_analysis"),
             (
-                _a("outputs/full/psd/manifest.json", excludes=(RETIRED_BAND,)),
+                _a("outputs/full/psd/manifest.json", excludes=RETIRED_BANDS),
                 _a("outputs/full/psd/metrics/subject_electrode_band_power.csv"),
                 _a("outputs/full/psd/metrics/group_subject_statistics.csv"),
             ),
@@ -294,7 +294,7 @@ def build_registry() -> dict[str, Stage]:
                 _a(
                     "outputs/full/ordinal/manifest.json",
                     contains=('"subject_topomaps_generated": false',),
-                    excludes=(RETIRED_BAND,),
+                    excludes=RETIRED_BANDS,
                 ),
                 _a(
                     "outputs/full/ordinal/metrics/subject_electrode_mean_metrics.csv",
@@ -335,7 +335,7 @@ def build_registry() -> dict[str, Stage]:
                 _a(
                     "outputs/full/scale_free/manifest.json",
                     contains=(PRIMARY_FIT, '"criterion": "bic"', '"range_sensitivity_enabled": false'),
-                    excludes=(RETIRED_BAND,),
+                    excludes=RETIRED_BANDS,
                 ),
                 _a("outputs/full/scale_free/metrics/electrode_aperiodic_metrics.csv"),
                 _a("outputs/full/scale_free/metrics/electrode_band_metrics.csv"),
@@ -363,7 +363,7 @@ def build_registry() -> dict[str, Stage]:
             ("full.scale-free",),
             _bycycle_builder("config/analyses/bycycle.json", "outputs/full/bycycle"),
             (
-                _a("outputs/full/bycycle/manifest.json", excludes=(RETIRED_BAND,)),
+                _a("outputs/full/bycycle/manifest.json", excludes=RETIRED_BANDS),
                 _a("outputs/full/bycycle/metrics/subject_electrode_band_metrics.csv"),
                 _a("outputs/full/bycycle/figures/group_comparisons/group_bout_duration_mean_s.png"),
             ),
@@ -384,7 +384,7 @@ def build_registry() -> dict[str, Stage]:
                 _a(
                     "outputs/full/bouts/manifest.json",
                     contains=(PRIMARY_FIT, '"criterion": "bic"'),
-                    excludes=(RETIRED_BAND,),
+                    excludes=RETIRED_BANDS,
                 ),
                 _a("outputs/full/bouts/metrics/subject_electrode_band_metrics.csv"),
             ),
@@ -406,7 +406,7 @@ def build_registry() -> dict[str, Stage]:
             ("full.psd", "full.ordinal", "full.scale-free", "full.within-bout-ordinal"),
             _python_builder("analyses.eight_electrode.run_eight_electrode_analysis"),
             (
-                _a("outputs/full/eight_electrode/manifest.json", excludes=(RETIRED_BAND,)),
+                _a("outputs/full/eight_electrode/manifest.json", excludes=RETIRED_BANDS),
                 _a("outputs/full/eight_electrode/REPORT.md"),
                 _a("outputs/full/eight_electrode/metrics/electrode_selection.csv", contains=("F4", "P8")),
             ),
@@ -421,8 +421,8 @@ def build_registry() -> dict[str, Stage]:
             _fit_qc_builder(False),
             (
                 _a("outputs/full/scale_free/fit_qc_sensitivity_manifest.json"),
-                _a("outputs/full/scale_free/metrics/subject_band_metrics_fit_qc.csv", excludes=(RETIRED_BAND,)),
-                _a("outputs/full/bouts/metrics/subject_band_metrics_fit_qc.csv", excludes=(RETIRED_BAND,)),
+                _a("outputs/full/scale_free/metrics/subject_band_metrics_fit_qc.csv", excludes=RETIRED_BANDS),
+                _a("outputs/full/bouts/metrics/subject_band_metrics_fit_qc.csv", excludes=RETIRED_BANDS),
             ),
             (Path("src/analyses/scale_free/fit_qc_sensitivity.py"), Path("src/analyses/behavioral/fit_qc_sensitivity.py")),
         ),
@@ -434,7 +434,7 @@ def build_registry() -> dict[str, Stage]:
             ("full.scale-free", "full.fit-qc"),
             _python_builder("analyses.scale_free.generate_typical_bouts"),
             (
-                _a("outputs/full/scale_free/typical_bouts_manifest.json", excludes=(RETIRED_BAND,)),
+                _a("outputs/full/scale_free/typical_bouts_manifest.json", excludes=RETIRED_BANDS),
                 _a("outputs/full/scale_free/figures/typical_bouts/index.html"),
                 _a("outputs/full/scale_free/figures/typical_bouts/grand_average_all_subjects.png"),
             ),
@@ -449,7 +449,7 @@ def build_registry() -> dict[str, Stage]:
             _python_builder("analyses.exploration.run_exploration"),
             (
                 _a("outputs/full/exploration/manifest.json"),
-                _a("outputs/full/exploration/features/subject_modeling_table.csv", contains=("ordinal_global_renyi_entropy_alpha_0_1",), excludes=(RETIRED_BAND,)),
+                _a("outputs/full/exploration/features/subject_modeling_table.csv", contains=("ordinal_global_renyi_entropy_alpha_0_1",), excludes=RETIRED_BANDS),
                 _a("outputs/full/exploration/MODEL_REVISION.md"),
             ),
             (Path("src/analyses/exploration"),),
@@ -464,7 +464,7 @@ def build_registry() -> dict[str, Stage]:
             (
                 _a("outputs/full/behavioral/manifest.json"),
                 _a("outputs/full/behavioral/REPORT.md"),
-                _a("outputs/full/behavioral/metrics/feature_dictionary.csv", contains=("aperiodic_exponent",), excludes=(RETIRED_BAND,)),
+                _a("outputs/full/behavioral/metrics/feature_dictionary.csv", contains=("aperiodic_exponent",), excludes=RETIRED_BANDS),
             ),
             (Path("src/analyses/behavioral"),),
         ),
@@ -518,7 +518,7 @@ def build_registry() -> dict[str, Stage]:
             ("matched.prepare", "full.psd"),
             _python_builder("analyses.psd.run_psd_analysis", "--config", "outputs/matched/cohort/configs/psd.json"),
             (
-                _a("outputs/matched/psd/manifest.json", excludes=(RETIRED_BAND,)),
+                _a("outputs/matched/psd/manifest.json", excludes=RETIRED_BANDS),
                 _a("outputs/matched/psd/metrics/group_subject_statistics.csv"),
             ),
             (Path("src/analyses/psd"),),
@@ -531,7 +531,7 @@ def build_registry() -> dict[str, Stage]:
             ("matched.prepare", "full.ordinal"),
             _python_builder("analyses.ordinal.run_ordinal_analysis", "--config", "outputs/matched/cohort/configs/ordinal.json", supports_progress=True),
             (
-                _a("outputs/matched/ordinal/manifest.json", contains=('"mode": "filtered_subject_level_reuse"',), excludes=(RETIRED_BAND,)),
+                _a("outputs/matched/ordinal/manifest.json", contains=('"mode": "filtered_subject_level_reuse"',), excludes=RETIRED_BANDS),
                 _a("outputs/matched/ordinal/metrics/subject_electrode_mean_metrics.csv", contains=("renyi_entropy_alpha_10",)),
             ),
             (Path("src/analyses/ordinal"),),
@@ -554,7 +554,7 @@ def build_registry() -> dict[str, Stage]:
             ("matched.prepare", "full.scale-free"),
             _matched_scale_builder,
             (
-                _a("outputs/matched/scale_free/manifest.json", contains=(PRIMARY_FIT, '"mode": "filtered_subject_level_reuse"'), excludes=(RETIRED_BAND,)),
+                _a("outputs/matched/scale_free/manifest.json", contains=(PRIMARY_FIT, '"mode": "filtered_subject_level_reuse"'), excludes=RETIRED_BANDS),
                 _a("outputs/matched/scale_free/metrics/electrode_aperiodic_metrics.csv"),
             ),
             (Path("src/analyses/scale_free"),),
@@ -580,7 +580,7 @@ def build_registry() -> dict[str, Stage]:
             ("matched.prepare", "matched.scale-free", "full.bycycle"),
             _bycycle_builder("outputs/matched/cohort/configs/bycycle.json", "outputs/matched/bycycle"),
             (
-                _a("outputs/matched/bycycle/manifest.json", excludes=(RETIRED_BAND,)),
+                _a("outputs/matched/bycycle/manifest.json", excludes=RETIRED_BANDS),
                 _a("outputs/matched/bycycle/figures/group_comparisons/group_bout_duration_mean_s.png"),
             ),
             (Path("src/analyses/bycycle"),),
@@ -593,7 +593,7 @@ def build_registry() -> dict[str, Stage]:
             ("matched.prepare", "matched.scale-free", "full.within-bout-ordinal"),
             _python_builder("analyses.bouts.run_bout_analyses", "--config", "outputs/matched/cohort/configs/bouts.json", supports_progress=True),
             (
-                _a("outputs/matched/bouts/manifest.json", contains=(PRIMARY_FIT,), excludes=(RETIRED_BAND,)),
+                _a("outputs/matched/bouts/manifest.json", contains=(PRIMARY_FIT,), excludes=RETIRED_BANDS),
                 _a("outputs/matched/bouts/metrics/subject_electrode_band_metrics.csv"),
             ),
             (Path("src/analyses/bouts"),),
@@ -606,7 +606,7 @@ def build_registry() -> dict[str, Stage]:
             ("matched.psd", "matched.ordinal", "matched.scale-free", "matched.within-bout-ordinal"),
             _python_builder("analyses.eight_electrode.run_eight_electrode_analysis", "--config", "outputs/matched/cohort/configs/eight_electrode.json"),
             (
-                _a("outputs/matched/eight_electrode/manifest.json", excludes=(RETIRED_BAND,)),
+                _a("outputs/matched/eight_electrode/manifest.json", excludes=RETIRED_BANDS),
                 _a("outputs/matched/eight_electrode/REPORT.md"),
             ),
             (Path("src/analyses/eight_electrode"),),
@@ -620,7 +620,7 @@ def build_registry() -> dict[str, Stage]:
             _fit_qc_builder(True),
             (
                 _a("outputs/matched/scale_free/fit_qc_sensitivity_manifest.json"),
-                _a("outputs/matched/scale_free/metrics/subject_band_metrics_fit_qc.csv", excludes=(RETIRED_BAND,)),
+                _a("outputs/matched/scale_free/metrics/subject_band_metrics_fit_qc.csv", excludes=RETIRED_BANDS),
             ),
             (Path("src/analyses/scale_free/fit_qc_sensitivity.py"), Path("src/analyses/behavioral/fit_qc_sensitivity.py")),
         ),
@@ -632,7 +632,7 @@ def build_registry() -> dict[str, Stage]:
             ("matched.scale-free", "matched.fit-qc"),
             _python_builder("analyses.scale_free.generate_typical_bouts", "--config", "outputs/matched/cohort/configs/scale_free.json"),
             (
-                _a("outputs/matched/scale_free/typical_bouts_manifest.json", excludes=(RETIRED_BAND,)),
+                _a("outputs/matched/scale_free/typical_bouts_manifest.json", excludes=RETIRED_BANDS),
                 _a("outputs/matched/scale_free/figures/typical_bouts/index.html"),
             ),
             (Path("src/analyses/scale_free/typical_bouts.py"),),
@@ -646,7 +646,7 @@ def build_registry() -> dict[str, Stage]:
             _python_builder("analyses.exploration.run_exploration", "--config", "outputs/matched/cohort/configs/exploration.json", "--matched-demographics"),
             (
                 _a("outputs/matched/exploration/manifest.json", contains=("outputs/matched/cohort/matched_subjects.csv",)),
-                _a("outputs/matched/exploration/features/subject_modeling_table.csv", excludes=(RETIRED_BAND,)),
+                _a("outputs/matched/exploration/features/subject_modeling_table.csv", excludes=RETIRED_BANDS),
             ),
             (Path("src/analyses/exploration"),),
         ),
@@ -660,7 +660,7 @@ def build_registry() -> dict[str, Stage]:
             (
                 _a("outputs/matched/behavioral/manifest.json"),
                 _a("outputs/matched/behavioral/REPORT.md"),
-                _a("outputs/matched/behavioral/metrics/feature_dictionary.csv", excludes=(RETIRED_BAND,)),
+                _a("outputs/matched/behavioral/metrics/feature_dictionary.csv", excludes=RETIRED_BANDS),
             ),
             (Path("src/analyses/behavioral"),),
         ),

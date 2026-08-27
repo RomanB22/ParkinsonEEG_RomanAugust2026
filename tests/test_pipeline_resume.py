@@ -36,7 +36,16 @@ class PipelineRefactorTests(unittest.TestCase):
         self.assertEqual(science.ordinal_dimensions, (3, 4, 5, 6))
         self.assertEqual(science.ordinal_delay_samples, (1,))
         self.assertEqual(science.scalar_colormap, "viridis")
-        self.assertNotIn("broad_5_15", science.bout_bands)
+        self.assertEqual(
+            science.frequency_bands,
+            {
+                "delta": (1.0, 4.0),
+                "theta": (4.0, 8.0),
+                "alpha": (8.0, 13.0),
+                "beta": (13.0, 30.0),
+                "gamma": (30.0, 50.0),
+            },
+        )
 
     def test_stage_identifiers_are_unique_and_dependencies_exist(self) -> None:
         self.assertEqual(len(self.registry), 33)

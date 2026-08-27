@@ -31,6 +31,11 @@ from core.dataset import ordered_channel_inventory
 from core.group_statistics import compute_group_statistics, fdr_bh as _fdr_bh
 from core.group_statistics_plots import plot_electrode_group_statistics
 from core.feature_store import load_subject_electrode_psd
+from core.frequency_bands import (
+    CANONICAL_BOUT_BAND_NAMES,
+    CANONICAL_FREQUENCY_BANDS,
+    validate_frequency_bands,
+)
 from core.output_cleanup import remove_retired_band_outputs
 
 from .aperiodic_diagnostics import run_aperiodic_diagnostics
@@ -118,13 +123,19 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     if len(exponent_range) != 2 or exponent_range[0] >= exponent_range[1]:
         raise ValueError("aperiodic_fit_qc.exponent_range must increase")
     bands = config["bands"]
-    expected_bands = ["theta", "alpha", "low_beta", "high_beta"]
-    if list(bands) != expected_bands:
-        raise ValueError("bands must be theta, alpha, low_beta, and high_beta in order")
-    for name, limits in bands.items():
-        if len(limits) != 2 or not 0.0 < float(limits[0]) < float(limits[1]):
-            raise ValueError(f"Invalid frequency limits for {name}")
+    validate_frequency_bands(
+        bands,
+        context="Scale-free bout bands",
+        expected_names=CANONICAL_BOUT_BAND_NAMES,
+    )
     ebosc = config["ebosc"]
+    if (
+        float(ebosc["frequency_min_hz"])
+        != CANONICAL_FREQUENCY_BANDS["theta"][0]
+        or float(ebosc["frequency_max_hz"])
+        != CANONICAL_FREQUENCY_BANDS["gamma"][1]
+    ):
+        raise ValueError("eBOSC frequency grid must span the canonical 4–50 Hz bout bands")
     if not 0.0 < float(ebosc["power_percentile"]) < 1.0:
         raise ValueError("ebosc.power_percentile must be between zero and one")
     if float(ebosc["minimum_cycles"]) <= 0.0:

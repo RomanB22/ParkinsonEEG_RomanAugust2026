@@ -21,13 +21,16 @@ class OutputCleanupTests(unittest.TestCase):
             (retired_directory / "plot.png").touch()
             retired_file = output / "metrics_broad_5_15.csv"
             retired_file.touch()
+            retired_beta = output / "figures" / "low_beta"
+            retired_beta.mkdir()
 
             removed = remove_retired_band_outputs(output)
 
             self.assertTrue(canonical.exists())
             self.assertFalse(retired_directory.exists())
             self.assertFalse(retired_file.exists())
-            self.assertEqual(len(removed), 2)
+            self.assertFalse(retired_beta.exists())
+            self.assertEqual(len(removed), 3)
 
 
 if __name__ == "__main__":

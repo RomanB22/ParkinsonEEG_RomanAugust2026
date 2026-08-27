@@ -30,7 +30,7 @@ standalone `ordpy.renyi_entropy` function is not called.
 
 The same complete analysis is performed on the broadband cleaned epochs and on
 five band-pass versions: delta (1–4 Hz), theta (4–8 Hz), alpha (8–13 Hz), beta
-(13–30 Hz), and low gamma (30–50 Hz).
+(13–30 Hz), and gamma (30–50 Hz).
 
 It also calculates one subject-level value for each quantity by taking the
 arithmetic mean of that subject's shared-electrode values. The same electrode
@@ -191,7 +191,7 @@ outputs/full/ordinal/
     │       ├── group_mean_topomaps.png
     │       └── group_mean_zscored_topomaps.png
     └── bands/
-        ├── delta|theta|alpha|beta|low_gamma/
+        ├── delta|theta|alpha|beta|gamma/
         │   ├── violins/*.png
         │   └── planes/*.png
         └── topomaps/

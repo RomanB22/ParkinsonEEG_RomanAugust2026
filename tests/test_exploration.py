@@ -74,7 +74,7 @@ class ExplorationTests(unittest.TestCase):
         )
         self.assertEqual(
             self.config["candidate_features"]["bout_bands"],
-            ["theta", "alpha", "low_beta", "high_beta"],
+            ["theta", "alpha", "beta", "gamma"],
         )
 
     def test_nested_validation_returns_repeated_out_of_fold_predictions(self):

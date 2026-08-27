@@ -15,11 +15,12 @@
     "ordinal_dimensions": [3, 4, 5, 6],
     "ordinal_delay_samples": [1],
     "renyi_alphas": [0.1, 0.5, 0.9, 1.1, 2.0, 5.0, 10.0],
-    "bout_bands": {
+    "frequency_bands": {
+      "delta": [1.0, 4.0],
       "theta": [4.0, 8.0],
       "alpha": [8.0, 13.0],
-      "low_beta": [13.0, 20.0],
-      "high_beta": [20.0, 30.0]
+      "beta": [13.0, 30.0],
+      "gamma": [30.0, 50.0]
     },
     "eight_electrodes": ["F4", "P4", "O2", "P6", "CP2", "CP1", "PO7", "P8"],
     "scalar_colormap": "viridis",

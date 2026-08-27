@@ -47,7 +47,7 @@ electrode's total integrated power from 1–50 Hz:
 | Theta | 4–8 Hz |
 | Alpha | 8–13 Hz |
 | Beta | 13–30 Hz |
-| Low gamma | 30–50 Hz |
+| Gamma | 30–50 Hz |
 
 Endpoints are included. A shared boundary such as 4 Hz is a single point with
 zero width; the adjacent trapezoids cover the intervals on either side without

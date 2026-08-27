@@ -73,8 +73,11 @@ They contain no pipeline logic.
   Fisher, and Rényi quantities.
 - Aperiodic fits: fixed and knee specparam candidates over 4–50 Hz, selected by
   BIC, with formal fit QC.
-- Bouts: aperiodic-relative eBOSC detection in non-overlapping theta, alpha,
-  low-beta, and high-beta bands; bycycle is an optional independent check.
+- Canonical bands: delta 1–4, theta 4–8, alpha 8–13, beta 13–30, and gamma
+  30–50 Hz across the repository.
+- Bouts: aperiodic-relative eBOSC detection uses the canonical theta through
+  gamma subset (4–50 Hz); bycycle is an optional independent check. Delta is
+  excluded because the aperiodic spectra are fitted over 4–50 Hz.
 - Clinical analyses: age/sex-adjusted MOCA and UPDRS associations plus full and
   demographically matched cohort views.
 - Classification: deliberately conservative, explainable feature sets and

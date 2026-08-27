@@ -71,9 +71,7 @@ BAND_LABELS = {
     "theta": "Theta",
     "alpha": "Alpha",
     "beta": "Beta",
-    "low_gamma": "Low gamma",
-    "low_beta": "Low beta",
-    "high_beta": "High beta",
+    "gamma": "Gamma",
 }
 
 

@@ -38,9 +38,9 @@ The defaults produce 52 transparent inferential features:
 |---|---|---:|
 | Aperiodic | All-fit and QC-qualified BIC-selected fixed/knee specparam exponents over 4–50 Hz | 2 |
 | Broadband ordinal | H, C, F from `D=6`, `tau=1` | 3 |
-| Band ordinal | H, C, F in delta, theta, alpha, beta, and low gamma | 15 |
-| Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in four canonical eBOSC bands | 20 |
-| Within-bout ordinal | H, C, F pooled within the four canonical bout bands | 12 |
+| Band ordinal | H, C, F in delta, theta, alpha, beta, and gamma | 15 |
+| Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in theta, alpha, beta, and gamma | 20 |
+| Within-bout ordinal | H, C, F pooled within theta, alpha, beta, and gamma bouts | 12 |
 
 The 52-feature primary table retains regular permutation entropy,
 statistical complexity, and Fisher information. Rényi quantities are added in

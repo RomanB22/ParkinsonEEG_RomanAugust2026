@@ -34,6 +34,11 @@ from core.analysis_logging import configure_analysis_logger
 from core.dataset import ordered_channel_inventory
 from core.group_statistics import compute_group_statistics
 from core.group_statistics_plots import plot_electrode_group_statistics
+from core.frequency_bands import (
+    CANONICAL_BOUT_BAND_NAMES,
+    CANONICAL_FREQUENCY_BANDS,
+    validate_frequency_bands,
+)
 from core.output_cleanup import remove_retired_band_outputs
 
 from .metrics import (
@@ -86,14 +91,13 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("input.scale_free_output_dir is required")
 
     bands = config["bands"]
-    if not isinstance(bands, dict) or not bands:
-        raise ValueError("bands must be a non-empty mapping")
-    for band, limits in bands.items():
-        if not isinstance(limits, list) or len(limits) != 2:
-            raise ValueError(f"bands.{band} must contain [low_hz, high_hz]")
-        low_hz, high_hz = (float(value) for value in limits)
-        if not 0.0 < low_hz < high_hz:
-            raise ValueError(f"Invalid frequency limits for {band}")
+    if not isinstance(bands, dict):
+        raise ValueError("bands must be a mapping")
+    validate_frequency_bands(
+        bands,
+        context="Within-bout bands",
+        expected_names=CANONICAL_BOUT_BAND_NAMES,
+    )
 
     psd_min = float(config["psd"]["fmin_hz"])
     psd_max = float(config["psd"]["fmax_hz"])
@@ -125,6 +129,11 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     frequency_step = float(ebosc["frequency_step_hz"])
     if not 0.0 < frequency_min < frequency_max or frequency_step <= 0.0:
         raise ValueError("Invalid eBOSC frequency grid")
+    if (
+        frequency_min != CANONICAL_FREQUENCY_BANDS["theta"][0]
+        or frequency_max != CANONICAL_FREQUENCY_BANDS["gamma"][1]
+    ):
+        raise ValueError("eBOSC frequency grid must span the canonical 4–50 Hz bout bands")
     if any(
         float(limits[0]) < frequency_min or float(limits[1]) > frequency_max
         for limits in bands.values()

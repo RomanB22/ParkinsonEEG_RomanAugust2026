@@ -24,7 +24,9 @@ For each subject and channel:
   * oscillatory peak frequency
   * peak power
   * peak bandwidth
-* Analyze theta (4–7 Hz), alpha (8–13 Hz), low-beta (13–20 Hz), and high-beta (20–30 Hz).
+* Analyze theta (4–8 Hz), alpha (8–13 Hz), beta (13–30 Hz), and gamma
+  (30–50 Hz). Delta is excluded because the aperiodic background is fitted
+  over 4–50 Hz.
 
 ### 2. Oscillatory bout detection — `eBOSC`
 

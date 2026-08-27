@@ -31,11 +31,13 @@ Important current invariants are:
 - PSD: 1–50 Hz;
 - specparam fixed and knee candidates: 4–50 Hz, selected by BIC;
 - ordinal: D=6 primary, D=3–5 independent sensitivity, tau=1 only;
-- bout bands: theta, alpha, low beta, and high beta;
+- canonical bands: delta 1–4, theta 4–8, alpha 8–13, beta 13–30, and gamma
+  30–50 Hz;
+- bout bands: the canonical theta, alpha, beta, and gamma subset; delta is
+  excluded because bout backgrounds are fitted over 4–50 Hz;
 - no overlapping 5–15 Hz band in inferential feature tables;
 - scalar continuous colormap: `viridis`;
 - prespecified FDR alpha: 0.05.
 
 Preprocessing remains fully specified in `config/preprocessing.yaml`; see
 `docs/preprocessing.md` and `docs/pipeline_parameters.md`.
-
