@@ -5,7 +5,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from eight_electrode_analysis.pipeline import (
+from analyses.eight_electrode.pipeline import (
     ELECTRODES,
     build_analysis_tables,
     load_analysis_config,
@@ -15,7 +15,7 @@ from eight_electrode_analysis.pipeline import (
 class EightElectrodeAnalysisTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.config = load_analysis_config("eight_electrode_analysis/config.json")
+        cls.config = load_analysis_config("config/analyses/eight_electrode.json")
 
     def test_scope_is_exact_and_uses_canonical_bands(self) -> None:
         self.assertEqual(self.config["electrodes"], ELECTRODES)

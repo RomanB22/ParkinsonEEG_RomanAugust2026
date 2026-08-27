@@ -12,19 +12,19 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from tqdm.auto import tqdm
 
-from src.config import (
+from core.config import (
     is_ica_review_confirmed,
     load_config,
     preprocessing_signature,
     write_ica_review_proposal,
 )
-from src.dataset import discover_recordings, subject_id_from_path
-from src.metadata import expected_channels_from_dataset, update_preprocessing_qc
-from src.preprocessing import process_subject
+from core.dataset import discover_recordings, subject_id_from_path
+from core.metadata import expected_channels_from_dataset, update_preprocessing_qc
+from core.preprocessing import process_subject
 
 
 def _subject_output_is_complete(

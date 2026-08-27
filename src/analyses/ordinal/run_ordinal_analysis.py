@@ -1,0 +1,71 @@
+#!/usr/bin/env python
+"""Command-line entry point for the ordinal EEG analysis."""
+
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
+
+from analyses.ordinal.pipeline import run_analysis
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Calculate ordpy Shannon, Fisher, and Rényi ordinal quantities "
+            "from cleaned EEG epochs."
+        )
+    )
+    parser.add_argument(
+        "--config",
+        default="config/analyses/ordinal.json",
+        help="Analysis configuration (default: config/analyses/ordinal.json)",
+    )
+    parser.add_argument(
+        "--subjects",
+        nargs="*",
+        help="Optional BIDS participant IDs; default is every participant",
+    )
+    parser.add_argument(
+        "--output-dir",
+        help="Optional output-directory override for pilots",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace existing ordinal-analysis result files",
+    )
+    parser.add_argument(
+        "--no-progress",
+        action="store_true",
+        help="Disable the subject/analysis-stage progress bar",
+    )
+    parser.add_argument(
+        "--skip-figures",
+        action="store_true",
+        help=(
+            "Calculate and save every metric table but skip ordinal diagnostic figures "
+            "(useful for parameter-sensitivity inputs)"
+        ),
+    )
+    args = parser.parse_args()
+    manifest = run_analysis(
+        args.config,
+        subjects=args.subjects,
+        output_dir_override=args.output_dir,
+        overwrite=args.overwrite,
+        show_progress=not args.no_progress,
+        generate_figures=not args.skip_figures,
+    )
+    print(
+        f"Completed ordinal analysis for {manifest['n_subjects']} subjects; "
+        f"outputs: {manifest['analysis_config']['output_dir']}"
+    )
+
+
+if __name__ == "__main__":
+    main()

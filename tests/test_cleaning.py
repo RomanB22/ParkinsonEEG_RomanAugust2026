@@ -4,10 +4,10 @@ import logging
 import mne
 import numpy as np
 
-from src.artifacts import annotate_large_artifacts, create_and_reject_epochs
-from src.channels import detect_bad_channels
-from src.config import load_config
-from src.preprocessing import filter_eeg, rereference, resample_eeg
+from core.artifacts import annotate_large_artifacts, create_and_reject_epochs
+from core.channels import detect_bad_channels
+from core.config import load_config
+from core.preprocessing import filter_eeg, rereference, resample_eeg
 
 
 def synthetic_raw(data_uv, sfreq=100.0):

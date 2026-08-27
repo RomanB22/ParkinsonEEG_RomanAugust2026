@@ -1,5 +1,0 @@
-specparam==2.0.0rc7
-bycycle==1.2.0
-ebosc==0.10.dev0
-neurodsp==2.3.0
-statsmodels==0.14.6

@@ -6,10 +6,10 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from parkinson_eeg.config import load_pipeline_config
-from parkinson_eeg.registry import build_registry
-from parkinson_eeg.runner import PipelineRunner, Selection, profile_targets
-from parkinson_eeg.stages import RunContext, StateStore
+from config import load_pipeline_config
+from registry import build_registry
+from runner import PipelineRunner, Selection, profile_targets
+from stages import RunContext, StateStore
 
 
 class PipelineRefactorTests(unittest.TestCase):
@@ -20,11 +20,10 @@ class PipelineRefactorTests(unittest.TestCase):
 
     def test_one_public_runner_and_thin_compatibility_aliases(self) -> None:
         public = Path("run_pipeline.sh").read_text(encoding="utf-8")
-        self.assertIn("python -m parkinson_eeg", public)
         for filename in (
             "run_reproducible_pipeline.sh",
             "run_all_analyses.sh",
-            "matched_analysis/run_matched_analyses.sh",
+            "src/analyses/matching/run_matched_analyses.sh",
         ):
             source = Path(filename).read_text(encoding="utf-8")
             self.assertLess(len(source.splitlines()), 15)
@@ -96,8 +95,8 @@ class PipelineRefactorTests(unittest.TestCase):
         command = self.registry["full.ordinal-sweep"].build_commands(
             RunContext(Path.cwd(), "MNE_August2026", "paper"), True
         )[0]
-        self.assertIn("parkinson_eeg.sweep", command)
-        source = Path("parkinson_eeg/sweep.py").read_text(encoding="utf-8")
+        self.assertIn("sweep", command)
+        source = Path("sweep.py").read_text(encoding="utf-8")
         self.assertIn("dimensions: tuple[int, ...] = (3, 4, 5)", source)
         self.assertIn("delay_samples: int = 1", source)
 

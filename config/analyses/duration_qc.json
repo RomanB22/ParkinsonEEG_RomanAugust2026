@@ -1,0 +1,41 @@
+{
+  "minimum_accepted_duration_seconds": 60.0,
+  "preprocessing_epoch_duration_seconds": 4.0,
+  "input": {
+    "preprocessing_qc_file": "processed/metadata/preprocessing_qc.csv",
+    "exploration_config_file": "config/analyses/exploration.json",
+    "quantitative_config_file": "config/analyses/behavioral.json",
+    "matched_pair_file": "outputs/matched/cohort/demographic_match_pairs.csv",
+    "full": {
+      "modeling_table": "outputs/full/exploration/features/subject_modeling_table.csv",
+      "model_performance": "outputs/full/exploration/metrics/model_performance.csv",
+      "behavioral_features": "outputs/full/behavioral/metrics/subject_features_long.csv",
+      "behavioral_dictionary": "outputs/full/behavioral/metrics/feature_dictionary.csv",
+      "behavioral_correlations": "outputs/full/behavioral/metrics/subject_level_correlations.csv"
+    },
+    "matched": {
+      "modeling_table": "outputs/matched/exploration/features/subject_modeling_table.csv",
+      "model_performance": "outputs/matched/exploration/metrics/model_performance.csv",
+      "behavioral_features": "outputs/matched/behavioral/metrics/subject_features_long.csv",
+      "behavioral_dictionary": "outputs/matched/behavioral/metrics/feature_dictionary.csv",
+      "behavioral_correlations": "outputs/matched/behavioral/metrics/subject_level_correlations.csv"
+    }
+  },
+  "output_dirs": {
+    "full": "outputs/full/duration_qc",
+    "matched": "outputs/matched/duration_qc"
+  },
+  "statistics": {
+    "confidence_level": 0.95,
+    "fdr_alpha": 0.05,
+    "group_fdr_scope": "within_feature_family",
+    "behavioral_fdr_scope": "reuse_quantitative_behavioral_within_family_and_method"
+  },
+  "plots": {
+    "dpi": 150,
+    "group_colors": {
+      "PD": "#D55E00",
+      "Control": "#0072B2"
+    }
+  }
+}

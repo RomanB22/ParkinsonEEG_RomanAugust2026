@@ -1,3 +1,0 @@
--r ../ordinal_analysis/requirements.txt
--r ../scale_free_analysis/requirements.txt
-

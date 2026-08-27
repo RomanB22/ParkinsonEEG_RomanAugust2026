@@ -1,7 +1,7 @@
 import unittest
 
-from src.dataset import discover_recordings, load_participants, ordered_channel_inventory
-from src.metadata import expected_channels_from_dataset
+from core.dataset import discover_recordings, load_participants, ordered_channel_inventory
+from core.metadata import expected_channels_from_dataset
 
 
 class DatasetTests(unittest.TestCase):

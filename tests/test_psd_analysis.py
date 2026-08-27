@@ -6,15 +6,15 @@ from pathlib import Path
 import pandas as pd
 from scipy.signal import welch
 
-from psd_analysis.metrics import (
+from analyses.psd.metrics import (
     bootstrap_median_ci,
     compute_subject_electrode_psd,
     integrate_bands,
     relative_band_powers,
     summarize_subject_band_power,
 )
-from src.feature_store import load_subject_electrode_psd
-from psd_analysis.pipeline import load_psd_config
+from core.feature_store import load_subject_electrode_psd
+from analyses.psd.pipeline import load_psd_config
 
 
 class PsdAnalysisTests(unittest.TestCase):
@@ -140,7 +140,7 @@ class PsdAnalysisTests(unittest.TestCase):
         self.assertAlmostEqual(pd_value, 20.0)
 
     def test_default_config_has_expected_bands_and_bootstrap(self):
-        config = load_psd_config("psd_analysis/config.json")
+        config = load_psd_config("config/analyses/psd.json")
         self.assertEqual(
             list(config["bands"]),
             ["delta", "theta", "alpha", "beta", "low_gamma"],

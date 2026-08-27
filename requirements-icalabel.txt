@@ -1,4 +1,0 @@
-# ICA classification used by the complex preprocessing pipeline.
-# MNE itself is pinned by the project-level requirements for MNE_August2026.
-mne-icalabel==0.9.0
-onnxruntime==1.29.0

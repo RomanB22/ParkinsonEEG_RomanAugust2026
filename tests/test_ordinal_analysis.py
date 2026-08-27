@@ -9,7 +9,7 @@ import numpy as np
 import ordpy
 import pandas as pd
 
-from ordinal_analysis.metrics import (
+from analyses.ordinal.metrics import (
     METRICS,
     RENYI_ALPHA_METRICS,
     analyze_epoch_data,
@@ -19,11 +19,11 @@ from ordinal_analysis.metrics import (
     ordinal_probabilities,
     subject_electrode_means,
 )
-from ordinal_analysis.pipeline import (
+from analyses.ordinal.pipeline import (
     _load_reusable_subject_metrics,
     load_analysis_config,
 )
-from ordinal_analysis.plots import electrode_metric_zscores
+from analyses.ordinal.plots import electrode_metric_zscores
 
 
 class OrdinalMetricTests(unittest.TestCase):
@@ -207,7 +207,7 @@ class OrdinalMetricTests(unittest.TestCase):
         self.assertAlmostEqual(means.loc[1, "entropy"], 0.7)
 
     def test_config_preserves_all_signal_decimals(self):
-        config = load_analysis_config("ordinal_analysis/config.json")
+        config = load_analysis_config("config/analyses/ordinal.json")
         self.assertEqual(config["ordinal"]["delay_samples"], 1)
         self.assertIsNone(config["ordinal"]["tie_precision"])
         self.assertEqual(
@@ -217,11 +217,11 @@ class OrdinalMetricTests(unittest.TestCase):
         self.assertEqual(config["statistics"]["exclude_bands"], [])
         self.assertEqual(config["band_filter"]["order"], 4)
         self.assertFalse(config["plots"]["subject_topomaps"])
-        with open("ordinal_analysis/config.json", encoding="utf-8") as stream:
+        with open("config/analyses/ordinal.json", encoding="utf-8") as stream:
             self.assertIsNone(json.load(stream)["ordinal"]["tie_precision"])
 
     def test_config_rejects_nonunit_delay(self):
-        with open("ordinal_analysis/config.json", encoding="utf-8") as stream:
+        with open("config/analyses/ordinal.json", encoding="utf-8") as stream:
             config = json.load(stream)
         config["ordinal"]["delay_samples"] = 5
         with tempfile.TemporaryDirectory() as directory:
@@ -231,7 +231,7 @@ class OrdinalMetricTests(unittest.TestCase):
                 load_analysis_config(path)
 
     def test_reusable_metrics_are_filtered_and_require_complete_grids(self):
-        config = load_analysis_config("ordinal_analysis/config.json")
+        config = load_analysis_config("config/analyses/ordinal.json")
         subjects = ["sub-001", "sub-002"]
         electrodes = ["Fz", "Cz"]
         with tempfile.TemporaryDirectory() as directory:

@@ -6,39 +6,39 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from exploration.features import (
+from analyses.exploration.features import (
     FORBIDDEN_MODEL_COLUMNS,
     build_feature_table,
     discover_completed_sweeps,
     summarize_typical_bout_shapes,
     validate_model_features,
 )
-from exploration.modeling import (
+from analyses.exploration.modeling import (
     average_repeated_predictions,
     bootstrap_performance,
     run_nested_validation,
 )
-from exploration.matching import (
+from analyses.exploration.matching import (
     apply_precomputed_control_pd_pairs,
     match_control_pd_pairs,
     remove_demographic_predictors,
 )
-from exploration.pipeline import load_exploration_config
-from matched_analysis.prepare_matched_cohort import prepare_matched_cohort
+from analyses.exploration.pipeline import load_exploration_config
+from analyses.matching.prepare_matched_cohort import prepare_matched_cohort
 
 
 HAS_GENERATED_FEATURES = Path("processed/metadata/subjects.csv").is_file() and Path(
-    "ordinal_analysis/processed/metrics/subject_electrode_mean_metrics.csv"
+    "outputs/full/ordinal/metrics/subject_electrode_mean_metrics.csv"
 ).is_file()
 HAS_TYPICAL_BOUTS = Path(
-    "scale_free_analysis/processed/intermediate/typical_bouts/subject_electrode_band_envelopes.npz"
+    "outputs/full/scale_free/intermediate/typical_bouts/subject_electrode_band_envelopes.npz"
 ).is_file()
 
 
 class ExplorationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.config = load_exploration_config("exploration/config.json")
+        cls.config = load_exploration_config("config/analyses/exploration.json")
 
     @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_real_feature_table_is_one_row_per_subject_and_leakage_free(self):
@@ -217,24 +217,24 @@ class ExplorationTests(unittest.TestCase):
                         config["demographic_matching"]["precomputed_pairs_file"],
                         str(Path(directory) / "demographic_match_pairs.csv"),
                     )
-                if Path(config_path).name == "bycycle_burst.json":
+                if Path(config_path).name == "bycycle.json":
                     self.assertEqual(
                         config["input"]["reference_ebosc_output_dir"],
-                        "scale_free_analysis/processed_matched",
+                        "outputs/matched/scale_free",
                     )
                 if Path(config_path).name == "ordinal.json":
                     self.assertEqual(
                         config["input"]["feature_source_output_dir"],
-                        "ordinal_analysis/processed",
+                        "outputs/full/ordinal",
                     )
                     self.assertEqual(
                         config["input"]["feature_source_sweep_root"],
-                        "ordinal_analysis/parameter_sweep",
+                        "outputs/full/ordinal_sweep",
                     )
                 if Path(config_path).name == "scale_free.json":
                     self.assertEqual(
                         config["input"]["feature_source_output_dir"],
-                        "scale_free_analysis/processed",
+                        "outputs/full/scale_free",
                     )
 
     @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")

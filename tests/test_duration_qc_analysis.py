@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 import pandas as pd
 
-from duration_qc_analysis.pipeline import (
+from analyses.duration_qc.pipeline import (
     compare_group_features,
     load_duration_config,
     select_duration_cohort,
@@ -39,7 +39,7 @@ class DurationQCSensitivityTests(unittest.TestCase):
         )
 
     def test_config_prespecifies_four_second_epochs_and_sixty_seconds(self):
-        config = load_duration_config("duration_qc_analysis/config.json")
+        config = load_duration_config("config/analyses/duration_qc.json")
         self.assertEqual(config["preprocessing_epoch_duration_seconds"], 4.0)
         self.assertEqual(config["minimum_accepted_duration_seconds"], 60.0)
 

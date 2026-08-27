@@ -4,7 +4,7 @@ import json
 import tempfile
 import unittest
 
-from src.config import (
+from core.config import (
     is_ica_review_confirmed,
     load_config,
     subject_manual_ica,

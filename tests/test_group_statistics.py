@@ -9,7 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.group_statistics import compute_group_statistics, fdr_bh
+from core.group_statistics import compute_group_statistics, fdr_bh
 
 
 class GroupStatisticsTests(unittest.TestCase):
@@ -96,10 +96,10 @@ class GroupStatisticsTests(unittest.TestCase):
 
     def test_all_group_domains_use_every_configured_band(self) -> None:
         for relative_path in (
-            "psd_analysis/config.json",
-            "ordinal_analysis/config.json",
-            "scale_free_analysis/config.json",
-            "bout_analyses/config.json",
+            "config/analyses/psd.json",
+            "config/analyses/ordinal.json",
+            "config/analyses/scale_free.json",
+            "config/analyses/bouts.json",
         ):
             config = json.loads(Path(relative_path).read_text(encoding="utf-8"))
             with self.subTest(config=relative_path):

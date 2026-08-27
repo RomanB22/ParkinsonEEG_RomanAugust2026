@@ -1,0 +1,49 @@
+{
+  "input": {
+    "epochs_dir": "processed/epochs",
+    "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif",
+    "participants_file": "processed/metadata/subjects.csv",
+    "reference_ebosc_output_dir": "outputs/full/scale_free"
+  },
+  "output_dir": "outputs/full/bycycle",
+  "bands": {
+    "theta": [4.0, 7.0],
+    "alpha": [8.0, 13.0],
+    "low_beta": [13.0, 20.0],
+    "high_beta": [20.0, 30.0]
+  },
+  "detector": {
+    "method": "bycycle_cycle_consistency",
+    "center_extrema": "peak",
+    "amplitude_fraction_threshold": 0.3,
+    "amplitude_consistency_threshold": 0.5,
+    "period_consistency_threshold": 0.5,
+    "monotonicity_threshold": 0.8,
+    "minimum_consecutive_cycles": 3,
+    "edge_padding_seconds": 0.5,
+    "workers": 4
+  },
+  "statistics": {
+    "inferential_metrics": [
+      "oscillatory_occupancy",
+      "bouts_per_minute",
+      "bout_duration_mean_s",
+      "bout_cycles_mean"
+    ],
+    "exclude_bands": [],
+    "subject_aggregation": "mean",
+    "confidence_level": 0.95,
+    "fdr_alpha": 0.05
+  },
+  "plots": {
+    "dpi": 150,
+    "group_order": ["PD", "Control"],
+    "group_colors": {"PD": "#D55E00", "Control": "#0072B2"},
+    "band_display_names": {
+      "theta": "Theta",
+      "alpha": "Alpha",
+      "low_beta": "Low beta",
+      "high_beta": "High beta"
+    }
+  }
+}

@@ -6,8 +6,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from src.ica import _add_iclabel_scores, proposed_ica_exclusions
-from src.config import load_config, preprocessing_signature
+from core.ica import _add_iclabel_scores, proposed_ica_exclusions
+from core.config import load_config, preprocessing_signature
 from scripts.run_preprocessing import (
     _record_parallel_ica_proposal,
     _subject_output_is_complete,

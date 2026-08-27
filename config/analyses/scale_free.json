@@ -1,0 +1,87 @@
+{
+  "input": {
+    "epochs_dir": "processed/epochs",
+    "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif",
+    "participants_file": "processed/metadata/subjects.csv",
+    "psd_feature_file": "outputs/full/psd/metrics/subject_electrode_psd.npz"
+  },
+  "output_dir": "outputs/full/scale_free",
+  "bands": {
+    "theta": [4.0, 7.0],
+    "alpha": [8.0, 13.0],
+    "low_beta": [13.0, 20.0],
+    "high_beta": [20.0, 30.0]
+  },
+  "psd": {
+    "fmin_hz": 1.0,
+    "fmax_hz": 50.0,
+    "window": "hann",
+    "epoch_combination": "concatenate_in_temporal_order",
+    "welch_aggregation": "mean"
+  },
+  "specparam": {
+    "aperiodic_mode": "best_bic",
+    "aperiodic_modes": ["fixed", "knee"],
+    "model_selection_criterion": "bic",
+    "frequency_range_hz": [4.0, 50.0],
+    "knee_frequency_outlier_z_threshold": 2.0,
+    "peak_width_limits_hz": [1.0, 12.0],
+    "max_n_peaks": 8,
+    "min_peak_height": 0.0,
+    "peak_threshold": 2.0
+  },
+  "aperiodic_fit_qc": {
+    "minimum_r_squared": 0.9,
+    "maximum_error_mae_log10": 0.15,
+    "maximum_absolute_residual_log10": 0.75,
+    "exponent_range": [0.0, 3.0],
+    "minimum_subject_qc_fraction": 0.8,
+    "policy": "Flag every fit; retain all fits for visualization and primary provenance; report QC-qualified summaries separately"
+  },
+  "ebosc": {
+    "frequency_min_hz": 4.0,
+    "frequency_max_hz": 30.0,
+    "frequency_step_hz": 1.0,
+    "wavenumber": 6.0,
+    "power_percentile": 0.95,
+    "minimum_cycles": 3.0,
+    "edge_padding_seconds": 0.75
+  },
+  "bycycle": {
+    "minimum_bout_overlap_fraction": 0.5
+  },
+  "cache": {
+    "save_raw_cycle_tables": false,
+    "policy": "Save reusable spectra, eBOSC episodes, and thresholds; retain cycle summaries without duplicating raw cycle rows"
+  },
+  "typical_bouts": {
+    "center_window_seconds": 0.5,
+    "bandpass_filter_order": 4,
+    "confidence_level": 0.95,
+    "workers": 4,
+    "normalization": "subject_electrode_band_median_hilbert_amplitude",
+    "aggregation": "mean_bouts_within_subject_then_equal_weight_subject_mean",
+    "phase_reference": "rotate_each_bout_to_zero_hilbert_phase_at_temporal_center",
+    "representations": ["amplitude_envelope", "relative_phase_and_resultant_length", "phase_aligned_shape"]
+  },
+  "statistics": {
+    "fdr_alpha": 0.05,
+    "confidence_level": 0.95,
+    "subject_aggregation": "mean",
+    "exclude_bands": []
+  },
+  "plots": {
+    "dpi": 150,
+    "specparam_gallery_enabled": true,
+    "specparam_gallery_dpi": 100,
+    "specparam_gallery_workers": 4,
+    "group_order": ["PD", "Control"],
+    "group_colors": {"PD": "#D55E00", "Control": "#0072B2"},
+    "band_display_names": {
+      "theta": "Theta",
+      "alpha": "Alpha",
+      "low_beta": "Low beta",
+      "high_beta": "High beta"
+    }
+  }
+}

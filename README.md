@@ -61,7 +61,7 @@ bash run_pipeline.sh validate-config
 ```
 
 `run_reproducible_pipeline.sh`, `run_all_analyses.sh`, and
-`matched_analysis/run_matched_analyses.sh` remain as thin compatibility aliases.
+the legacy matched runner remain as thin compatibility aliases.
 They contain no pipeline logic.
 
 ## Scientific scope
@@ -85,16 +85,16 @@ tables.
 
 ## Documentation
 
-- [Commands](COMMAND.md)
+- [Commands](docs/commands.md)
 - [Architecture](docs/architecture.md)
 - [Pipeline and profiles](docs/pipeline.md)
 - [Configuration](docs/configuration.md)
 - [Output map](docs/outputs.md)
 - [Development](docs/development.md)
-- [Preprocessing method](PREPROCESSING_PIPELINE.md)
-- [Detailed preprocessing parameters](PIPELINE_USAGE_AND_PARAMETERS.md)
-- [Group statistics](GROUP_STATISTICS.md)
-- Domain methods: each analysis folder contains its own `README.md`.
+- [Preprocessing method](docs/preprocessing.md)
+- [Detailed preprocessing parameters](docs/pipeline_parameters.md)
+- [Group statistics](docs/group_statistics.md)
+- [Analysis methods](docs/analyses/README.md)
 
-Original files under `dataset/` are read-only inputs. Generated data and
-figures are ignored by Git.
+Original files under `dataset/` are read-only inputs. Generated full-cohort and
+matched results live under `outputs/` and are ignored by Git.

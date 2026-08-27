@@ -8,12 +8,12 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from src.config import load_config
-from src.dataset import recording_for_subject
-from src.metadata import expected_channels_from_dataset, update_preprocessing_qc
-from src.preprocessing import process_subject
+from core.config import load_config
+from core.dataset import recording_for_subject
+from core.metadata import expected_channels_from_dataset, update_preprocessing_qc
+from core.preprocessing import process_subject
 
 
 def main() -> None:

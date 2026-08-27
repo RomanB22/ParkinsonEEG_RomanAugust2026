@@ -6,7 +6,7 @@ import unittest
 
 import pandas as pd
 
-from src.cognitive_status import classify_moca
+from core.cognitive_status import classify_moca
 
 
 class CognitiveStatusTests(unittest.TestCase):

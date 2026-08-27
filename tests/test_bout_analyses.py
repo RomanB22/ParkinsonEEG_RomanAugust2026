@@ -5,18 +5,18 @@ import numpy as np
 import ordpy
 import pandas as pd
 
-from bout_analyses.metrics import (
+from analyses.bouts.metrics import (
     METRICS,
     analyze_bout_segments,
     ordinal_counts,
     shannon_metrics_from_counts,
 )
-from bout_analyses.pipeline import load_analysis_config
+from analyses.bouts.pipeline import load_analysis_config
 
 
 class BoutAnalysesTests(unittest.TestCase):
     def test_config_uses_regular_metrics_and_selected_aperiodic_fit(self):
-        config = load_analysis_config("bout_analyses/config.json")
+        config = load_analysis_config("config/analyses/bouts.json")
         self.assertEqual(config["psd"], {"fmin_hz": 1.0, "fmax_hz": 50.0})
         self.assertEqual(config["specparam"]["frequency_range_hz"], [4.0, 50.0])
         self.assertEqual(config["specparam"]["aperiodic_modes"], ["fixed", "knee"])
@@ -31,7 +31,7 @@ class BoutAnalysesTests(unittest.TestCase):
         self.assertEqual(config["statistics"]["exclude_bands"], [])
         self.assertEqual(
             config["input"]["scale_free_output_dir"],
-            "scale_free_analysis/processed",
+            "outputs/full/scale_free",
         )
         self.assertTrue(config["cache"]["reuse_scale_free_detection"])
 

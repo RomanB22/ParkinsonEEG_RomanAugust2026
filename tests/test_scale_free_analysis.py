@@ -8,12 +8,12 @@ import pandas as pd
 from ebosc.BOSC import BOSC_tf
 from specparam.sim import sim_power_spectrum
 
-from scale_free_analysis.aperiodic_diagnostics import (
+from analyses.scale_free.aperiodic_diagnostics import (
     assess_specparam_fit,
     summarize_primary_fit_qc,
 )
-from scale_free_analysis.fit_qc_sensitivity import _fit_coverage
-from scale_free_analysis.metrics import (
+from analyses.scale_free.fit_qc_sensitivity import _fit_coverage
+from analyses.scale_free.metrics import (
     cycles_within_bouts,
     detect_frequency_episodes,
     ebosc_wavelet_power,
@@ -25,12 +25,12 @@ from scale_free_analysis.metrics import (
     summarize_bouts,
     summarize_cycles,
 )
-from scale_free_analysis.pipeline import (
+from analyses.scale_free.pipeline import (
     _load_reusable_subject_features,
     load_analysis_config,
 )
-from scale_free_analysis.specparam_gallery import generate_specparam_gallery
-from scale_free_analysis.typical_bouts import (
+from analyses.scale_free.specparam_gallery import generate_specparam_gallery
+from analyses.scale_free.typical_bouts import (
     _representation_figure,
     mean_centered_analytic,
     mean_centered_envelope,
@@ -40,11 +40,11 @@ from scale_free_analysis.typical_bouts import (
 class ScaleFreeAnalysisTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        with open("scale_free_analysis/config.json", encoding="utf-8") as stream:
+        with open("config/analyses/scale_free.json", encoding="utf-8") as stream:
             cls.config = json.load(stream)
 
     def test_config_has_requested_frequency_bands(self):
-        config = load_analysis_config("scale_free_analysis/config.json")
+        config = load_analysis_config("config/analyses/scale_free.json")
         self.assertEqual(
             config["bands"],
             {
@@ -65,7 +65,7 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
             plt.close(figure)
 
     def test_config_fits_fixed_and_knee_models_over_four_to_fifty_hz(self):
-        config = load_analysis_config("scale_free_analysis/config.json")
+        config = load_analysis_config("config/analyses/scale_free.json")
         self.assertEqual(config["psd"]["fmin_hz"], 1.0)
         self.assertEqual(config["psd"]["fmax_hz"], 50.0)
         self.assertEqual(config["specparam"]["frequency_range_hz"], [4.0, 50.0])
@@ -77,7 +77,7 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
         self.assertFalse(config["cache"]["save_raw_cycle_tables"])
 
     def test_matched_cache_filters_complete_subject_features_and_links_inputs(self):
-        config = load_analysis_config("scale_free_analysis/config.json")
+        config = load_analysis_config("config/analyses/scale_free.json")
         subjects = ["sub-001", "sub-002"]
         electrodes = ["Fz", "Cz"]
         with tempfile.TemporaryDirectory() as directory:

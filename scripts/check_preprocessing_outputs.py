@@ -8,11 +8,11 @@ import sys
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from scripts.run_preprocessing import _subject_output_is_complete
-from src.config import load_config
-from src.dataset import discover_recordings, subject_id_from_path
+from core.config import load_config
+from core.dataset import discover_recordings, subject_id_from_path
 
 
 def main() -> None:

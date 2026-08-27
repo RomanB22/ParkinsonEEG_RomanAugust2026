@@ -4,14 +4,14 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from quantitative_behavioral.features import (
+from analyses.behavioral.features import (
     build_dimension_sensitivity_features,
     build_subject_features,
     load_cohort,
 )
-from quantitative_behavioral.fit_qc_sensitivity import _configured_bout_bands
-from quantitative_behavioral.pipeline import load_analysis_config
-from quantitative_behavioral.statistics import (
+from analyses.behavioral.fit_qc_sensitivity import _configured_bout_bands
+from analyses.behavioral.pipeline import load_analysis_config
+from analyses.behavioral.statistics import (
     compare_aperiodic_exponent_groups,
     correlate_subject_features,
     fdr_bh,
@@ -21,13 +21,13 @@ from quantitative_behavioral.statistics import (
 
 
 HAS_GENERATED_FEATURES = Path("processed/metadata/subjects.csv").is_file() and Path(
-    "ordinal_analysis/processed/metrics/subject_electrode_mean_metrics.csv"
+    "outputs/full/ordinal/metrics/subject_electrode_mean_metrics.csv"
 ).is_file()
 
 
 class QuantitativeBehavioralTests(unittest.TestCase):
     def test_config_prespecifies_pd_moca_and_regular_ordinal_metrics(self):
-        config = load_analysis_config("quantitative_behavioral/config.json")
+        config = load_analysis_config("config/analyses/behavioral.json")
         self.assertEqual(config["analysis"]["primary_group"], "PD")
         self.assertEqual(config["analysis"]["outcome_column"], "MOCA")
         self.assertEqual(
@@ -79,7 +79,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
 
     @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_cognitive_status_uses_the_prespecified_moca_boundary(self):
-        config = load_analysis_config("quantitative_behavioral/config.json")
+        config = load_analysis_config("config/analyses/behavioral.json")
         cohort = load_cohort(config)
         self.assertTrue(
             cohort.loc[cohort["moca"].lt(26), "cognitive_status"]
@@ -151,7 +151,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
                 "analysis_level": ["subject_mean_across_shared_electrodes"],
             }
         )
-        config = load_analysis_config("quantitative_behavioral/config.json")
+        config = load_analysis_config("config/analyses/behavioral.json")
         config["analysis"]["bootstrap_resamples"] = 100
         result = correlate_subject_features(table, dictionary, config)
         self.assertEqual(len(result), 2)
@@ -197,7 +197,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
 
     @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_real_feature_table_is_subject_balanced_and_excludes_renyi(self):
-        config = load_analysis_config("quantitative_behavioral/config.json")
+        config = load_analysis_config("config/analyses/behavioral.json")
         cohort, features, dictionary = build_subject_features(config)
         self.assertEqual(len(cohort), 149)
         self.assertEqual(int(cohort["group"].eq("PD").sum()), 100)
@@ -223,7 +223,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
 
     @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_dimension_blocks_have_102_balanced_regular_and_renyi_features(self):
-        config = load_analysis_config("quantitative_behavioral/config.json")
+        config = load_analysis_config("config/analyses/behavioral.json")
         cohort, _, _ = build_subject_features(config)
         features, dictionary, electrode_features, electrode_order = (
             build_dimension_sensitivity_features(config, cohort)

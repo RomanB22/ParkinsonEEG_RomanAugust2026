@@ -1,0 +1,490 @@
+"""End-to-end subject-balanced PSD analysis of cleaned EEG epochs."""
+
+from __future__ import annotations
+
+import json
+import logging
+import platform
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from core.runtime import configure_runtime
+from core.analysis_io import discover_epoch_files as _epoch_files
+from core.analysis_io import load_participants as _participants
+from core.analysis_logging import configure_analysis_logger
+from core.dataset import ordered_channel_inventory
+from core.group_statistics import compute_group_statistics
+from core.group_statistics_plots import plot_electrode_group_statistics
+from core.output_cleanup import remove_retired_band_outputs
+
+configure_runtime()
+
+import matplotlib
+import mne
+import numpy as np
+import pandas as pd
+import scipy
+
+from .metrics import (
+    bootstrap_median_ci,
+    compute_subject_electrode_psd,
+    integrate_bands,
+    relative_band_powers,
+    summarize_subject_band_power,
+    to_db,
+)
+from .plots import (
+    plot_group_band_topomaps,
+    plot_group_median_psd,
+    plot_group_relative_band_power_violins,
+)
+
+
+def load_psd_config(path: str | Path) -> dict[str, Any]:
+    with Path(path).open(encoding="utf-8") as stream:
+        config = json.load(stream)
+    required = {
+        "input", "output_dir", "psd", "bands", "bootstrap", "statistics", "plots"
+    }
+    missing = sorted(required - set(config))
+    if missing:
+        raise ValueError(f"Missing PSD-analysis config sections: {missing}")
+    psd = config["psd"]
+    fixed_choices = {
+        "method": "welch",
+        "window": "hann",
+        "epoch_combination": "concatenate_in_temporal_order",
+        "welch_aggregation": "mean",
+    }
+    for name, expected in fixed_choices.items():
+        if str(psd.get(name, "")).lower() != expected:
+            raise ValueError(f"psd.{name} must be {expected!r}")
+    fmin, fmax = float(psd["fmin_hz"]), float(psd["fmax_hz"])
+    if not 0 <= fmin < fmax:
+        raise ValueError("psd requires 0 <= fmin_hz < fmax_hz")
+    expected_bands = ["delta", "theta", "alpha", "beta", "low_gamma"]
+    if list(config["bands"]) != expected_bands:
+        raise ValueError(f"bands must be ordered as {expected_bands}")
+    if int(config["bootstrap"]["n_resamples"]) < 100:
+        raise ValueError("bootstrap.n_resamples must be at least 100")
+    for name, limits in config["bands"].items():
+        low, high = (float(value) for value in limits)
+        if not fmin <= low < high <= fmax:
+            raise ValueError(f"Band {name} must be contained in the PSD interval")
+    statistics = config["statistics"]
+    if not 0.0 < float(statistics["fdr_alpha"]) < 1.0:
+        raise ValueError("statistics.fdr_alpha must be between zero and one")
+    if not 0.0 < float(statistics["confidence_level"]) < 1.0:
+        raise ValueError("statistics.confidence_level must be between zero and one")
+    if statistics.get("subject_aggregation") != "median":
+        raise ValueError("PSD statistics.subject_aggregation must be median")
+    unknown_exclusions = sorted(
+        set(statistics.get("exclude_bands", [])) - set(config["bands"])
+    )
+    if unknown_exclusions:
+        raise ValueError(f"Unknown statistics.exclude_bands: {unknown_exclusions}")
+    return config
+
+
+def _configure_logger(output_dir: Path, overwrite: bool) -> logging.Logger:
+    return configure_analysis_logger(
+        "psd_analysis",
+        output_dir,
+        filename="psd_analysis.log",
+        overwrite=overwrite,
+        file_level=logging.INFO,
+    )
+
+
+def _write_csv(table: pd.DataFrame, path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    table.to_csv(path, index=False, float_format="%.17g")
+
+
+def run_analysis(
+    config_path: str | Path,
+    *,
+    subjects: list[str] | None = None,
+    overwrite: bool = False,
+) -> dict[str, Any]:
+    config_path = Path(config_path)
+    config = load_psd_config(config_path)
+    output_dir = Path(config["output_dir"])
+    result_path = output_dir / "metrics" / "group_median_psd.csv"
+    if result_path.exists() and not overwrite:
+        raise FileExistsError(f"PSD outputs exist at {result_path}; rerun with --overwrite")
+    if overwrite:
+        remove_retired_band_outputs(output_dir)
+    logger = _configure_logger(output_dir, overwrite)
+
+    participant_table = _participants(Path(config["input"]["participants_file"]))
+    files = _epoch_files(
+        Path(config["input"]["epochs_dir"]), str(config["input"]["epoch_glob"])
+    )
+    expected_subjects = participant_table["participant_id"].astype(str).tolist()
+    if subjects:
+        requested = list(dict.fromkeys(subjects))
+        unknown = sorted(set(requested) - set(expected_subjects))
+        if unknown:
+            raise ValueError(f"Unknown participant IDs: {unknown}")
+        expected_subjects = requested
+    missing = sorted(set(expected_subjects) - set(files))
+    if missing:
+        raise FileNotFoundError(f"Missing cleaned epoch files for: {missing}")
+
+    available_channels: dict[str, list[str]] = {}
+    for subject_id in expected_subjects:
+        epochs = mne.read_epochs(files[subject_id], preload=False, verbose="ERROR")
+        eeg_picks = mne.pick_types(epochs.info, eeg=True, exclude=[])
+        available_channels[subject_id] = [
+            epochs.ch_names[pick] for pick in eeg_picks
+        ]
+    common_channels, electrode_union = ordered_channel_inventory(available_channels)
+
+    group_lookup = participant_table.set_index("participant_id")["GROUP"].astype(str).to_dict()
+    fmin = float(config["psd"]["fmin_hz"])
+    fmax = float(config["psd"]["fmax_hz"])
+    logger.info(
+        "Starting PSD analysis | subjects=%d | %.2f-%.2f Hz | shared_electrodes=%d",
+        len(expected_subjects),
+        fmin,
+        fmax,
+        len(common_channels),
+    )
+
+    subject_psds: dict[str, np.ndarray] = {}
+    subject_infos: dict[str, mne.Info] = {}
+    input_rows = []
+    frequencies = None
+    for index, subject_id in enumerate(expected_subjects, start=1):
+        path = files[subject_id]
+        logger.info("[%d/%d] %s | %s", index, len(expected_subjects), subject_id, path)
+        epochs = mne.read_epochs(path, preload=True, verbose="ERROR")
+        picks = [epochs.ch_names.index(channel) for channel in common_channels]
+        data = epochs.get_data(picks=picks, copy=True)
+        current_frequencies, electrode_psd = compute_subject_electrode_psd(
+            data,
+            float(epochs.info["sfreq"]),
+            fmin=fmin,
+            fmax=fmax,
+        )
+        if frequencies is None:
+            frequencies = current_frequencies
+        elif not np.array_equal(frequencies, current_frequencies):
+            raise ValueError(f"{subject_id}: PSD frequency grid differs from prior subjects")
+        subject_psds[subject_id] = electrode_psd
+        info = mne.pick_info(epochs.info, picks, copy=True)
+        info["bads"] = []
+        subject_infos[subject_id] = info
+        input_rows.append(
+            {
+                "subject_id": subject_id,
+                "group": group_lookup[subject_id],
+                "epoch_file": str(path.resolve()),
+                "n_epochs": len(epochs),
+                "n_electrodes": len(common_channels),
+                "n_available_electrodes": len(available_channels[subject_id]),
+                "samples_per_epoch": data.shape[2],
+                "concatenated_samples_per_electrode": int(len(epochs) * data.shape[2]),
+                "concatenated_duration_sec": float(len(epochs) * data.shape[2] / epochs.info["sfreq"]),
+                "sampling_frequency_hz": float(epochs.info["sfreq"]),
+                "frequency_resolution_hz": float(current_frequencies[1] - current_frequencies[0]),
+            }
+        )
+    assert frequencies is not None
+
+    cube = np.stack([subject_psds[subject_id] for subject_id in expected_subjects])
+    subject_global_psd = np.median(cube, axis=1)
+    subject_global_rows = []
+    for subject_index, subject_id in enumerate(expected_subjects):
+        for frequency_index, frequency in enumerate(frequencies):
+            value = float(subject_global_psd[subject_index, frequency_index])
+            subject_global_rows.append(
+                {
+                    "subject_id": subject_id,
+                    "group": group_lookup[subject_id],
+                    "frequency_hz": float(frequency),
+                    "median_across_common_electrodes_psd_uv2_hz": value,
+                    "median_across_common_electrodes_psd_db_uv2_hz": float(to_db(value)),
+                }
+            )
+    subject_global_table = pd.DataFrame.from_records(subject_global_rows)
+
+    configured_groups = [str(group) for group in config["plots"]["group_order"]]
+    present_groups = {group_lookup[subject_id] for subject_id in expected_subjects}
+    group_order = [group for group in configured_groups if group in present_groups]
+    group_order.extend(sorted(present_groups - set(group_order)))
+    bootstrap = config["bootstrap"]
+    group_psd_rows = []
+    subject_groups = np.asarray([group_lookup[subject_id] for subject_id in expected_subjects])
+    for group_index, group in enumerate(group_order):
+        values = subject_global_psd[subject_groups == group]
+        median, lower, upper = bootstrap_median_ci(
+            values,
+            n_resamples=int(bootstrap["n_resamples"]),
+            confidence_level=float(bootstrap["confidence_level"]),
+            seed=int(bootstrap["random_seed"]) + group_index,
+        )
+        for frequency, center, low, high in zip(frequencies, median, lower, upper):
+            group_psd_rows.append(
+                {
+                    "group": group,
+                    "n_subjects": len(values),
+                    "frequency_hz": float(frequency),
+                    "median_psd_uv2_hz": float(center),
+                    "ci_lower_psd_uv2_hz": float(low),
+                    "ci_upper_psd_uv2_hz": float(high),
+                    "median_psd_db_uv2_hz": float(to_db(center)),
+                    "ci_lower_psd_db_uv2_hz": float(to_db(low)),
+                    "ci_upper_psd_db_uv2_hz": float(to_db(high)),
+                }
+            )
+    group_psd_table = pd.DataFrame.from_records(group_psd_rows)
+
+    bands = {name: tuple(limits) for name, limits in config["bands"].items()}
+    band_arrays = integrate_bands(frequencies, cube, bands)
+    relative_band_arrays, total_power_array = relative_band_powers(
+        frequencies,
+        cube,
+        bands,
+        total_range=(fmin, fmax),
+    )
+    subject_band_rows = []
+    for subject_index, subject_id in enumerate(expected_subjects):
+        for electrode_index, electrode in enumerate(common_channels):
+            for band, values in band_arrays.items():
+                power = float(values[subject_index, electrode_index])
+                relative_power = float(
+                    relative_band_arrays[band][subject_index, electrode_index]
+                )
+                subject_band_rows.append(
+                    {
+                        "subject_id": subject_id,
+                        "group": group_lookup[subject_id],
+                        "electrode": electrode,
+                        "band": band,
+                        "band_low_hz": float(bands[band][0]),
+                        "band_high_hz": float(bands[band][1]),
+                        "band_power_uv2": power,
+                        "band_power_db_uv2": float(to_db(power)),
+                        "total_power_low_hz": fmin,
+                        "total_power_high_hz": fmax,
+                        "total_power_uv2": float(
+                            total_power_array[subject_index, electrode_index]
+                        ),
+                        "relative_band_power": relative_power,
+                        "relative_band_power_percent": 100.0 * relative_power,
+                    }
+                )
+    subject_band_table = pd.DataFrame.from_records(subject_band_rows)
+    subject_band_summary = summarize_subject_band_power(subject_band_table)
+    group_band_rows = []
+    for (group, electrode, band), selected in subject_band_table.groupby(
+        ["group", "electrode", "band"], sort=True
+    ):
+        values = selected["band_power_uv2"].to_numpy(dtype=float)
+        relative_values = selected["relative_band_power"].to_numpy(dtype=float)
+        group_band_rows.append(
+            {
+                "group": group,
+                "electrode": electrode,
+                "band": band,
+                "band_low_hz": float(selected["band_low_hz"].iloc[0]),
+                "band_high_hz": float(selected["band_high_hz"].iloc[0]),
+                "n_subjects": len(values),
+                "median_band_power_uv2": float(np.median(values)),
+                "median_band_power_db_uv2": float(to_db(np.median(values))),
+                "iqr_lower_band_power_uv2": float(np.quantile(values, 0.25)),
+                "iqr_upper_band_power_uv2": float(np.quantile(values, 0.75)),
+                "median_relative_band_power": float(np.median(relative_values)),
+                "median_relative_band_power_percent": float(
+                    100.0 * np.median(relative_values)
+                ),
+                "iqr_lower_relative_band_power": float(
+                    np.quantile(relative_values, 0.25)
+                ),
+                "iqr_upper_relative_band_power": float(
+                    np.quantile(relative_values, 0.75)
+                ),
+                "iqr_lower_relative_band_power_percent": float(
+                    100.0 * np.quantile(relative_values, 0.25)
+                ),
+                "iqr_upper_relative_band_power_percent": float(
+                    100.0 * np.quantile(relative_values, 0.75)
+                ),
+            }
+        )
+    group_band_table = pd.DataFrame.from_records(group_band_rows)
+
+    statistics_config = config["statistics"]
+    inferential_bands = [
+        band for band in bands
+        if band not in set(statistics_config.get("exclude_bands", []))
+    ]
+    inferential_band_table = subject_band_table.loc[
+        subject_band_table["band"].isin(inferential_bands)
+    ].copy()
+    subject_statistics, electrode_statistics = compute_group_statistics(
+        inferential_band_table,
+        participant_table,
+        metrics=("relative_band_power",),
+        strata=("band",),
+        domain="psd_relative_band_power",
+        subject_aggregation=str(statistics_config["subject_aggregation"]),
+        confidence_level=float(statistics_config["confidence_level"]),
+        fdr_alpha=float(statistics_config["fdr_alpha"]),
+    )
+
+    metrics_dir = output_dir / "metrics"
+    metrics_dir.mkdir(parents=True, exist_ok=True)
+    _write_csv(pd.DataFrame.from_records(input_rows), metrics_dir / "analyzed_inputs.csv")
+    _write_csv(subject_global_table, metrics_dir / "subject_global_psd.csv")
+    _write_csv(group_psd_table, metrics_dir / "group_median_psd.csv")
+    _write_csv(subject_band_table, metrics_dir / "subject_electrode_band_power.csv")
+    _write_csv(subject_band_summary, metrics_dir / "subject_band_power.csv")
+    _write_csv(group_band_table, metrics_dir / "group_electrode_band_power.csv")
+    _write_csv(subject_statistics, metrics_dir / "group_subject_statistics.csv")
+    _write_csv(electrode_statistics, metrics_dir / "group_electrode_statistics.csv")
+    np.savez_compressed(
+        metrics_dir / "subject_electrode_psd.npz",
+        subject_ids=np.asarray(expected_subjects),
+        groups=subject_groups,
+        electrodes=np.asarray(common_channels),
+        frequencies_hz=frequencies,
+        psd_uv2_hz=cube,
+    )
+
+    colors_config = config["plots"]["group_colors"]
+    fallback = ("#D55E00", "#0072B2", "#009E73", "#CC79A7")
+    colors = {
+        group: str(colors_config.get(group, fallback[index % len(fallback)]))
+        for index, group in enumerate(group_order)
+    }
+    dpi = int(config["plots"]["dpi"])
+    logger.info("Creating group median PSD confidence-band figure")
+    plot_group_median_psd(
+        group_psd_table,
+        group_order,
+        colors,
+        output_dir / "figures" / "group_median_psd_with_ci.png",
+        dpi,
+    )
+    common_info = next(iter(subject_infos.values())).copy()
+    display_names = config["plots"].get("band_display_names", {})
+    band_labels = {
+        band: f"{display_names.get(band, band.replace('_', ' ').title())}\n"
+        f"{limits[0]:g}–{limits[1]:g} Hz"
+        for band, limits in bands.items()
+    }
+    logger.info("Creating subject-level relative-band-power violin figure")
+    plot_group_relative_band_power_violins(
+        subject_band_summary,
+        list(bands),
+        band_labels,
+        group_order,
+        colors,
+        output_dir / "figures" / "group_relative_band_power_violins.png",
+        dpi,
+    )
+    logger.info("Creating group relative-band-power topomaps")
+    topomap_limits = plot_group_band_topomaps(
+        group_band_table,
+        common_info,
+        list(bands),
+        band_labels,
+        group_order,
+        output_dir / "figures" / "group_median_band_power_topomaps.png",
+        dpi,
+    )
+    logger.info("Creating electrode-wise PD-Control statistical maps")
+    statistical_figures = plot_electrode_group_statistics(
+        electrode_statistics,
+        common_info,
+        strata=("band",),
+        output_dir=output_dir / "figures" / "group_statistics",
+        dpi=dpi,
+        stratum_labels={band: band_labels[band] for band in inferential_bands},
+    )
+
+    electrode_payload = {
+        "common_electrodes": common_channels,
+        "n_common_electrodes": len(common_channels),
+        "electrode_union": electrode_union,
+        "n_electrode_union": len(electrode_union),
+        "analysis_electrode_policy": (
+            "Every PSD, band-power value, aggregation, table, saved array, and figure "
+            "uses only electrodes present in every analyzed subject."
+        ),
+    }
+    (metrics_dir / "electrode_sets.json").write_text(
+        json.dumps(electrode_payload, indent=2) + "\n", encoding="utf-8"
+    )
+    manifest = {
+        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "config_file": str(config_path.resolve()),
+        "analysis_config": config,
+        "software": {
+            "python": platform.python_version(),
+            "mne": mne.__version__,
+            "numpy": np.__version__,
+            "pandas": pd.__version__,
+            "scipy": scipy.__version__,
+            "matplotlib": matplotlib.__version__,
+        },
+        "n_subjects": len(expected_subjects),
+        "group_counts": pd.Series(subject_groups).value_counts().to_dict(),
+        "n_common_electrodes": len(common_channels),
+        "n_electrode_union": len(electrode_union),
+        "analysis_electrode_policy": (
+            "Only electrodes present in every analyzed subject are loaded for PSD and "
+            "included in any table, saved array, aggregation, or figure."
+        ),
+        "frequency_bins": len(frequencies),
+        "frequency_resolution_hz": float(frequencies[1] - frequencies[0]),
+        "aggregation": (
+            "Accepted epochs are concatenated in stored temporal order for each electrode. "
+            "One Welch call uses non-overlapping four-second Hann windows and mean Welch "
+            "aggregation to produce each subject/electrode PSD; there is no median-across-"
+            f"epochs step. The global subject PSD is the median across {len(common_channels)} "
+            "electrodes shared by every analyzed subject, "
+            "and the group curve is the median across subjects. Conversion to dB occurs only "
+            "after aggregation."
+        ),
+        "confidence_interval": (
+            "Pointwise nonparametric percentile bootstrap of subjects around the group median."
+        ),
+        "topomap": (
+            f"For each subject/electrode, band power is divided by total {fmin:g}-{fmax:g} Hz "
+            "power before group aggregation. Group maps show the electrode-wise median "
+            f"relative power as a percentage on the same {len(common_channels)} shared "
+            "electrodes. Absolute band and "
+            "total powers remain in the subject-level table."
+        ),
+        "violin_plot": (
+            "Each violin contains one value per subject and band: the median relative "
+            f"power across the {len(common_channels)} electrodes shared by every analyzed "
+            "subject. Electrode rows are never treated as independent group observations."
+        ),
+        "statistical_inference": {
+            "primary_unit": "subject",
+            "full_cohort_model": "OLS adjusted for age and sex with HC3 robust SE",
+            "matched_cohort_model": "paired t test by match_pair_id; paired Wilcoxon saved as sensitivity",
+            "subject_fdr_scope": "all included band tests in the PSD domain",
+            "electrode_status": "exploratory localization; electrodes are not independent observations",
+            "formal_electrode_fdr": "BH across every electrode-by-band test in the PSD domain",
+            "excluded_bands": list(statistics_config.get("exclude_bands", [])),
+            "exclusion_reason": "Overlapping visualization-only bands are excluded from formal inference",
+            "n_subject_tests": int(len(subject_statistics)),
+            "n_electrode_tests": int(len(electrode_statistics)),
+            "n_statistical_figures": int(len(statistical_figures)),
+        },
+        "topomap_relative_power_percent_limits": {
+            band: [float(value) for value in limits] for band, limits in topomap_limits.items()
+        },
+    }
+    (output_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n", encoding="utf-8"
+    )
+    logger.info("PSD analysis completed | output=%s", output_dir)
+    return manifest

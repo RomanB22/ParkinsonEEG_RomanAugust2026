@@ -7,6 +7,7 @@ set -Eeuo pipefail
 
 PROJECT_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
+export PYTHONPATH="$PROJECT_ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 
 if [[ $# -eq 0 ]]; then
     set -- --help
@@ -103,8 +104,8 @@ fi
 # Read-only commands and dry-runs use the base interpreter because the public
 # runner itself has no scientific dependencies. Real work uses the pinned env.
 if [[ "$mutating" == false || "$DRY_RUN" == true ]]; then
-    exec python3 -m parkinson_eeg "$@"
+    exec python3 src/cli.py "$@"
 fi
 
 bash scripts/ensure_conda_environment.sh --env "$CONDA_ENV"
-conda run --no-capture-output -n "$CONDA_ENV" python -m parkinson_eeg "$@"
+conda run --no-capture-output -n "$CONDA_ENV" python src/cli.py "$@"

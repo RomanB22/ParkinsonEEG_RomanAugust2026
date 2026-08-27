@@ -4,7 +4,7 @@ The repository separates orchestration from scientific calculations.
 
 ```text
 run_pipeline.sh
-  -> parkinson_eeg/cli.py
+  -> cli.py
        -> config.py       validated public settings and profiles
        -> registry.py     explicit stage/dependency definitions
        -> runner.py       resume, status, dry-run, and execution
@@ -12,13 +12,13 @@ run_pipeline.sh
 
 scientific domains
   preprocessing          src/ and scripts/
-  PSD                    psd_analysis/
-  ordinal                ordinal_analysis/
-  aperiodic + eBOSC      scale_free_analysis/
-  within-bout ordinal    bout_analyses/
-  independent detector   bycycle_burst_analysis/
+  PSD                    src/analyses/psd/
+  ordinal                src/analyses/ordinal/
+  aperiodic + eBOSC      src/analyses/scale_free/
+  within-bout ordinal    src/analyses/bouts/
+  independent detector   src/analyses/bycycle/
   classification         exploration/
-  clinical associations  quantitative_behavioral/ and disease_progression/
+  clinical associations  src/analyses/behavioral/ and src/analyses/progression/
 
 shared infrastructure
   src/analysis_io.py     participant and epoch discovery
@@ -73,7 +73,7 @@ and is ignored by Git.
 
 1. Put calculations in the closest scientific domain package.
 2. Expose one small Python entry point.
-3. Add a declarative `Stage` in `parkinson_eeg/registry.py`.
+3. Add a declarative `Stage` in `src/registry.py`.
 4. Declare all real dependencies and required artifacts.
 5. Add focused numerical and stage-graph tests.
 6. Document the method in that domain's README and the outputs in

@@ -119,6 +119,7 @@ fi
 
 echo "Installing pinned project requirements"
 conda run --name "$CONDA_ENV" python -m pip install --requirement requirements.txt
+conda run --name "$CONDA_ENV" python -m pip install --no-deps --editable .
 conda run --name "$CONDA_ENV" python -m pip check
 
 echo "Verifying environment imports and package versions"
@@ -173,7 +174,7 @@ echo
 echo "Environment is ready: $CONDA_ENV"
 echo "Run the ordinal analysis with:"
 if [[ "$CONDA_ENV" == "MNE_August2026" ]]; then
-    echo "  bash ordinal_analysis/run_ordinal_analysis.sh --overwrite"
+    echo "  bash src/analyses/ordinal/run_ordinal_analysis.sh --overwrite"
 else
-    echo "  conda run --name $CONDA_ENV python ordinal_analysis/run_ordinal_analysis.py --overwrite"
+    echo "  conda run --name $CONDA_ENV python src/analyses/ordinal/run_ordinal_analysis.py --overwrite"
 fi

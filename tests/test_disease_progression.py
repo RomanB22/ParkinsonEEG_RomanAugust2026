@@ -7,19 +7,19 @@ from pathlib import Path
 
 import pandas as pd
 
-from disease_progression.features import (
+from analyses.progression.features import (
     build_shared_electrode_features,
     load_pd_cohort,
     resolve_shared_electrodes,
 )
-from disease_progression.pipeline import load_analysis_config
-from disease_progression.statistics import correlate_progression_features
+from analyses.progression.pipeline import load_analysis_config
+from analyses.progression.statistics import correlate_progression_features
 
 
 class DiseaseProgressionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.config = load_analysis_config("disease_progression/config.json")
+        cls.config = load_analysis_config("config/analyses/progression.json")
 
     def test_config_uses_all_shared_electrodes_and_nonoverlapping_bands(self) -> None:
         self.assertEqual(

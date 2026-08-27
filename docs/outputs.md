@@ -6,16 +6,16 @@ and report provenance.
 | Domain | Full cohort | Matched cohort |
 |---|---|---|
 | Cleaning and metadata | `processed/` | shared subject-level cleaning |
-| PSD | `psd_analysis/processed/` | `psd_analysis/processed_matched/` |
-| Ordinal primary | `ordinal_analysis/processed/` | `ordinal_analysis/processed_matched/` |
-| Ordinal D sensitivity | `ordinal_analysis/parameter_sweep/` | `ordinal_analysis/parameter_sweep_matched/` |
-| Scale-free and bouts | `scale_free_analysis/processed/` | `scale_free_analysis/processed_matched/` |
-| Within-bout ordinal | `bout_analyses/processed/` | `bout_analyses/processed_matched/` |
-| Classification | `exploration/processed/` | `exploration/processed_matched/` |
-| MOCA | `quantitative_behavioral/processed/` | `quantitative_behavioral/processed_matched/` |
-| UPDRS/MOCA | `disease_progression/processed/` | `disease_progression/processed_matched/` |
-| Eight-electrode view | `eight_electrode_analysis/processed/` | `eight_electrode_analysis/processed_matched/` |
-| Duration QC | `duration_qc_analysis/processed/` | `duration_qc_analysis/processed_matched/` |
+| PSD | `outputs/full/psd/` | `outputs/matched/psd/` |
+| Ordinal primary | `outputs/full/ordinal/` | `outputs/matched/ordinal/` |
+| Ordinal D sensitivity | `outputs/full/ordinal_sweep/` | `outputs/matched/ordinal_sweep/` |
+| Scale-free and bouts | `outputs/full/scale_free/` | `outputs/matched/scale_free/` |
+| Within-bout ordinal | `outputs/full/bouts/` | `outputs/matched/bouts/` |
+| Classification | `outputs/full/exploration/` | `outputs/matched/exploration/` |
+| MOCA | `outputs/full/behavioral/` | `outputs/matched/behavioral/` |
+| UPDRS/MOCA | `outputs/full/progression/` | `outputs/matched/progression/` |
+| Eight-electrode view | `outputs/full/eight_electrode/` | `outputs/matched/eight_electrode/` |
+| Duration QC | `outputs/full/duration_qc/` | `outputs/matched/duration_qc/` |
 
 Every domain writes a `manifest.json`, metric tables, figures, and a log or
 report where applicable. `.pipeline/state/` only records orchestration

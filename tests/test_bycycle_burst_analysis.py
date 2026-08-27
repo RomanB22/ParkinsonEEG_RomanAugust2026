@@ -10,8 +10,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from bycycle_burst_analysis.detector import detect_epoch_bursts, summarize_detection
-from bycycle_burst_analysis.plots import plot_subject_average_violins
+from analyses.bycycle.detector import detect_epoch_bursts, summarize_detection
+from analyses.bycycle.plots import plot_subject_average_violins
 
 
 class BycycleBurstAnalysisTests(unittest.TestCase):
@@ -54,7 +54,7 @@ class BycycleBurstAnalysisTests(unittest.TestCase):
 
     def test_config_uses_only_canonical_non_overlapping_bands(self) -> None:
         config = json.loads(
-            Path("bycycle_burst_analysis/config.json").read_text(encoding="utf-8")
+            Path("config/analyses/bycycle.json").read_text(encoding="utf-8")
         )
         self.assertEqual(config["detector"]["method"], "bycycle_cycle_consistency")
         self.assertEqual(

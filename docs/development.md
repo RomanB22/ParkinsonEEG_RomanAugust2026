@@ -20,7 +20,6 @@ Scientific refactors should preserve output keys, row grids, subjects,
 electrodes, and numerical results within an explicitly justified floating-point
 tolerance. Do not combine structural refactoring with parameter changes.
 
-Shared code belongs in `src/` when it is used by scientific domains and in
-`parkinson_eeg/` when it concerns orchestration. Plot functions should render
+Shared code and orchestration belongs in `src/`. Plot functions should render
 prepared tables; statistics should not be hidden inside plotting code.
 

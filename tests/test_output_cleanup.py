@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from src.output_cleanup import remove_retired_band_outputs
+from core.output_cleanup import remove_retired_band_outputs
 
 
 class OutputCleanupTests(unittest.TestCase):

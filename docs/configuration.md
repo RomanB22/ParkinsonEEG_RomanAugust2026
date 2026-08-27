@@ -14,7 +14,7 @@ It defines:
 - scalar colormap and FDR alpha;
 - bounded compute, paper, and full-QC profiles.
 
-Domain configurations such as `scale_free_analysis/config.json` retain the
+Domain configurations such as `config/analyses/scale_free.json` retain the
 complete method-specific parameters. This makes each scientific module
 self-documenting. On every CLI invocation, the public loader checks that all
 duplicated cross-domain values agree and fails before computation if they do
@@ -37,5 +37,5 @@ Important current invariants are:
 - prespecified FDR alpha: 0.05.
 
 Preprocessing remains fully specified in `config/preprocessing.yaml`; see
-`PREPROCESSING_PIPELINE.md` and `PIPELINE_USAGE_AND_PARAMETERS.md`.
+`docs/preprocessing.md` and `docs/pipeline_parameters.md`.
 

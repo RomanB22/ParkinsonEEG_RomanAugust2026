@@ -1,196 +1,252 @@
-"""Configuration loading and validation.
-
-The configuration file is JSON-formatted YAML. JSON is a strict subset of
-YAML, so the file remains a valid ``.yaml`` document without adding PyYAML as a
-project dependency.
-"""
+"""Typed loading and validation for the public pipeline configuration."""
 
 from __future__ import annotations
 
 import json
-import hashlib
-import os
+from dataclasses import dataclass
 from pathlib import Path
-import tempfile
 from typing import Any
 
 
-def load_config(path: str | Path) -> dict[str, Any]:
-    path = Path(path)
-    with path.open(encoding="utf-8") as stream:
-        config = json.load(stream)
-    validate_config(config)
-    return config
+DEFAULT_CONFIG = Path("config/pipeline.yaml")
+VALID_COHORTS = ("full", "matched")
 
 
-def validate_config(config: dict[str, Any]) -> None:
-    required = {
-        "project",
-        "filter",
-        "resampling",
-        "channels",
-        "artifacts",
-        "ica",
-        "epochs",
-        "qc",
-    }
-    missing = sorted(required - config.keys())
-    if missing:
-        raise ValueError(f"Missing configuration sections: {missing}")
+@dataclass(frozen=True)
+class Profile:
+    """A named, bounded collection of pipeline capabilities."""
 
-    low = float(config["filter"]["l_freq"])
-    high = float(config["filter"]["h_freq"])
-    if (low, high) != (1.0, 100.0):
-        raise ValueError(
-            "The preprocessing contract requires final EEG to remain exactly 1-100 Hz; "
-            f"received {low:g}-{high:g} Hz."
-        )
-    target_sfreq = float(config["resampling"]["target_sfreq"])
-    if target_sfreq <= 2.0 * high:
-        raise ValueError(
-            "resampling.target_sfreq must be greater than twice filter.h_freq "
-            f"({target_sfreq:g} <= {2.0 * high:g} Hz)"
-        )
-    if not bool(config["filter"].get("notch_enabled", False)):
-        raise ValueError("The preprocessing contract requires the 60 Hz notch")
-    if float(config["filter"].get("notch_freq_hz", 0.0)) != 60.0:
-        raise ValueError("filter.notch_freq_hz must be 60 Hz")
-    if (float(config["ica"]["fit_l_freq"]), float(config["ica"]["fit_h_freq"])) != (
-        1.0,
-        100.0,
-    ):
-        raise ValueError("ICLabel/ICA input must be filtered exactly 1-100 Hz")
-    if float(config["epochs"]["duration_sec"]) <= 0:
-        raise ValueError("epochs.duration_sec must be positive")
-    if config["epochs"].get("baseline") is not None:
-        raise ValueError("Prompt.md requires resting EEG epochs without baseline correction; epochs.baseline must be null")
-    if bool(config["epochs"].get("autoreject_enabled", False)):
-        raise ValueError(
-            "AutoReject is not enabled in this conservative pipeline; "
-            "epochs.autoreject_enabled must remain false"
-        )
-    if int(config["ica"]["random_state"]) < 0:
-        raise ValueError("ica.random_state must be non-negative")
-    for name in (
-        "iclabel_artifact_probability_threshold",
-        "iclabel_minimum_class_probability",
-    ):
-        value = float(config["ica"][name])
-        if not 0.0 <= value <= 1.0:
-            raise ValueError(f"ica.{name} must be between 0 and 1")
-    exclusions = config["ica"].get("manual_exclude_components", {})
-    confirmations = config["ica"].get("manual_review_confirmed", {})
-    missing_decisions = [
-        subject_id
-        for subject_id, confirmed in confirmations.items()
-        if bool(confirmed) and subject_id not in exclusions
-    ]
-    if missing_decisions:
-        raise ValueError(
-            "Confirmed ICA reviews lack exclusion lists: "
-            f"{sorted(missing_decisions)}"
-        )
+    name: str
+    description: str
+    include_sweep: bool
+    include_reports: bool
+    include_models: bool
+    include_matched: bool
+    include_tests: bool
+    include_bycycle: bool
 
-
-def preprocessing_signature(config: dict[str, Any]) -> str:
-    """Hash settings that determine cleaned EEG and ICA decomposition outputs."""
-    ica = {
-        key: value
-        for key, value in config["ica"].items()
-        if key
-        not in {
-            "manual_exclude_components",
-            "manual_exclude_reasons",
-            "manual_review_confirmed",
-            "automatic_exclude_components",
-            "automatic_exclude_reasons",
+    @classmethod
+    def from_dict(cls, name: str, value: dict[str, Any]) -> "Profile":
+        required = {
+            "description",
+            "include_sweep",
+            "include_reports",
+            "include_models",
+            "include_matched",
+            "include_tests",
+            "include_bycycle",
         }
-    }
-    relevant = {
-        "filter": config["filter"],
-        "resampling": config["resampling"],
-        "channels": config["channels"],
-        "artifacts": config["artifacts"],
-        "ica": ica,
-        "epochs": config["epochs"],
-        "ica_reference": "average",
-    }
-    payload = json.dumps(relevant, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+        missing = sorted(required - set(value))
+        if missing:
+            raise ValueError(f"Profile {name!r} is missing keys: {missing}")
+        return cls(
+            name=name,
+            description=str(value["description"]),
+            include_sweep=bool(value["include_sweep"]),
+            include_reports=bool(value["include_reports"]),
+            include_models=bool(value["include_models"]),
+            include_matched=bool(value["include_matched"]),
+            include_tests=bool(value["include_tests"]),
+            include_bycycle=bool(value["include_bycycle"]),
+        )
 
 
-def is_ica_review_confirmed(config: dict[str, Any], subject_id: str) -> bool:
-    """Return whether a person has visually confirmed this subject's ICA list."""
-    return bool(config["ica"].get("manual_review_confirmed", {}).get(subject_id, False))
+@dataclass(frozen=True)
+class ScientificDefaults:
+    """Cross-analysis settings that must not silently drift."""
 
+    psd_range_hz: tuple[float, float]
+    aperiodic_fit_range_hz: tuple[float, float]
+    ordinal_dimensions: tuple[int, ...]
+    ordinal_delay_samples: tuple[int, ...]
+    renyi_alphas: tuple[float, ...]
+    bout_bands: dict[str, tuple[float, float]]
+    eight_electrodes: tuple[str, ...]
+    scalar_colormap: str
+    fdr_alpha: float
 
-def subject_manual_ica(config: dict[str, Any], subject_id: str) -> tuple[list[int], dict[int, str]]:
-    """Return reviewed ICA exclusions and their reasons for one participant."""
-    exclusions = config["ica"].get("manual_exclude_components", {})
-    reasons_config = config["ica"].get("manual_exclude_reasons", {})
-    components = [int(value) for value in exclusions.get(subject_id, [])]
-    reasons = {
-        int(component): str(reason)
-        for component, reason in reasons_config.get(subject_id, {}).items()
-    }
-    missing = [component for component in components if component not in reasons]
-    if missing:
-        raise ValueError(f"{subject_id}: missing rejection reasons for ICA components {missing}")
-    return components, reasons
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "ScientificDefaults":
+        def pair(name: str) -> tuple[float, float]:
+            raw = value.get(name)
+            if not isinstance(raw, list) or len(raw) != 2:
+                raise ValueError(f"science.{name} must contain exactly two numbers")
+            result = (float(raw[0]), float(raw[1]))
+            if result[0] >= result[1]:
+                raise ValueError(f"science.{name} must be increasing")
+            return result
 
-
-def write_ica_review_proposal(
-    path: str | Path,
-    subject_id: str,
-    components: list[int],
-    reasons: dict[int, str],
-    *,
-    automatic: bool = False,
-) -> bool:
-    """Atomically record an ICA proposal in the JSON-formatted YAML.
-
-    Manual review proposals never overwrite confirmed decisions. Automatic-run
-    selections are written to separate mappings so prior human decisions remain
-    intact. The return value indicates whether a mapping was written.
-    """
-    path = Path(path)
-    with path.open(encoding="utf-8") as stream:
-        config = json.load(stream)
-    ica = config["ica"]
-    confirmed = ica.setdefault("manual_review_confirmed", {})
-    if automatic:
-        # Preserve manual decisions while recording the exact list used by an
-        # automatic run in its own auditable mapping.
-        ica.setdefault("automatic_exclude_components", {})[subject_id] = [
-            int(component) for component in components
-        ]
-        ica.setdefault("automatic_exclude_reasons", {})[subject_id] = {
-            str(component): str(reason) for component, reason in reasons.items()
+        bands = {
+            str(name): (float(limits[0]), float(limits[1]))
+            for name, limits in value.get("bout_bands", {}).items()
         }
-    else:
-        if bool(confirmed.get(subject_id, False)):
-            return False
-        ica.setdefault("manual_exclude_components", {})[subject_id] = [
-            int(component) for component in components
-        ]
-        ica.setdefault("manual_exclude_reasons", {})[subject_id] = {
-            str(component): str(reason) for component, reason in reasons.items()
-        }
-        confirmed[subject_id] = False
+        if not bands:
+            raise ValueError("science.bout_bands cannot be empty")
+        dimensions = tuple(int(item) for item in value.get("ordinal_dimensions", []))
+        delays = tuple(int(item) for item in value.get("ordinal_delay_samples", []))
+        alphas = tuple(float(item) for item in value.get("renyi_alphas", []))
+        electrodes = tuple(str(item) for item in value.get("eight_electrodes", []))
+        if dimensions != (3, 4, 5, 6):
+            raise ValueError("The documented ordinal dimensions must be [3, 4, 5, 6]")
+        if delays != (1,):
+            raise ValueError("Ordinal analyses are restricted to tau=1")
+        if len(electrodes) != 8 or len(set(electrodes)) != 8:
+            raise ValueError("science.eight_electrodes must contain eight unique names")
+        fdr_alpha = float(value.get("fdr_alpha", 0.05))
+        if not 0.0 < fdr_alpha < 1.0:
+            raise ValueError("science.fdr_alpha must be between zero and one")
+        return cls(
+            psd_range_hz=pair("psd_range_hz"),
+            aperiodic_fit_range_hz=pair("aperiodic_fit_range_hz"),
+            ordinal_dimensions=dimensions,
+            ordinal_delay_samples=delays,
+            renyi_alphas=alphas,
+            bout_bands=bands,
+            eight_electrodes=electrodes,
+            scalar_colormap=str(value.get("scalar_colormap", "viridis")),
+            fdr_alpha=fdr_alpha,
+        )
 
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.", suffix=".tmp", dir=path.parent
-    )
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(config, stream, indent=2)
-            stream.write("\n")
-        os.replace(temporary_name, path)
-    except Exception:
+
+@dataclass(frozen=True)
+class PipelineConfig:
+    """Complete public configuration for orchestration."""
+
+    path: Path
+    schema_version: int
+    environment_name: str
+    preprocessing_config: Path
+    participants_file: Path
+    epochs_dir: Path
+    epoch_glob: str
+    science: ScientificDefaults
+    profiles: dict[str, Profile]
+
+    def profile(self, name: str) -> Profile:
         try:
-            os.unlink(temporary_name)
-        except FileNotFoundError:
-            pass
-        raise
-    return True
+            return self.profiles[name]
+        except KeyError as error:
+            choices = ", ".join(sorted(self.profiles))
+            raise ValueError(f"Unknown profile {name!r}; choose one of: {choices}") from error
+
+
+def load_pipeline_config(path: str | Path = DEFAULT_CONFIG) -> PipelineConfig:
+    """Load JSON-formatted YAML without adding a YAML dependency."""
+    config_path = Path(path)
+    try:
+        raw = json.loads(config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as error:
+        raise FileNotFoundError(f"Pipeline configuration not found: {config_path}") from error
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Invalid JSON-formatted YAML in {config_path}: {error}") from error
+
+    if int(raw.get("schema_version", 0)) != 1:
+        raise ValueError("config/pipeline.yaml must use schema_version 1")
+    paths = raw.get("paths", {})
+    profiles = {
+        str(name): Profile.from_dict(str(name), value)
+        for name, value in raw.get("profiles", {}).items()
+    }
+    if not profiles:
+        raise ValueError("At least one pipeline profile is required")
+    result = PipelineConfig(
+        path=config_path,
+        schema_version=1,
+        environment_name=str(raw.get("environment", {}).get("name", "MNE_August2026")),
+        preprocessing_config=Path(paths.get("preprocessing_config", "config/preprocessing.yaml")),
+        participants_file=Path(paths.get("participants_file", "processed/metadata/subjects.csv")),
+        epochs_dir=Path(paths.get("epochs_dir", "processed/epochs")),
+        epoch_glob=str(paths.get("epoch_glob", "sub-*_task-Rest_desc-cleaned_epo.fif")),
+        science=ScientificDefaults.from_dict(raw.get("science", {})),
+        profiles=profiles,
+    )
+    validate_scientific_configs(result)
+    return result
+
+
+def _json(path: str | Path) -> dict[str, Any]:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def _numeric_pair(value: Any) -> tuple[float, float]:
+    return float(value[0]), float(value[1])
+
+
+def validate_scientific_configs(config: PipelineConfig) -> None:
+    """Fail early when duplicated domain configs disagree with public defaults.
+
+    Domain-specific files are retained because they document each method in a
+    self-contained way.  The public configuration is authoritative for values
+    shared across domains, and this audit prevents the files from drifting.
+    """
+    problems: list[str] = []
+    files = {
+        "psd": Path("config/analyses/psd.json"),
+        "ordinal": Path("config/analyses/ordinal.json"),
+        "scale_free": Path("config/analyses/scale_free.json"),
+        "bout": Path("config/analyses/bouts.json"),
+        "bycycle": Path("config/analyses/bycycle.json"),
+        "eight": Path("config/analyses/eight_electrode.json"),
+        "quantitative": Path("config/analyses/behavioral.json"),
+        "disease": Path("config/analyses/progression.json"),
+        "duration": Path("config/analyses/duration_qc.json"),
+    }
+    missing = [str(path) for path in files.values() if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"Missing domain configuration files: {missing}")
+    values = {name: _json(path) for name, path in files.items()}
+
+    for name in ("psd", "scale_free", "bout"):
+        section = values[name]["psd"]
+        observed = (float(section["fmin_hz"]), float(section["fmax_hz"]))
+        if observed != config.science.psd_range_hz:
+            problems.append(f"{files[name]} PSD range is {observed}")
+    for name in ("scale_free", "bout"):
+        observed = _numeric_pair(values[name]["specparam"]["frequency_range_hz"])
+        if observed != config.science.aperiodic_fit_range_hz:
+            problems.append(f"{files[name]} aperiodic fit range is {observed}")
+    primary = values["ordinal"]["ordinal"]
+    if int(primary["embedding_dimension"]) != max(config.science.ordinal_dimensions):
+        problems.append("config/analyses/ordinal.json must contain primary D=6")
+    if int(primary["delay_samples"]) != config.science.ordinal_delay_samples[0]:
+        problems.append("config/analyses/ordinal.json must contain tau=1")
+    for name in ("scale_free", "bout", "bycycle"):
+        observed = {
+            band: _numeric_pair(limits)
+            for band, limits in values[name]["bands"].items()
+        }
+        if observed != config.science.bout_bands:
+            problems.append(f"{files[name]} bout bands disagree with pipeline.yaml")
+    if tuple(values["eight"]["electrodes"]) != config.science.eight_electrodes:
+        problems.append("config/analyses/eight_electrode.json electrode order disagrees")
+    fdr_locations = {
+        "psd": "statistics",
+        "ordinal": "statistics",
+        "scale_free": "statistics",
+        "bout": "statistics",
+        "bycycle": "statistics",
+        "eight": "statistics",
+        "quantitative": "analysis",
+        "disease": "analysis",
+        "duration": "statistics",
+    }
+    for name, section in fdr_locations.items():
+        observed = float(values[name][section]["fdr_alpha"])
+        if observed != config.science.fdr_alpha:
+            problems.append(f"{files[name]} fdr_alpha is {observed}")
+    dimension_metrics = set(
+        values["quantitative"]["dimension_sensitivity"]["metrics"]
+    )
+    for alpha in config.science.renyi_alphas:
+        token = f"{alpha:g}".replace(".", "_")
+        for quantity in ("entropy", "complexity"):
+            expected = f"renyi_{quantity}_alpha_{token}"
+            if expected not in dimension_metrics:
+                problems.append(
+                    f"config/analyses/behavioral.json lacks {expected}"
+                )
+    if config.science.scalar_colormap != "viridis":
+        problems.append("The repository-wide scalar colormap must be viridis")
+    if problems:
+        detail = "\n  - ".join(problems)
+        raise ValueError(f"Shared scientific configuration drift detected:\n  - {detail}")
