@@ -16,7 +16,7 @@
     "ordinal_delay_samples": [1],
     "renyi_alphas": [0.1, 0.5, 0.9, 1.1, 2.0, 5.0, 10.0],
     "bout_bands": {
-      "theta": [4.0, 7.0],
+      "theta": [4.0, 8.0],
       "alpha": [8.0, 13.0],
       "low_beta": [13.0, 20.0],
       "high_beta": [20.0, 30.0]
