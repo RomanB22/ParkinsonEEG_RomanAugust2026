@@ -71,7 +71,6 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "psd",
         "specparam",
         "aperiodic_fit_qc",
-        "aperiodic_sensitivity",
         "ebosc",
         "bycycle",
         "cache",
@@ -89,8 +88,8 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("specparam.aperiodic_modes must be ['fixed', 'knee']")
     if str(specparam.get("model_selection_criterion")) != "bic":
         raise ValueError("specparam.model_selection_criterion must be 'bic'")
-    if [float(value) for value in specparam["frequency_range_hz"]] != [1.0, 50.0]:
-        raise ValueError("The primary fixed and knee models must use 1–50 Hz")
+    if [float(value) for value in specparam["frequency_range_hz"]] != [4.0, 50.0]:
+        raise ValueError("The primary fixed and knee models must use 4–50 Hz")
     if float(specparam.get("knee_frequency_outlier_z_threshold", 0.0)) != 2.0:
         raise ValueError("The within-subject knee-frequency outlier threshold must be 2 SD")
     paper_settings = {
@@ -118,15 +117,6 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     exponent_range = [float(value) for value in qc["exponent_range"]]
     if len(exponent_range) != 2 or exponent_range[0] >= exponent_range[1]:
         raise ValueError("aperiodic_fit_qc.exponent_range must increase")
-    sensitivity = config["aperiodic_sensitivity"]
-    if int(sensitivity["workers"]) < 1:
-        raise ValueError("aperiodic_sensitivity.workers must be positive")
-    ranges = [
-        [float(value) for value in limits]
-        for limits in sensitivity["frequency_ranges_hz"]
-    ]
-    if [float(value) for value in config["specparam"]["frequency_range_hz"]] not in ranges:
-        raise ValueError("Aperiodic sensitivity must contain the primary frequency range")
     bands = config["bands"]
     expected_bands = ["theta", "alpha", "low_beta", "high_beta"]
     if list(bands) != expected_bands:
@@ -373,7 +363,6 @@ def _load_reusable_subject_features(
         "psd",
         "specparam",
         "aperiodic_fit_qc",
-        "aperiodic_sensitivity",
         "ebosc",
         "bycycle",
     ):
@@ -921,9 +910,7 @@ def run_analysis(
 
     aperiodic_electrodes = pd.DataFrame.from_records(aperiodic_rows)
     band_electrodes = pd.DataFrame.from_records(band_rows)
-    logger.info(
-        "Running specparam fit QC and fixed-versus-knee frequency-range sensitivity"
-    )
+    logger.info("Running 4–50 Hz specparam fit QC and fixed-versus-knee audit")
     aperiodic_diagnostics = run_aperiodic_diagnostics(
         output_dir,
         aperiodic_electrodes,
@@ -1217,12 +1204,8 @@ def run_analysis(
             "qc_pass_fraction": float(
                 aperiodic_electrodes["specparam_fit_qc_pass"].mean()
             ),
-            "frequency_ranges_hz": config["aperiodic_sensitivity"][
-                "frequency_ranges_hz"
-            ],
-            "n_range_sensitivity_fits": int(
-                len(aperiodic_diagnostics["electrode_sensitivity"])
-            ),
+            "range_sensitivity_enabled": False,
+            "fit_range_hz": config["specparam"]["frequency_range_hz"],
             "policy": config["aperiodic_fit_qc"]["policy"],
         },
         "specparam_gallery_enabled": bool(gallery_enabled),
@@ -1238,14 +1221,17 @@ def run_analysis(
             "epoch so no bout or cycle crosses an epoch boundary."
         ),
         "aperiodic_threshold_policy": (
-            "Both fixed and knee specparam models are fit over 1–50 Hz. BIC selects the "
+            "Both fixed and knee specparam models are fit over 4–50 Hz. BIC selects the "
             "aperiodic model independently for each subject/electrode after excluding "
             "within-subject knee-frequency outliers beyond 2 SD. The selected aperiodic "
             "PSD is mapped to the exact eBOSC Morlet-power "
             "scale using the ratio between mean wavelet power and the full specparam model. "
             "The BOSC chi-square percentile and frequency-specific duration thresholds are "
-            "then applied to this aperiodic background."
+            "then applied to this aperiodic background. A technically successful fixed fit "
+            "is required; formal fit-QC status does not gate primary detection and is "
+            "applied later in the separate QC-qualified sensitivity analysis."
         ),
+        "primary_bout_detection_requires_fit_qc_pass": False,
         "ebosc_implementation": (
             "The vectorized wavelet transform exactly reproduces ebosc.BOSC.BOSC_tf's Morlet "
             "definition and crop while keeping epochs separate. Detection follows BOSC/eBOSC "

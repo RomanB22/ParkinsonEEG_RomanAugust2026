@@ -38,7 +38,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             config["expected"]["scale_free_psd_range_hz"], [1.0, 50.0]
         )
         self.assertEqual(
-            config["expected"]["aperiodic_fit_range_hz"], [1.0, 50.0]
+            config["expected"]["aperiodic_fit_range_hz"], [4.0, 50.0]
         )
         self.assertEqual(
             config["expected"]["aperiodic_modes"], ["fixed", "knee"]
@@ -46,9 +46,8 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         self.assertEqual(
             config["expected"]["aperiodic_model_selection_criterion"], "bic"
         )
-        self.assertEqual(
-            config["expected"]["aperiodic_sensitivity_ranges_hz"],
-            [[1.0, 50.0], [4.0, 35.0]],
+        self.assertFalse(
+            config["expected"]["aperiodic_range_sensitivity_enabled"]
         )
         self.assertEqual(
             config["features"]["aperiodic_metrics"],

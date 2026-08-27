@@ -113,8 +113,8 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("specparam.aperiodic_modes must be ['fixed', 'knee']")
     if str(specparam.get("model_selection_criterion")) != "bic":
         raise ValueError("specparam.model_selection_criterion must be 'bic'")
-    if fit_range != [1.0, 50.0]:
-        raise ValueError("Fixed and knee bout-threshold models must use 1–50 Hz")
+    if fit_range != [4.0, 50.0]:
+        raise ValueError("Fixed and knee bout-threshold models must use 4–50 Hz")
     if float(specparam.get("knee_frequency_outlier_z_threshold", 0.0)) != 2.0:
         raise ValueError("The within-subject knee-frequency outlier threshold must be 2 SD")
 

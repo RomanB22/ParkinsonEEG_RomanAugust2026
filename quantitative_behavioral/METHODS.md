@@ -18,7 +18,7 @@ is in [`features.py`](features.py), and all prespecified settings are in
 ## Aperiodic exponent construction and diagnostic-group comparison
 
 The scale-free workflow calculates PSDs over 1–50 Hz and fits fixed and knee
-specparam models over the same 1–50 Hz range. Both candidates use peak widths
+specparam models over 4–50 Hz. Both candidates use peak widths
 1–12 Hz, at most eight peaks, minimum peak height 0, and peak threshold 2. BIC
 selects the model used for each subject/electrode, preferring fixed on ties.
 Non-finite or out-of-range knee frequencies and knee frequencies more than 2
@@ -26,7 +26,7 @@ within-subject SD from the subject mean are ineligible. For each participant,
 the selected exponent is averaged across the 60 shared electrodes.
 
 This selected exponent is mode-dependent: the fixed value is one slope across
-1–50 Hz, whereas the knee value is the asymptotic slope above the bend. It is
+4–50 Hz, whereas the knee value is the asymptotic slope above the bend. It is
 therefore not assumed that the two candidate parameters have identical
 interpretations. Every association retains the selected-model provenance, and
 candidate-specific parameters remain available in the scale-free model
@@ -36,9 +36,8 @@ Every electrode fit is audited against four configurable criteria: R² at least
 0.90, log10-power MAE at most 0.15, maximum absolute signed residual at most
 0.75 log10 units, and exponent within 0–3. All 8,940 fits remain visible. The
 QC sensitivity averages only passing electrodes and includes a participant
-only when at least 80% (48/60) electrodes pass. The former 4–35 Hz fit range is
-retained as a sensitivity analysis using the identical fixed/knee selection
-policy and peak settings.
+only when at least 80% (48/60) electrodes pass. No alternate fit range is used;
+every aperiodic model is fitted over 4–50 Hz.
 
 The Control-versus-PD analysis uses all 149 participants. Its primary model is:
 

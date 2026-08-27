@@ -257,10 +257,10 @@ def _validate_upstream_manifests(config: dict[str, Any]) -> dict[str, Any]:
         raise ValueError(
             "Scale-free source is missing formal specparam fit-QC provenance"
         )
-    if fit_qc.get("frequency_ranges_hz") != config["expected"].get(
-        "aperiodic_sensitivity_ranges_hz"
+    if bool(fit_qc.get("range_sensitivity_enabled", True)) != bool(
+        config["expected"].get("aperiodic_range_sensitivity_enabled", False)
     ):
-        raise ValueError("Scale-free source has the wrong aperiodic sensitivity ranges")
+        raise ValueError("Scale-free source has unexpected aperiodic range sensitivity")
     provenance = {
         name: {
             "manifest_file": str(path.resolve()),
@@ -391,7 +391,7 @@ def _write_report(
         "## Aperiodic exponent",
         "",
         (
-            "Fixed and knee specparam candidates are fit over 1–50 Hz at each of the "
+            "Fixed and knee specparam candidates are fit over 4–50 Hz at each of the "
             "60 shared electrodes. BIC selects the threshold model after the prespecified "
             "within-subject 2-SD knee-frequency exclusion; its exponent is then averaged "
             "within subject before inference."

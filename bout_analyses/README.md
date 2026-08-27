@@ -13,10 +13,12 @@ present in every analyzed subject. Spectral fitting and bout detection are
 owned by the upstream `scale_free_analysis` stage and validated before reuse.
 Its sequence is:
 
-1. Validate the upstream 1–50 Hz PSD and 1–50 Hz fixed-versus-knee `specparam`
+1. Validate the upstream 1–50 Hz PSD and 4–50 Hz fixed-versus-knee `specparam`
    fits, bands, wavelet, and eBOSC settings and require complete
    subject/electrode caches. BIC selects the aperiodic background used by the
    detector after the within-subject 2-SD knee-frequency exclusion.
+   Primary detection requires a technically successful fixed fit but is not
+   gated by the later R²/MAE/residual QC classification.
 2. Reuse eBOSC episodes detected above the 95th-percentile aperiodic-relative
    power threshold for at least three cycles within each accepted epoch.
 3. Collapse detections into theta (4–7 Hz), alpha (8–13 Hz), low-beta

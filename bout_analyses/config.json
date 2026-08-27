@@ -20,7 +20,7 @@
     "aperiodic_mode": "best_bic",
     "aperiodic_modes": ["fixed", "knee"],
     "model_selection_criterion": "bic",
-    "frequency_range_hz": [1.0, 50.0],
+    "frequency_range_hz": [4.0, 50.0],
     "knee_frequency_outlier_z_threshold": 2.0,
     "peak_width_limits_hz": [1.0, 12.0],
     "max_n_peaks": 8,

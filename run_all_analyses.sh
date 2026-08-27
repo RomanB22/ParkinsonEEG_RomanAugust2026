@@ -239,14 +239,15 @@ ordinal_sweep_current() {
 scale_free_current() {
     [[ -f scale_free_analysis/processed/manifest.json ]] || return 1
     ! grep -q 'broad_5_15' scale_free_analysis/processed/manifest.json || return 1
-    grep -q '"specparam_primary_fit_range_id": "1_50Hz"' \
+    grep -q '"specparam_primary_fit_range_id": "4_50Hz"' \
         scale_free_analysis/processed/manifest.json || return 1
     grep -q '"criterion": "bic"' \
         scale_free_analysis/processed/manifest.json || return 1
     grep -q '"raw_cycle_tables_saved": false' \
         scale_free_analysis/processed/manifest.json || return 1
     [[ -f scale_free_analysis/processed/metrics/specparam_fit_qc_summary.csv ]] || return 1
-    [[ -f scale_free_analysis/processed/metrics/subject_aperiodic_range_sensitivity.csv ]] || return 1
+    grep -q '"range_sensitivity_enabled": false' \
+        scale_free_analysis/processed/manifest.json || return 1
     if [[ "$COMPUTE_ONLY" == true ]]; then
         return 0
     fi
@@ -298,7 +299,7 @@ bout_current() {
     grep -q '"legacy_episode_threshold_paths_are_symlinks": true' \
         bout_analyses/processed/manifest.json || return 1
     ! grep -q 'broad_5_15' bout_analyses/processed/manifest.json || return 1
-    grep -q '"specparam_primary_fit_range_id": "1_50Hz"' \
+    grep -q '"specparam_primary_fit_range_id": "4_50Hz"' \
         bout_analyses/processed/manifest.json || return 1
     grep -q '"criterion": "bic"' \
         bout_analyses/processed/manifest.json || return 1

@@ -36,7 +36,7 @@ The defaults produce 52 transparent inferential features:
 
 | Family | Features | Count |
 |---|---|---:|
-| Aperiodic | All-fit and QC-qualified BIC-selected fixed/knee specparam exponents over 1–50 Hz | 2 |
+| Aperiodic | All-fit and QC-qualified BIC-selected fixed/knee specparam exponents over 4–50 Hz | 2 |
 | Broadband ordinal | H, C, F from `D=6`, `tau=1` | 3 |
 | Band ordinal | H, C, F in delta, theta, alpha, beta, and low gamma | 15 |
 | Bout properties | Occupancy, bouts/minute, duration, cycles/bout, and threshold ratio in four canonical eBOSC bands | 20 |
@@ -49,10 +49,11 @@ ordinal quantities remain regular H/C/F only.
 
 The primary ordinal source is the completed 60-electrode `D6_tau1` parameter
 sweep. The aperiodic exponent and bout properties come from the scale-free
-analysis, which fits fixed and knee candidates over the 1–50 Hz PSD. BIC selects
+analysis, which calculates a 1–50 Hz PSD and fits fixed and knee candidates over
+4–50 Hz. BIC selects
 the subject/electrode background after the prespecified knee-frequency checks;
 the selected exponent is averaged across the 60 electrodes within each subject.
-Its interpretation remains model-dependent: fixed is the single 1–50 Hz slope,
+Its interpretation remains model-dependent: fixed is the single 4–50 Hz slope,
 while knee is the asymptotic slope above the bend. Candidate-specific values are
 retained for sensitivity checks. A separate QC sensitivity retains only subjects
 with at least 80% QC-passing

@@ -83,10 +83,10 @@
     "delay_samples": 1,
     "shared_electrodes": 60,
     "scale_free_psd_range_hz": [1.0, 50.0],
-    "aperiodic_fit_range_hz": [1.0, 50.0],
+    "aperiodic_fit_range_hz": [4.0, 50.0],
     "aperiodic_modes": ["fixed", "knee"],
     "aperiodic_model_selection_criterion": "bic",
-    "aperiodic_sensitivity_ranges_hz": [[1.0, 50.0], [4.0, 35.0]]
+    "aperiodic_range_sensitivity_enabled": false
   },
   "plots": {
     "dpi": 150,

@@ -22,7 +22,7 @@
     "aperiodic_mode": "best_bic",
     "aperiodic_modes": ["fixed", "knee"],
     "model_selection_criterion": "bic",
-    "frequency_range_hz": [1.0, 50.0],
+    "frequency_range_hz": [4.0, 50.0],
     "knee_frequency_outlier_z_threshold": 2.0,
     "peak_width_limits_hz": [1.0, 12.0],
     "max_n_peaks": 8,
@@ -36,12 +36,6 @@
     "exponent_range": [0.0, 3.0],
     "minimum_subject_qc_fraction": 0.8,
     "policy": "Flag every fit; retain all fits for visualization and primary provenance; report QC-qualified summaries separately"
-  },
-  "aperiodic_sensitivity": {
-    "frequency_ranges_hz": [[1.0, 50.0], [4.0, 35.0]],
-    "workers": 4,
-    "aperiodic_mode": "best_bic",
-    "purpose": "Primary fixed-versus-knee BIC selection at 1–50 Hz, with the former 4–35 Hz range retained only as a sensitivity check"
   },
   "ebosc": {
     "frequency_min_hz": 4.0,

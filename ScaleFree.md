@@ -10,14 +10,13 @@ For each subject and channel:
 * Use `specparam` to separate **aperiodic (1/f)** and **periodic** components.
 * Audit every fit with R², log-error, exponent-range, and signed-residual QC;
   retain failed fits for inspection and report QC-qualified summaries separately.
-* Fit both fixed and knee aperiodic models over 1–50 Hz using peak widths of
+* Fit both fixed and knee aperiodic models over 4–50 Hz using peak widths of
   1–12 Hz, at most eight peaks, minimum peak height 0, and peak threshold 2.
 * Compare candidates with BIC, prefer fixed on ties, and exclude knee
   frequencies more than 2 within-subject SD from the subject mean before model
-  selection. Retain the former 4–35 Hz range as a sensitivity analysis without
-  changing peak settings.
+  selection. Use 4–50 Hz for every aperiodic fit.
 * Preserve the selected mode with every exponent: a fixed exponent is the
-  single 1–50 Hz slope, whereas a knee exponent is the asymptotic slope above
+  single 4–50 Hz slope, whereas a knee exponent is the asymptotic slope above
   the bend.
 * Extract:
 
@@ -81,7 +80,7 @@ Generate figures for every major analysis step, including:
 * PSD and `specparam` decomposition
 * Signed observed-minus-full-model residual and fit-QC status for every subject
   and electrode
-* Cohort-level fit-QC and fitting-range sensitivity figures
+* Cohort-level fit-QC and fixed-versus-knee selection figures
 * example EEG segments with detected bouts highlighted
 * time-frequency representation with bout detection
 * bout duration and occupancy distributions

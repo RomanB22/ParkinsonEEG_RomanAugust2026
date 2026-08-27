@@ -151,8 +151,9 @@ stage_current() {
             ;;
         scale_free_analysis/processed_matched/manifest.json)
             ! grep -q 'broad_5_15' "$sentinel" \
-                && grep -q '"specparam_primary_fit_range_id": "1_50Hz"' "$sentinel" \
+                && grep -q '"specparam_primary_fit_range_id": "4_50Hz"' "$sentinel" \
                 && grep -q '"criterion": "bic"' "$sentinel" \
+                && grep -q '"range_sensitivity_enabled": false' "$sentinel" \
                 && grep -q '"raw_cycle_tables_saved": false' "$sentinel" \
                 && grep -q '"mode": "filtered_subject_level_reuse"' "$sentinel" \
                 && [[ -f scale_free_analysis/processed_matched/metrics/group_subject_statistics_aperiodic.csv ]] \
@@ -168,7 +169,7 @@ stage_current() {
             ;;
         bout_analyses/processed_matched/manifest.json)
             ! grep -q 'broad_5_15' "$sentinel" \
-                && grep -q '"specparam_primary_fit_range_id": "1_50Hz"' "$sentinel" \
+                && grep -q '"specparam_primary_fit_range_id": "4_50Hz"' "$sentinel" \
                 && grep -q '"criterion": "bic"' "$sentinel" \
                 && grep -q '"scale_free_manifest"' "$sentinel" \
                 && grep -q '"legacy_episode_threshold_paths_are_symlinks": true' "$sentinel" \

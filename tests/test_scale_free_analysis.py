@@ -10,7 +10,7 @@ from specparam.sim import sim_power_spectrum
 
 from scale_free_analysis.aperiodic_diagnostics import (
     assess_specparam_fit,
-    fit_range_sensitivity,
+    summarize_primary_fit_qc,
 )
 from scale_free_analysis.fit_qc_sensitivity import _fit_coverage
 from scale_free_analysis.metrics import (
@@ -64,19 +64,16 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
 
             plt.close(figure)
 
-    def test_config_fits_fixed_and_knee_models_over_full_psd_range(self):
+    def test_config_fits_fixed_and_knee_models_over_four_to_fifty_hz(self):
         config = load_analysis_config("scale_free_analysis/config.json")
         self.assertEqual(config["psd"]["fmin_hz"], 1.0)
         self.assertEqual(config["psd"]["fmax_hz"], 50.0)
-        self.assertEqual(config["specparam"]["frequency_range_hz"], [1.0, 50.0])
+        self.assertEqual(config["specparam"]["frequency_range_hz"], [4.0, 50.0])
         self.assertEqual(config["specparam"]["aperiodic_modes"], ["fixed", "knee"])
         self.assertEqual(config["specparam"]["model_selection_criterion"], "bic")
         self.assertEqual(config["specparam"]["peak_width_limits_hz"], [1.0, 12.0])
         self.assertEqual(config["aperiodic_fit_qc"]["minimum_r_squared"], 0.9)
-        self.assertEqual(
-            config["aperiodic_sensitivity"]["frequency_ranges_hz"],
-            [[1.0, 50.0], [4.0, 35.0]],
-        )
+        self.assertNotIn("aperiodic_sensitivity", config)
         self.assertFalse(config["cache"]["save_raw_cycle_tables"])
 
     def test_matched_cache_filters_complete_subject_features_and_links_inputs(self):
@@ -242,62 +239,34 @@ class ScaleFreeAnalysisTests(unittest.TestCase):
             curves["fixed_aperiodic_psd_uv2_hz"],
         )
 
-    def test_range_sensitivity_repeats_fixed_knee_selection_policy(self):
-        np.random.seed(3)
-        simulations = [
-            sim_power_spectrum(
-                [1, 50],
-                aperiodic,
-                {"gaussian": [10.0, 0.35, 2.0]},
-                nlv=0.002,
-                freq_res=0.25,
-            )
-            for aperiodic in (
-                {"fixed": [1.0, 1.5]},
-                {"knee": [1.0, 100.0, 2.0]},
-            )
-        ]
-        frequencies = tuple(item[0] for item in simulations)
-        powers = tuple(item[1] for item in simulations)
-        np.testing.assert_allclose(frequencies[0], frequencies[1])
-        primary_rows = []
-        observed = []
-        modeled = []
-        for electrode, power in zip(("Fz", "Cz"), powers):
-            metrics, _, curves = fit_specparam_spectrum(
-                frequencies[0], power, self.config["bands"], self.config["specparam"]
-            )
-            metrics.update(
-                {
-                    "subject_id": "sub-001",
-                    "group": "PD",
-                    "electrode": electrode,
-                    "knee_frequency_zscore_within_subject": 0.0,
-                    "knee_frequency_outlier_within_subject": False,
-                }
-            )
-            primary_rows.append(metrics)
-            observed.append(curves["observed_psd_uv2_hz"])
-            modeled.append(curves["modeled_psd_uv2_hz"])
-        with tempfile.TemporaryDirectory() as directory:
-            np.savez_compressed(
-                Path(directory) / "sub-001_specparam_spectra.npz",
-                electrodes=np.asarray(["Fz", "Cz"]),
-                frequencies_hz=frequencies[0],
-                observed_psd_uv2_hz=np.asarray(observed),
-                modeled_psd_uv2_hz=np.asarray(modeled),
-            )
-            result = fit_range_sensitivity(
-                directory,
-                pd.DataFrame.from_records(primary_rows),
-                self.config["specparam"],
-                {**self.config["aperiodic_sensitivity"], "workers": 1},
-                self.config["aperiodic_fit_qc"],
-            )
-        self.assertEqual(len(result), 4)
-        self.assertEqual(set(result["fit_range_id"]), {"1_50Hz", "4_35Hz"})
-        self.assertEqual(
-            set(result["specparam_aperiodic_mode"]), {"fixed", "knee"}
+    def test_primary_qc_summary_has_no_range_sensitivity_dimension(self):
+        rows = []
+        for subject_id, passes in (
+            ("sub-001", [True, True]),
+            ("sub-002", [True, False]),
+        ):
+            for electrode, passed, exponent in zip(
+                ("Fz", "Cz"), passes, (1.2, 1.4)
+            ):
+                rows.append(
+                    {
+                        "subject_id": subject_id,
+                        "group": "PD",
+                        "electrode": electrode,
+                        "specparam_fit_qc_pass": passed,
+                        "aperiodic_exponent": exponent,
+                        "specparam_r_squared": 0.95,
+                        "specparam_error_mae": 0.05,
+                    }
+                )
+        result = summarize_primary_fit_qc(
+            pd.DataFrame.from_records(rows), self.config["aperiodic_fit_qc"]
+        ).set_index("subject_id")
+        self.assertNotIn("fit_range_id", result.columns)
+        self.assertTrue(result.loc["sub-001", "subject_fit_qc_pass"])
+        self.assertFalse(result.loc["sub-002", "subject_fit_qc_pass"])
+        self.assertTrue(
+            np.isnan(result.loc["sub-002", "aperiodic_exponent_qc_qualified"])
         )
 
     def test_fit_qc_uses_signed_residuals_and_flags_low_r_squared(self):

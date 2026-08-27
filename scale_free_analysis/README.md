@@ -29,9 +29,10 @@ union-only electrode contributes to a table, summary, statistic, or figure.
 
 For each subject/shared electrode, accepted epochs are concatenated in stored
 order and passed to one Welch PSD calculation. Non-overlapping four-second Hann
-windows produce a 0.25 Hz grid. The PSD and both `specparam.SpectralModel`
-candidates cover 1–50 Hz. One candidate uses fixed mode and the other uses knee
-mode. Both use the paper-aligned settings: peak widths 1–12 Hz, at most eight
+windows produce a 0.25 Hz grid. The PSD covers 1–50 Hz, while both
+`specparam.SpectralModel` candidates are fitted over 4–50 Hz. One candidate
+uses fixed mode and the other uses knee mode. Both use the paper-aligned
+settings: peak widths 1–12 Hz, at most eight
 peaks, minimum peak height 0, and peak threshold 2.
 
 BIC compares the two candidates for each subject/electrode while penalizing the
@@ -40,12 +41,12 @@ knee model's extra parameter. It is calculated on log10-power residuals as
 three parameters per fitted Gaussian peak. This avoids selecting knee merely
 because its unpenalized R² cannot be worse. Fixed wins ties. Knee frequency is calculated as
 `knee^(1/exponent)`; knee frequencies more than 2 SD from that subject's mean
-across shared electrodes, non-finite knees, and knees outside 1–50 Hz are
+across shared electrodes, non-finite knees, and knees outside 4–50 Hz are
 ineligible, causing a transparent fallback to fixed. Both candidate fits,
 selection reason, BIC values, and selected model are saved.
 
 The meaning of the selected exponent depends on the selected model. In fixed
-mode it is the single slope across 1–50 Hz; in knee mode it is the asymptotic
+mode it is the single slope across 4–50 Hz; in knee mode it is the asymptotic
 slope above the bend. The selected exponent is appropriate for constructing
 the selected aperiodic background used by eBOSC, but pooled group analyses of
 that value must retain the model label and be interpreted cautiously. The
@@ -77,9 +78,8 @@ electrodes and requires at least 48/60 passing fits per subject. The original
 all-electrode bout, cycle, and within-bout ordinal outputs are preserved; the
 QC-qualified versions are written alongside them.
 
-The former 4–35 Hz range remains a prespecified sensitivity analysis. Fixed and
-knee candidates use the same peak settings and BIC/2-SD selection policy in
-both ranges; the pipeline does not choose the most favorable range.
+No alternative frequency-range fit is run: every fixed and knee candidate uses
+4–50 Hz.
 
 The highest fitted peak in each theta (4–7 Hz), alpha (8–13 Hz), low-beta
 (13–20 Hz), and high-beta (20–30 Hz) band supplies center frequency, power,
@@ -114,6 +114,15 @@ The power threshold is explicitly based on the BIC-selected fixed or knee
 4. Require power to remain above threshold for at least three cycles at each
    frequency.
 5. Collapse contiguous detected time-frequency samples into band bouts.
+
+Detection requires a technically successful fixed fit. A failed, invalid, or
+outlier knee candidate falls back to fixed mode. Formal R², MAE, residual, and
+exponent-range QC does **not** gate the primary detector: every technically
+fitted electrode remains in the provenance analysis. After detection, the
+separate fit-QC sensitivity removes failed-fit electrodes, re-aggregates bout
+and within-bout ordinal quantities, and requires at least 80% passing
+electrodes for a subject-level QC result. Thus the repository exposes both the
+complete primary analysis and the conservative QC-qualified sensitivity.
 
 The first and last 0.75 seconds of every four-second epoch are excluded from
 detection to protect against Morlet edge effects. Occupancy and bouts per minute
@@ -280,10 +289,7 @@ scale_free_analysis/processed/
 │   ├── electrode_aperiodic_metrics.csv
 │   ├── electrode_aperiodic_model_comparison.csv.gz
 │   ├── subject_aperiodic_model_comparison.csv
-│   ├── electrode_aperiodic_range_sensitivity.csv.gz
 │   ├── subject_aperiodic_qc_metrics.csv
-│   ├── subject_aperiodic_range_sensitivity.csv
-│   ├── aperiodic_range_group_comparisons.csv
 │   ├── specparam_fit_qc_summary.csv
 │   ├── subject_specparam_fit_failures.csv
 │   ├── specparam_fit_failure_group_comparison.csv
@@ -313,7 +319,6 @@ scale_free_analysis/processed/
     ├── aperiodic_diagnostics/
     │   ├── fit_qc_dashboard.png
     │   ├── fixed_vs_knee_model_selection.png
-    │   ├── frequency_range_sensitivity.png
     │   ├── group_median_decomposition_and_residuals.png
     │   └── fit_failures_by_group.png
     ├── fit_qc_sensitivity/bout_properties_all_vs_fit_qc.png

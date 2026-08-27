@@ -1,10 +1,8 @@
-"""Fit-quality auditing and frequency-range sensitivity for specparam models."""
+"""Fit-quality and fixed-versus-knee auditing for specparam models."""
 
 from __future__ import annotations
 
 import logging
-import math
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -15,13 +13,6 @@ configure_runtime()
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.stats import mannwhitneyu, ttest_ind
-
-from .metrics import (
-    fit_specparam_candidates,
-    knee_frequency_outlier_flags,
-    select_specparam_candidate,
-)
 from .plots import plot_spectral_example
 
 
@@ -38,11 +29,6 @@ def _save(fig: Any, path: Path, dpi: int) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=int(dpi), bbox_inches="tight")
     plt.close(fig)
-
-
-def _range_id(limits: list[float] | tuple[float, float]) -> str:
-    low, high = (float(value) for value in limits)
-    return f"{low:g}_{high:g}Hz"
 
 
 def assess_specparam_fit(
@@ -133,210 +119,24 @@ def augment_primary_fit_qc(
     return augmented
 
 
-def _fit_subject_ranges(task: tuple[Any, ...]) -> list[dict[str, Any]]:
-    (
-        spectra_path,
-        subject_rows,
-        ranges,
-        primary_range,
-        specparam_settings,
-        qc,
-    ) = task
-    with np.load(spectra_path, allow_pickle=False) as spectra:
-        electrodes = spectra["electrodes"].astype(str).tolist()
-        frequencies = spectra["frequencies_hz"].copy()
-        observed_primary = spectra["observed_psd_uv2_hz"].copy()
-        modeled_primary = spectra["modeled_psd_uv2_hz"].copy()
-    metric_lookup = {str(row["electrode"]): row for row in subject_rows}
-    rows = []
-    for range_order, limits in enumerate(ranges):
-        limits = [float(value) for value in limits]
-        is_primary = limits == primary_range
-        settings = dict(specparam_settings)
-        settings["frequency_range_hz"] = limits
-        candidates = (
-            None
-            if is_primary
-            else [
-                fit_specparam_candidates(
-                    frequencies,
-                    observed_primary[electrode_index],
-                    {},
-                    settings,
-                )
-                for electrode_index in range(len(electrodes))
-            ]
-        )
-        if candidates is None:
-            knee_zscores = np.asarray(
-                [
-                    float(metric_lookup[electrode].get(
-                        "knee_frequency_zscore_within_subject", np.nan
-                    ))
-                    for electrode in electrodes
-                ],
-                dtype=float,
-            )
-            knee_outliers = np.asarray(
-                [
-                    bool(metric_lookup[electrode].get(
-                        "knee_frequency_outlier_within_subject", False
-                    ))
-                    for electrode in electrodes
-                ],
-                dtype=bool,
-            )
-        else:
-            knee_zscores, knee_outliers = knee_frequency_outlier_flags(
-                candidates,
-                float(settings["knee_frequency_outlier_z_threshold"]),
-                limits,
-            )
-        for electrode_index, electrode in enumerate(electrodes):
-            primary = metric_lookup[electrode]
-            if is_primary:
-                metrics = {
-                    key: primary[key]
-                    for key in (
-                        "aperiodic_offset",
-                        "aperiodic_exponent",
-                        "specparam_r_squared",
-                        "specparam_error_mae",
-                        "n_detected_peaks",
-                        "specparam_aperiodic_mode",
-                        "specparam_model_selection_reason",
-                    )
-                }
-                observed = observed_primary[electrode_index]
-                modeled = modeled_primary[electrode_index]
-            else:
-                metrics, _, curves = select_specparam_candidate(
-                    candidates[electrode_index],
-                    settings,
-                    knee_frequency_outlier=bool(knee_outliers[electrode_index]),
-                )
-                observed = curves["observed_psd_uv2_hz"]
-                modeled = curves["modeled_psd_uv2_hz"]
-            metrics["knee_frequency_zscore_within_subject"] = float(
-                knee_zscores[electrode_index]
-            )
-            rows.append(
-                {
-                    "subject_id": str(primary["subject_id"]),
-                    "group": str(primary["group"]),
-                    "electrode": electrode,
-                    "fit_range_id": _range_id(limits),
-                    "fit_range_order": int(range_order),
-                    "fit_fmin_hz": limits[0],
-                    "fit_fmax_hz": limits[1],
-                    "is_primary_range": bool(is_primary),
-                    **metrics,
-                    **assess_specparam_fit(metrics, observed, modeled, qc),
-                }
-            )
-    return rows
-
-
-def fit_range_sensitivity(
-    spectra_dir: str | Path,
-    primary_metrics: pd.DataFrame,
-    specparam_settings: Mapping[str, Any],
-    sensitivity: Mapping[str, Any],
+def summarize_primary_fit_qc(
+    electrode_metrics: pd.DataFrame,
     qc: Mapping[str, Any],
-    *,
-    logger: logging.Logger | None = None,
 ) -> pd.DataFrame:
-    """Fit every subject/electrode over each configured frequency range."""
-    spectra_dir = Path(spectra_dir)
-    ranges = [
-        [float(value) for value in limits]
-        for limits in sensitivity["frequency_ranges_hz"]
-    ]
-    primary_range = [
-        float(value) for value in specparam_settings["frequency_range_hz"]
-    ]
-    if primary_range not in ranges:
-        raise ValueError("Aperiodic sensitivity ranges must include the primary range")
-    if str(sensitivity["aperiodic_mode"]) != str(
-        specparam_settings["aperiodic_mode"]
+    """Create one all-fit and QC-qualified 4–50 Hz exponent row per subject."""
+    rows = []
+    for (subject_id, group), selected in electrode_metrics.groupby(
+        ["subject_id", "group"], sort=False
     ):
-        raise ValueError("Range sensitivity must keep the primary aperiodic mode")
-    tasks = []
-    for subject_id, selected in primary_metrics.groupby("subject_id", sort=False):
-        tasks.append(
-            (
-                str(spectra_dir / f"{subject_id}_specparam_spectra.npz"),
-                selected.to_dict(orient="records"),
-                ranges,
-                primary_range,
-                dict(specparam_settings),
-                dict(qc),
-            )
-        )
-    rows: list[dict[str, Any]] = []
-    workers = int(sensitivity["workers"])
-    if workers == 1:
-        for index, task in enumerate(tasks, start=1):
-            rows.extend(_fit_subject_ranges(task))
-            if logger is not None:
-                logger.info("Aperiodic range sensitivity [%d/%d]", index, len(tasks))
-    else:
-        try:
-            with ProcessPoolExecutor(max_workers=workers) as executor:
-                futures = [executor.submit(_fit_subject_ranges, task) for task in tasks]
-                for index, future in enumerate(as_completed(futures), start=1):
-                    rows.extend(future.result())
-                    if logger is not None and (
-                        index == len(tasks) or index % 10 == 0
-                    ):
-                        logger.info(
-                            "Aperiodic range sensitivity [%d/%d]",
-                            index,
-                            len(tasks),
-                        )
-        except PermissionError:
-            if logger is not None:
-                logger.warning(
-                    "Process workers are unavailable; using deterministic serial fitting"
-                )
-            rows.clear()
-            for index, task in enumerate(tasks, start=1):
-                rows.extend(_fit_subject_ranges(task))
-                if logger is not None and (
-                    index == len(tasks) or index % 10 == 0
-                ):
-                    logger.info(
-                        "Aperiodic range sensitivity [%d/%d]", index, len(tasks)
-                    )
-    return pd.DataFrame.from_records(rows).sort_values(
-        ["fit_range_order", "subject_id", "electrode"]
-    ).reset_index(drop=True)
-
-
-def summarize_range_sensitivity(
-    electrode_sensitivity: pd.DataFrame,
-    qc: Mapping[str, Any],
-) -> pd.DataFrame:
-    """Create one all-fit and one QC-qualified exponent summary per subject/range."""
-    keys = [
-        "subject_id",
-        "group",
-        "fit_range_id",
-        "fit_range_order",
-        "fit_fmin_hz",
-        "fit_fmax_hz",
-        "is_primary_range",
-    ]
-    rows = []
-    for key_values, selected in electrode_sensitivity.groupby(keys, sort=False):
-        row = dict(zip(keys, key_values))
         passing = selected.loc[selected["specparam_fit_qc_pass"]]
         total = int(selected["electrode"].nunique())
         n_passing = int(passing["electrode"].nunique())
         fraction = n_passing / total
         subject_pass = fraction >= float(qc["minimum_subject_qc_fraction"])
-        row.update(
+        rows.append(
             {
+                "subject_id": str(subject_id),
+                "group": str(group),
                 "n_electrodes": total,
                 "n_qc_pass_electrodes": n_passing,
                 "qc_pass_fraction": fraction,
@@ -365,78 +165,9 @@ def summarize_range_sensitivity(
                 ),
             }
         )
-        rows.append(row)
-    return pd.DataFrame.from_records(rows).sort_values(
-        ["fit_range_order", "subject_id"]
-    ).reset_index(drop=True)
-
-
-def _hedges_g(values_a: np.ndarray, values_b: np.ndarray) -> float:
-    n_a, n_b = len(values_a), len(values_b)
-    if n_a < 2 or n_b < 2:
-        return np.nan
-    pooled = (
-        (n_a - 1) * np.var(values_a, ddof=1)
-        + (n_b - 1) * np.var(values_b, ddof=1)
-    ) / (n_a + n_b - 2)
-    correction = 1.0 - 3.0 / (4.0 * (n_a + n_b) - 9.0)
-    return float(
-        correction * (np.mean(values_a) - np.mean(values_b)) / np.sqrt(pooled)
+    return pd.DataFrame.from_records(rows).sort_values("subject_id").reset_index(
+        drop=True
     )
-
-
-def compare_ranges(subject_sensitivity: pd.DataFrame) -> pd.DataFrame:
-    """Return transparent unadjusted PD-Control summaries for every range/QC policy."""
-    rows = []
-    policies = {
-        "all_electrode_fits": "aperiodic_exponent_all_mean",
-        "qc_qualified_subjects": "aperiodic_exponent_qc_qualified",
-    }
-    for range_id, selected in subject_sensitivity.groupby("fit_range_id", sort=False):
-        for policy, column in policies.items():
-            pd_values = selected.loc[selected["group"].eq("PD"), column].dropna().to_numpy()
-            control_values = selected.loc[
-                selected["group"].eq("Control"), column
-            ].dropna().to_numpy()
-            if len(pd_values) >= 2 and len(control_values) >= 2:
-                welch = ttest_ind(pd_values, control_values, equal_var=False)
-                mann = mannwhitneyu(
-                    pd_values, control_values, alternative="two-sided"
-                )
-                welch_t = float(welch.statistic)
-                welch_p = float(welch.pvalue)
-                mann_u = float(mann.statistic)
-                mann_p = float(mann.pvalue)
-            else:
-                welch_t = welch_p = mann_u = mann_p = np.nan
-            first = selected.iloc[0]
-            rows.append(
-                {
-                    "fit_range_id": range_id,
-                    "fit_range_order": first["fit_range_order"],
-                    "fit_fmin_hz": first["fit_fmin_hz"],
-                    "fit_fmax_hz": first["fit_fmax_hz"],
-                    "is_primary_range": first["is_primary_range"],
-                    "aggregation_policy": policy,
-                    "n_pd": len(pd_values),
-                    "n_control": len(control_values),
-                    "pd_mean": float(np.mean(pd_values)) if len(pd_values) else np.nan,
-                    "control_mean": (
-                        float(np.mean(control_values)) if len(control_values) else np.nan
-                    ),
-                    "mean_difference_pd_minus_control": float(
-                        np.mean(pd_values) - np.mean(control_values)
-                    ) if len(pd_values) and len(control_values) else np.nan,
-                    "hedges_g_pd_minus_control": _hedges_g(
-                        pd_values, control_values
-                    ),
-                    "welch_t": welch_t,
-                    "welch_p_value": welch_p,
-                    "mann_whitney_u": mann_u,
-                    "mann_whitney_p_value": mann_p,
-                }
-            )
-    return pd.DataFrame.from_records(rows)
 
 
 def qc_summary(electrode_metrics: pd.DataFrame) -> pd.DataFrame:
@@ -623,7 +354,7 @@ def plot_model_selection_summary(
         axis.grid(alpha=0.2)
     axes[0, 1].legend(frameon=False)
     axes[1, 0].legend(frameon=False)
-    fig.suptitle("Fixed versus knee specparam audit — both fitted over 1–50 Hz")
+    fig.suptitle("Fixed versus knee specparam audit — both fitted over 4–50 Hz")
     fig.tight_layout()
     _save(fig, path, dpi)
 
@@ -719,119 +450,6 @@ def plot_fit_qc_dashboard(
     _save(fig, path, dpi)
 
 
-def plot_range_sensitivity(
-    subjects: pd.DataFrame,
-    colors: Mapping[str, str],
-    path: Path,
-    dpi: int,
-) -> None:
-    """Show exponent and QC stability across fixed-versus-knee fit ranges."""
-    order = (
-        subjects[["fit_range_id", "fit_range_order"]]
-        .drop_duplicates()
-        .sort_values("fit_range_order")["fit_range_id"]
-        .tolist()
-    )
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    rng = np.random.default_rng(1)
-    groups = subjects["group"].drop_duplicates().tolist()
-    offsets = np.linspace(-0.16, 0.16, len(groups))
-    for group, offset in zip(groups, offsets):
-        for position, range_id in enumerate(order):
-            selected = subjects.loc[
-                subjects["group"].eq(group)
-                & subjects["fit_range_id"].eq(range_id)
-            ]
-            values = selected["aperiodic_exponent_all_mean"].to_numpy(dtype=float)
-            axes[0, 0].scatter(
-                position + offset + rng.uniform(-0.035, 0.035, len(values)),
-                values,
-                s=11,
-                alpha=0.28,
-                color=colors.get(str(group), "0.4"),
-            )
-            mean = float(np.mean(values))
-            sem = (
-                float(np.std(values, ddof=1) / np.sqrt(len(values)))
-                if len(values) > 1
-                else 0.0
-            )
-            axes[0, 0].errorbar(
-                position + offset,
-                mean,
-                yerr=1.96 * sem,
-                fmt="o",
-                capsize=3,
-                color=colors.get(str(group), "0.4"),
-                label=str(group) if position == 0 else None,
-            )
-            axes[1, 0].scatter(
-                position + offset,
-                selected["qc_pass_fraction"].mean(),
-                color=colors.get(str(group), "0.4"),
-                s=55,
-                label=str(group) if position == 0 else None,
-            )
-    axes[0, 0].set_xticks(np.arange(len(order)), order)
-    axes[0, 0].set(
-        title="All-electrode subject means",
-        ylabel="Aperiodic exponent",
-    )
-    axes[0, 0].legend(frameon=False)
-    axes[1, 0].set_xticks(np.arange(len(order)), order)
-    axes[1, 0].set(
-        title="Mean electrode QC-pass fraction",
-        ylabel="QC-pass fraction",
-        ylim=(0, 1.03),
-    )
-    matrix = subjects.pivot(
-        index="subject_id",
-        columns="fit_range_id",
-        values="aperiodic_exponent_all_mean",
-    ).reindex(columns=order)
-    correlation = matrix.corr(method="spearman")
-    image = axes[0, 1].imshow(correlation, vmin=0.0, vmax=1.0, cmap="viridis")
-    axes[0, 1].set_xticks(np.arange(len(order)), order, rotation=35, ha="right")
-    axes[0, 1].set_yticks(np.arange(len(order)), order)
-    axes[0, 1].set_title("Cross-range subject Spearman correlation")
-    for row in range(len(order)):
-        for column in range(len(order)):
-            axes[0, 1].text(
-                column,
-                row,
-                f"{correlation.iloc[row, column]:.2f}",
-                ha="center",
-                va="center",
-                color="white" if correlation.iloc[row, column] < 0.65 else "black",
-            )
-    fig.colorbar(image, ax=axes[0, 1], shrink=0.75)
-    primary = subjects.loc[subjects["is_primary_range"]]
-    reasons = (
-        primary.assign(failed=~primary["subject_fit_qc_pass"])
-        .groupby("group")["failed"]
-        .agg(["sum", "count"])
-    )
-    axes[1, 1].axis("off")
-    lines = [
-        "Interpretation",
-        "",
-        "All models use fixed mode and identical peak settings.",
-        "Only the fitted frequency range changes.",
-        "",
-    ]
-    for group, row in reasons.iterrows():
-        lines.append(
-            f"Primary range: {int(row['sum'])}/{int(row['count'])} {group} subjects "
-            "fall below the configured 80% electrode-QC coverage."
-        )
-    axes[1, 1].text(0.0, 1.0, "\n".join(lines), va="top", fontsize=10)
-    for axis in (axes[0, 0], axes[1, 0]):
-        axis.grid(alpha=0.2)
-    fig.suptitle("Aperiodic exponent sensitivity to fitting range")
-    fig.tight_layout()
-    _save(fig, path, dpi)
-
-
 def plot_group_median_decomposition(
     spectra_dir: str | Path,
     metrics: pd.DataFrame,
@@ -914,7 +532,7 @@ def run_aperiodic_diagnostics(
     *,
     logger: logging.Logger | None = None,
 ) -> dict[str, Any]:
-    """Run and save the complete primary-QC and fit-range sensitivity audit."""
+    """Run and save the complete 4–50 Hz fit-QC and model-selection audit."""
     output_dir = Path(output_dir)
     spectra_dir = output_dir / "intermediate" / "spectra"
     metrics_dir = output_dir / "metrics"
@@ -922,16 +540,7 @@ def run_aperiodic_diagnostics(
     metrics_dir.mkdir(parents=True, exist_ok=True)
     qc = config["aperiodic_fit_qc"]
     augmented = augment_primary_fit_qc(spectra_dir, electrode_metrics, qc)
-    sensitivity = fit_range_sensitivity(
-        spectra_dir,
-        augmented,
-        config["specparam"],
-        config["aperiodic_sensitivity"],
-        qc,
-        logger=logger,
-    )
-    subject_sensitivity = summarize_range_sensitivity(sensitivity, qc)
-    range_comparisons = compare_ranges(subject_sensitivity)
+    subject_qc = summarize_primary_fit_qc(augmented, qc)
     summary = qc_summary(augmented)
     model_electrode, model_subject = summarize_model_selection(augmented)
     augmented.to_csv(
@@ -939,27 +548,18 @@ def run_aperiodic_diagnostics(
         index=False,
         float_format="%.17g",
     )
-    sensitivity.to_csv(
-        metrics_dir / "electrode_aperiodic_range_sensitivity.csv.gz",
-        index=False,
-        float_format="%.17g",
-        compression="gzip",
-    )
-    subject_sensitivity.to_csv(
-        metrics_dir / "subject_aperiodic_range_sensitivity.csv",
-        index=False,
-        float_format="%.17g",
-    )
-    subject_sensitivity.loc[subject_sensitivity["is_primary_range"]].to_csv(
+    subject_qc.to_csv(
         metrics_dir / "subject_aperiodic_qc_metrics.csv",
         index=False,
         float_format="%.17g",
     )
-    range_comparisons.to_csv(
+    for retired_path in (
+        metrics_dir / "electrode_aperiodic_range_sensitivity.csv.gz",
+        metrics_dir / "subject_aperiodic_range_sensitivity.csv",
         metrics_dir / "aperiodic_range_group_comparisons.csv",
-        index=False,
-        float_format="%.17g",
-    )
+        figures_dir / "frequency_range_sensitivity.png",
+    ):
+        retired_path.unlink(missing_ok=True)
     summary.to_csv(
         metrics_dir / "specparam_fit_qc_summary.csv",
         index=False,
@@ -993,12 +593,6 @@ def run_aperiodic_diagnostics(
         model_subject,
         colors,
         figures_dir / "fixed_vs_knee_model_selection.png",
-        dpi,
-    )
-    plot_range_sensitivity(
-        subject_sensitivity,
-        colors,
-        figures_dir / "frequency_range_sensitivity.png",
         dpi,
     )
     plot_group_median_decomposition(
@@ -1049,9 +643,7 @@ def run_aperiodic_diagnostics(
     )
     return {
         "electrode_metrics": augmented,
-        "electrode_sensitivity": sensitivity,
-        "subject_sensitivity": subject_sensitivity,
-        "range_comparisons": range_comparisons,
+        "subject_qc": subject_qc,
         "qc_summary": summary,
         "model_comparison_electrode": model_electrode,
         "model_comparison_subject": model_subject,

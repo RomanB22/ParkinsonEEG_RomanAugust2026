@@ -120,7 +120,7 @@ def plot_aperiodic_exponent_group_comparison(
         )
     fig.suptitle(
         "Aperiodic exponent by diagnostic group "
-        "(specparam fixed/knee BIC selection, 1–50 Hz)"
+        "(specparam fixed/knee BIC selection, 4–50 Hz)"
     )
     fig.tight_layout()
     _save(fig, path, dpi)

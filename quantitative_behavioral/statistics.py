@@ -44,12 +44,12 @@ def compare_aperiodic_exponent_groups(
     specifications = (
         (
             "aperiodic_exponent",
-            "BIC-selected aperiodic exponent (1–50 Hz; all 60 electrode fits)",
+            "BIC-selected aperiodic exponent (4–50 Hz; all 60 electrode fits)",
             "all shared-electrode fits",
         ),
         (
             "aperiodic_exponent_qc",
-            "QC-qualified BIC-selected aperiodic exponent (1–50 Hz)",
+            "QC-qualified BIC-selected aperiodic exponent (4–50 Hz)",
             "QC-passing electrodes in subjects with at least 80% coverage",
         ),
     )

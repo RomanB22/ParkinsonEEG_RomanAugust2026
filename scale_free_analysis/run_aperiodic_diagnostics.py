@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Rerun specparam fit QC and range sensitivity from saved spectral curves."""
+"""Rerun 4–50 Hz specparam fit QC from saved spectral curves."""
 
 from __future__ import annotations
 
@@ -21,9 +21,8 @@ from scale_free_analysis.pipeline import load_analysis_config
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Audit every saved selected specparam fit and refit the configured "
-            "fixed-versus-knee frequency-range sensitivity models without "
-            "rerunning eBOSC/bycycle."
+            "Audit every saved selected 4–50 Hz specparam fit without rerunning "
+            "eBOSC/bycycle."
         )
     )
     parser.add_argument("--config", default="scale_free_analysis/config.json")
@@ -56,12 +55,8 @@ def main() -> None:
             "n_fits": int(len(metrics)),
             "n_qc_pass": int(metrics["specparam_fit_qc_pass"].sum()),
             "qc_pass_fraction": float(metrics["specparam_fit_qc_pass"].mean()),
-            "frequency_ranges_hz": config["aperiodic_sensitivity"][
-                "frequency_ranges_hz"
-            ],
-            "n_range_sensitivity_fits": int(
-                len(results["electrode_sensitivity"])
-            ),
+            "range_sensitivity_enabled": False,
+            "fit_range_hz": config["specparam"]["frequency_range_hz"],
             "policy": config["aperiodic_fit_qc"]["policy"],
         }
         manifest_path.write_text(
@@ -69,8 +64,7 @@ def main() -> None:
         )
     print(
         "Aperiodic diagnostics complete: "
-        f"{len(results['electrode_metrics'])} primary fits and "
-        f"{len(results['electrode_sensitivity'])} range-sensitivity fits"
+        f"{len(results['electrode_metrics'])} primary 4–50 Hz fits"
     )
 
 
