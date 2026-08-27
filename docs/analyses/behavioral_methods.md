@@ -69,7 +69,10 @@ exponent–MOCA maps are secondary localization results.
   information at an arbitrary dichotomy.
 - Covariates: age in years and recorded sex.
 - Sex coding: `sex_male = 1` for `M` and `sex_male = 0` for `F`.
-- Minimum sample size: 30 complete participants for a reported estimate.
+- Minimum sample size: 30 complete participants for a full-cohort estimate and
+  20 for a matched-cohort estimate. The matched threshold accommodates
+  feature-specific fit-QC attrition while retaining a substantive complete-case
+  sample.
 - Missing data: feature-wise complete cases; no values are imputed.
 
 Every test uses one row per participant containing the EEG feature, MOCA, age,

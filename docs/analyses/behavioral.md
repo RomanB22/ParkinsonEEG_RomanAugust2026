@@ -68,6 +68,11 @@ least 48/60 passing fits. It currently contains 70 PD participants. This
 32-feature sensitivity is kept out of the primary 52-feature table and receives
 its own family-specific BH corrections.
 
+Complete-case estimates require at least 30 PD participants in the full-cohort
+analysis and at least 20 in the matched-cohort analysis. The matched threshold
+allows the prespecified fit-QC sensitivity to remain estimable after cohort and
+fit-quality filtering.
+
 ## Separate embedding-dimension analyses
 
 The broadband and band-resolved ordinal quantities are analyzed at **D=3, 4,

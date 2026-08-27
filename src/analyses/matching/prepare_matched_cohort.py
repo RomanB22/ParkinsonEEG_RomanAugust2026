@@ -52,6 +52,13 @@ CONFIG_OUTPUTS = {
 }
 
 
+# The matched PD analysis contains 49 participants before feature-specific QC.
+# A 20-subject floor retains the QC-qualified sensitivity cohort while still
+# requiring a substantive complete-case sample. Full-cohort analyses retain
+# their prespecified 30-subject floor from the source configuration.
+MATCHED_BEHAVIORAL_MINIMUM_SUBJECTS = 20
+
+
 def _load_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
@@ -167,6 +174,9 @@ def prepare_matched_cohort(
                 balance_path
             )
         elif name == "behavioral":
+            config["analysis"]["minimum_subjects"] = (
+                MATCHED_BEHAVIORAL_MINIMUM_SUBJECTS
+            )
             config["input"].update(
                 {
                     "ordinal_subject_file": "outputs/matched/ordinal/metrics/subject_electrode_mean_metrics.csv",

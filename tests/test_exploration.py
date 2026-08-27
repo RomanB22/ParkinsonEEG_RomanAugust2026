@@ -211,7 +211,7 @@ class ExplorationTests(unittest.TestCase):
             for config_path in manifest["generated_configs"].values():
                 config = json.loads(Path(config_path).read_text(encoding="utf-8"))
                 self.assertEqual(config["input"]["participants_file"], matched_path)
-                self.assertTrue(config["output_dir"].endswith("processed_matched"))
+                self.assertTrue(config["output_dir"].startswith("outputs/matched/"))
                 if Path(config_path).name == "exploration.json":
                     self.assertEqual(
                         config["demographic_matching"]["precomputed_pairs_file"],
@@ -236,6 +236,8 @@ class ExplorationTests(unittest.TestCase):
                         config["input"]["feature_source_output_dir"],
                         "outputs/full/scale_free",
                     )
+                if Path(config_path).name == "behavioral.json":
+                    self.assertEqual(config["analysis"]["minimum_subjects"], 20)
 
     @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_precomputed_pairs_are_validated_without_double_matching(self):
