@@ -93,7 +93,10 @@ def _clean_builder(context: RunContext, replace: bool) -> list[list[str]]:
         command.append("--no-progress")
     if context.skip_manual_ica_review:
         command.append("--skip-manual-ica-review")
-    if replace:
+    # A stale runner fingerprint is not permission to refit ICA. Without an
+    # explicit public --overwrite, the preprocessing batch runner validates
+    # and reuses every complete subject and processes only missing subjects.
+    if context.overwrite:
         command.append("--overwrite")
     return [command]
 

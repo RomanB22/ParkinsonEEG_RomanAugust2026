@@ -23,6 +23,7 @@ from .dataset import load_subject, participant_metadata, subject_id_from_path
 from .ica import (
     apply_ica_exclusions,
     fit_ica,
+    make_ica_copy,
     proposed_ica_exclusions,
     score_ica_components,
 )
@@ -195,6 +196,7 @@ def process_subject(
     overwrite: bool = False,
     config_path: str | Path | None = None,
     skip_manual_ica_review: bool = False,
+    reuse_existing_ica: bool = False,
     console_logging: bool = True,
 ) -> SubjectResult:
     """Preprocess one participant and save every decision and QC stage."""
@@ -264,10 +266,43 @@ def process_subject(
     if not qc.plot_artifact_annotations(annotated, artifact_table, channels, qc_dir / "07_artifact_annotations.png", dpi):
         qc.save_status(qc_dir, "07_artifact_annotations", "No large temporal artifacts exceeded the conservative configured thresholds.")
 
-    ica, raw_for_ica = fit_ica(annotated, config["ica"], no_downsampling=no_downsampling)
     ica_path = ica_dir / f"{subject_id}_task-Rest_desc-preprocessing-ica.fif"
-    ica.save(ica_path, overwrite=overwrite)
-    logger.info("Fitted %d ICA components at %.1f Hz (final signal remains %.1f Hz)", ica.n_components_, raw_for_ica.info["sfreq"], annotated.info["sfreq"])
+    if reuse_existing_ica:
+        if not ica_path.is_file():
+            raise FileNotFoundError(
+                f"{subject_id}: reusable ICA was requested but is missing: {ica_path}"
+            )
+        ica = mne.preprocessing.read_ica(ica_path, verbose="ERROR")
+        raw_for_ica = make_ica_copy(
+            annotated,
+            config["ica"],
+            no_downsampling=no_downsampling,
+        )
+        eeg_picks = mne.pick_types(raw_for_ica.info, eeg=True, exclude="bads")
+        expected_ica_channels = [raw_for_ica.ch_names[pick] for pick in eeg_picks]
+        if list(ica.ch_names) != expected_ica_channels:
+            raise RuntimeError(
+                f"{subject_id}: saved ICA channel contract no longer matches the "
+                "prepared EEG; rerun with explicit --overwrite to refit ICA"
+            )
+        logger.info(
+            "Reused %d fitted ICA components from %s",
+            ica.n_components_,
+            ica_path,
+        )
+    else:
+        ica, raw_for_ica = fit_ica(
+            annotated,
+            config["ica"],
+            no_downsampling=no_downsampling,
+        )
+        ica.save(ica_path, overwrite=overwrite)
+        logger.info(
+            "Fitted %d ICA components at %.1f Hz (final signal remains %.1f Hz)",
+            ica.n_components_,
+            raw_for_ica.info["sfreq"],
+            annotated.info["sfreq"],
+        )
     # ICLabel receives the same 1-100 Hz, 250 Hz, CAR signal used to fit ICA.
     scores = score_ica_components(ica, raw_for_ica, config["ica"])
     proposed_components, proposed_reasons = proposed_ica_exclusions(scores)
@@ -364,6 +399,7 @@ def process_subject(
             else "ICLabel disabled by configuration."
         ),
         "preprocessing_signature": preprocessing_signature(config),
+        "ica_fit_reused": bool(reuse_existing_ica),
         "ica_reference": "average",
         "automatic_ica_removal": automatic_mode,
         "notch_applied": notch_applied,
@@ -469,6 +505,7 @@ def process_subject(
         "n_temporal_artifact_annotations": len(artifact_table),
         "annotated_bad_duration_sec": float(artifact_table["duration_sec"].sum()) if not artifact_table.empty else 0.0,
         "n_ica_components": int(ica.n_components_),
+        "ica_fit_reused": bool(reuse_existing_ica),
         "ica_components_removed": _list_text(components),
         "ica_component_removal_reasons": json.dumps(component_reasons, sort_keys=True),
         "n_ica_components_removed": len(components),

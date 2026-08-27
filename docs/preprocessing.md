@@ -295,14 +295,17 @@ After every prefilled ICA entry has been visually checked and every
 `manual_review_confirmed` flag is `true`, clean all recordings at 250 Hz:
 
 ```bash
-conda run -n MNE_August2026 python scripts/run_preprocessing.py \
-  --overwrite
+conda run -n MNE_August2026 python scripts/run_preprocessing.py
 ```
+
+Without `--overwrite`, the cleaning pass reuses each compatible ICA fitted by
+the review pass and proceeds from component selection to final cleaned epochs.
+Pass `--overwrite` only when the ICA decomposition itself must be refit.
 
 Explicit unattended alternative:
 
 ```bash
-bash scripts/run_full_cleaning.sh clean --skip-manual-ica-review --overwrite
+bash scripts/run_full_cleaning.sh clean --skip-manual-ica-review
 ```
 
 The batch runner displays completed subjects and an ETA. It processes two

@@ -29,6 +29,11 @@ bash run_pipeline.sh run --profile paper
 ```
 
 The default is resumable. `--overwrite` recomputes every selected stage.
+For preprocessing, an automatically detected stale stage does not imply ICA
+refitting: complete subject outputs with a matching preprocessing signature are
+reused. A compatible saved ICA from an incomplete/review-only subject is also
+loaded instead of refit. ICA is forcibly refit only when `--overwrite` is
+explicitly supplied.
 
 ## Downstream analyses
 

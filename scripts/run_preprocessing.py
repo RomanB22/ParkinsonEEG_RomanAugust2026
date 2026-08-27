@@ -64,6 +64,29 @@ def _subject_output_is_complete(
     return decisions.get("preprocessing_signature") == preprocessing_signature(config)
 
 
+def _existing_ica_reuse_status(
+    output_dir: str | Path,
+    subject_id: str,
+    config: dict,
+) -> str:
+    """Classify an existing ICA as missing, reusable, or incompatible."""
+    ica_path = (
+        Path(output_dir)
+        / "ica"
+        / f"{subject_id}_task-Rest_desc-preprocessing-ica.fif"
+    )
+    if not ica_path.is_file():
+        return "missing"
+    if _subject_output_is_complete(
+        output_dir,
+        subject_id,
+        review_only=True,
+        config=config,
+    ):
+        return "reusable"
+    return "incompatible"
+
+
 def _record_parallel_ica_proposal(
     config_path: str | Path,
     output_dir: str | Path,
@@ -108,6 +131,7 @@ def _process_one(
     overwrite: bool,
     config_path: str | None,
     skip_manual_ica_review: bool,
+    reuse_existing_ica: bool,
     console_logging: bool,
 ):
     """Pickle-friendly worker wrapper around the subject pipeline."""
@@ -121,6 +145,7 @@ def _process_one(
         overwrite=overwrite,
         config_path=config_path,
         skip_manual_ica_review=skip_manual_ica_review,
+        reuse_existing_ica=reuse_existing_ica,
         console_logging=console_logging,
     )
 
@@ -217,6 +242,36 @@ def main() -> None:
             )
 
     worker_count = min(args.workers, max(1, len(recordings)))
+    ica_reuse_status = {
+        subject_id_from_path(path): _existing_ica_reuse_status(
+            config["project"]["output_dir"],
+            subject_id_from_path(path),
+            config,
+        )
+        for path in recordings
+    }
+    incompatible_ica = [
+        subject_id
+        for subject_id, status in ica_reuse_status.items()
+        if not args.overwrite and status == "incompatible"
+    ]
+    if incompatible_ica:
+        preview = ", ".join(incompatible_ica[:10])
+        raise SystemExit(
+            "Refusing to refit existing ICA without explicit --overwrite; "
+            f"{len(incompatible_ica)} saved decomposition(s) lack compatible "
+            f"provenance ({preview})."
+        )
+    reusable_ica = {
+        subject_id: not args.overwrite and status == "reusable"
+        for subject_id, status in ica_reuse_status.items()
+    }
+    n_reusable_ica = sum(reusable_ica.values())
+    if n_reusable_ica:
+        print(
+            f"Reusing compatible saved ICA decompositions for "
+            f"{n_reusable_ica} participant(s)"
+        )
     # Prevent each worker's BLAS backend from starting its own large thread
     # pool. Subject-level workers provide the parallelism here.
     if worker_count > 1:
@@ -258,8 +313,9 @@ def main() -> None:
         "require_review": not args.allow_unreviewed,
         "no_downsampling": args.no_downsampling,
         # Complete subjects were filtered above unless --overwrite was given.
-        # Rebuild every remaining subject so an interrupted review/clean run
-        # cannot collide with a partial ICA or QC file from the prior attempt.
+        # Rebuild downstream outputs for every remaining subject so an
+        # interrupted run cannot collide with partial QC files. A compatible
+        # saved ICA is loaded separately when public --overwrite was omitted.
         "overwrite": True,
         "skip_manual_ica_review": args.skip_manual_ica_review,
         "console_logging": args.no_progress,
@@ -272,6 +328,7 @@ def main() -> None:
                     config,
                     expected,
                     config_path=args.config,
+                    reuse_existing_ica=reusable_ica[subject_id_from_path(set_path)],
                     **common_kwargs,
                 )
                 finish_result(result)
@@ -294,6 +351,9 @@ def main() -> None:
                         config,
                         expected,
                         config_path=args.config,
+                        reuse_existing_ica=reusable_ica[
+                            subject_id_from_path(set_path)
+                        ],
                         **common_kwargs,
                     )
                     finish_result(result)
@@ -307,6 +367,9 @@ def main() -> None:
                             config,
                             expected,
                             config_path=None,
+                            reuse_existing_ica=reusable_ica[
+                                subject_id_from_path(set_path)
+                            ],
                             **common_kwargs,
                         ): subject_id_from_path(set_path)
                         for set_path in recordings

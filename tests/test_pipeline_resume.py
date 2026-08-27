@@ -84,6 +84,29 @@ class PipelineRefactorTests(unittest.TestCase):
         command = self.registry["full.ordinal"].build_commands(context, True)[0]
         self.assertIn("--overwrite", command)
 
+    def test_stale_clean_does_not_implicitly_refit_ica(self) -> None:
+        resumable = RunContext(
+            project_root=Path.cwd(),
+            environment_name="MNE_August2026",
+            profile_name="compute",
+            skip_manual_ica_review=True,
+        )
+        command = self.registry["clean"].build_commands(resumable, True)[0]
+        self.assertIn("--skip-manual-ica-review", command)
+        self.assertNotIn("--overwrite", command)
+
+        explicit_overwrite = RunContext(
+            project_root=Path.cwd(),
+            environment_name="MNE_August2026",
+            profile_name="compute",
+            overwrite=True,
+            skip_manual_ica_review=True,
+        )
+        command = self.registry["clean"].build_commands(
+            explicit_overwrite, True
+        )[0]
+        self.assertIn("--overwrite", command)
+
     def test_compute_ordinal_manifest_does_not_require_figure_only_fields(self) -> None:
         manifest = next(
             artifact

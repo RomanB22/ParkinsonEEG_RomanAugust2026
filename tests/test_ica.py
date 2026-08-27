@@ -9,6 +9,7 @@ import pandas as pd
 from core.ica import _add_iclabel_scores, proposed_ica_exclusions
 from core.config import load_config, preprocessing_signature
 from scripts.run_preprocessing import (
+    _existing_ica_reuse_status,
     _record_parallel_ica_proposal,
     _subject_output_is_complete,
 )
@@ -191,6 +192,41 @@ class IcaLabelScoringTests(unittest.TestCase):
                 _subject_output_is_complete(
                     root, subject_id, review_only=True, config=config
                 )
+            )
+
+    def test_existing_ica_requires_compatible_provenance_for_reuse(self):
+        config = load_config("config/preprocessing.yaml")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject_id = "sub-001"
+            self.assertEqual(
+                _existing_ica_reuse_status(root, subject_id, config),
+                "missing",
+            )
+
+            ica_path = (
+                root
+                / "ica"
+                / f"{subject_id}_task-Rest_desc-preprocessing-ica.fif"
+            )
+            ica_path.parent.mkdir(parents=True)
+            ica_path.touch()
+            self.assertEqual(
+                _existing_ica_reuse_status(root, subject_id, config),
+                "incompatible",
+            )
+
+            decisions_path = root / "qc" / subject_id / "decisions.json"
+            decisions_path.parent.mkdir(parents=True)
+            decisions_path.write_text(
+                json.dumps(
+                    {"preprocessing_signature": preprocessing_signature(config)}
+                ),
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                _existing_ica_reuse_status(root, subject_id, config),
+                "reusable",
             )
 
 
