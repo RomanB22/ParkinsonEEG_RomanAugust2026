@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import pandas as pd
+from src.plotting import save_figure
 
 
 def _safe_token(value: str) -> str:
@@ -165,7 +166,6 @@ def plot_electrode_group_statistics(
         )
         fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.985))
         path = output_dir / f"{_safe_token(str(metric))}_group_statistics.png"
-        fig.savefig(path, dpi=dpi, bbox_inches="tight")
-        plt.close(fig)
+        save_figure(fig, path, dpi)
         outputs.append(path)
     return outputs

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import platform
-import re
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -25,6 +24,9 @@ import scipy
 from scipy.stats import spearmanr
 from tqdm.auto import tqdm
 
+from src.analysis_io import discover_epoch_files as _epoch_files
+from src.analysis_io import load_participants
+from src.analysis_logging import configure_analysis_logger
 from src.dataset import ordered_channel_inventory
 from src.group_statistics import compute_group_statistics
 from src.group_statistics_plots import plot_electrode_group_statistics
@@ -39,9 +41,6 @@ from .plots import (
     plot_metric_agreement,
     plot_subject_average_violins,
 )
-
-
-SUBJECT_PATTERN = re.compile(r"(sub-\d+)")
 
 
 def load_analysis_config(path: str | Path) -> dict[str, Any]:
@@ -89,26 +88,9 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
 
 
 def _participants(path: Path) -> pd.DataFrame:
-    separator = "\t" if path.suffix.lower() == ".tsv" else ","
-    table = pd.read_csv(path, sep=separator)
-    required = {"participant_id", "GROUP", "AGE", "GENDER"}
-    missing = sorted(required - set(table))
-    if missing:
-        raise ValueError(f"Participant table is missing columns: {missing}")
-    if table["participant_id"].duplicated().any():
-        raise ValueError("Participant IDs must be unique")
-    return table
-
-
-def _epoch_files(directory: Path, pattern: str) -> dict[str, Path]:
-    files: dict[str, Path] = {}
-    for path in sorted(directory.glob(pattern)):
-        match = SUBJECT_PATTERN.search(path.name)
-        if match:
-            if match.group(1) in files:
-                raise ValueError(f"Multiple epoch files found for {match.group(1)}")
-            files[match.group(1)] = path
-    return files
+    return load_participants(
+        path, required=("participant_id", "GROUP", "AGE", "GENDER")
+    )
 
 
 def _write_csv(table: pd.DataFrame, path: Path, *, compressed: bool = False) -> None:
@@ -119,22 +101,12 @@ def _write_csv(table: pd.DataFrame, path: Path, *, compressed: bool = False) -> 
 
 
 def _logger(output: Path, overwrite: bool) -> logging.Logger:
-    output.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("bycycle_burst_analysis")
-    logger.handlers.clear()
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    console.setFormatter(formatter)
-    logger.addHandler(console)
-    file_handler = logging.FileHandler(
-        output / "bycycle_burst_analysis.log", mode="w" if overwrite else "a"
+    return configure_analysis_logger(
+        "bycycle_burst_analysis",
+        output,
+        filename="bycycle_burst_analysis.log",
+        overwrite=overwrite,
     )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    return logger
 
 
 def _process_subject(task: dict[str, Any]) -> dict[str, Any]:

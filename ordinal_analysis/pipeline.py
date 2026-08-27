@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import platform
-import re
 import shutil
 from datetime import datetime, timezone
 from importlib.metadata import version
@@ -13,6 +12,9 @@ from pathlib import Path
 from typing import Any
 
 from src.runtime import configure_runtime
+from src.analysis_io import discover_epoch_files as _epoch_files
+from src.analysis_io import load_participants as _participants
+from src.analysis_logging import configure_analysis_logger
 from src.dataset import ordered_channel_inventory
 from src.group_statistics import compute_group_statistics
 from src.group_statistics_plots import plot_electrode_group_statistics
@@ -52,9 +54,6 @@ from .plots import (
     plot_subject_band_topomaps,
     plot_subject_topomaps,
 )
-
-
-SUBJECT_PATTERN = re.compile(r"(sub-\d+)")
 
 
 def load_analysis_config(path: str | Path) -> dict[str, Any]:
@@ -125,48 +124,13 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     return config
 
 
-def _participants(path: Path) -> pd.DataFrame:
-    separator = "\t" if path.suffix.lower() == ".tsv" else ","
-    table = pd.read_csv(path, sep=separator)
-    required = {"participant_id", "GROUP"}
-    missing = sorted(required - set(table.columns))
-    if missing:
-        raise ValueError(f"Participant table is missing columns: {missing}")
-    if table["participant_id"].duplicated().any():
-        raise ValueError("Participant IDs must be unique")
-    return table
-
-
-def _epoch_files(directory: Path, pattern: str) -> dict[str, Path]:
-    files: dict[str, Path] = {}
-    for path in sorted(directory.glob(pattern)):
-        match = SUBJECT_PATTERN.search(path.name)
-        if match is None:
-            continue
-        subject_id = match.group(1)
-        if subject_id in files:
-            raise ValueError(f"Multiple epoch files found for {subject_id}")
-        files[subject_id] = path
-    return files
-
-
 def _configure_logger(output_dir: Path, overwrite: bool) -> logging.Logger:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    log_path = output_dir / "ordinal_analysis.log"
-    mode = "w" if overwrite else "a"
-    logger = logging.getLogger("ordinal_analysis")
-    logger.handlers.clear()
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-    file_handler = logging.FileHandler(log_path, mode=mode)
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    return logger
+    return configure_analysis_logger(
+        "ordinal_analysis",
+        output_dir,
+        filename="ordinal_analysis.log",
+        overwrite=overwrite,
+    )
 
 
 def _group_summary(table: pd.DataFrame, by: list[str]) -> pd.DataFrame:

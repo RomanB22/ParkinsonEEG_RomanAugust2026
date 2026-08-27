@@ -2,7 +2,8 @@
   "input": {
     "epochs_dir": "processed/epochs",
     "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif",
-    "participants_file": "processed/metadata/subjects.csv"
+    "participants_file": "processed/metadata/subjects.csv",
+    "psd_feature_file": "psd_analysis/processed/metrics/subject_electrode_psd.npz"
   },
   "output_dir": "scale_free_analysis/processed",
   "bands": {

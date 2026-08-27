@@ -121,11 +121,11 @@ ordinal analyses, scale-free/bout analyses, exploration models, and this MOCA
 workflow—use the resumable repository-level runner:
 
 ```bash
-bash run_all_analyses.sh
+bash run_pipeline.sh analyses --profile paper
 ```
 
-Use `bash run_all_analyses.sh --help` for overwrite, dry-run, progress, and
-stage-skip options.
+Use `bash run_pipeline.sh analyses --help` for overwrite, dry-run, progress,
+cohort, and stage-skip options.
 
 For a faster code/figure pilot while retaining the same participants and
 features:

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import platform
-import re
 from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
@@ -24,10 +23,14 @@ from scipy.stats import mannwhitneyu, ttest_ind
 from tqdm.auto import tqdm
 
 from psd_analysis.metrics import compute_subject_electrode_psd
+from src.analysis_io import discover_epoch_files as _epoch_files
+from src.analysis_io import load_participants as _participants
+from src.analysis_logging import configure_analysis_logger
 from src.cache import replace_with_relative_symlink, same_json_settings
 from src.dataset import ordered_channel_inventory
-from src.group_statistics import compute_group_statistics
+from src.group_statistics import compute_group_statistics, fdr_bh as _fdr_bh
 from src.group_statistics_plots import plot_electrode_group_statistics
+from src.feature_store import load_subject_electrode_psd
 from src.output_cleanup import remove_retired_band_outputs
 
 from .aperiodic_diagnostics import run_aperiodic_diagnostics
@@ -56,9 +59,6 @@ from .plots import (
     plot_spectral_example,
 )
 from .specparam_gallery import generate_specparam_gallery
-
-
-SUBJECT_PATTERN = re.compile(r"(sub-\d+)")
 
 
 def load_analysis_config(path: str | Path) -> dict[str, Any]:
@@ -161,49 +161,13 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     return config
 
 
-def _participants(path: Path) -> pd.DataFrame:
-    separator = "\t" if path.suffix.lower() == ".tsv" else ","
-    table = pd.read_csv(path, sep=separator)
-    required = {"participant_id", "GROUP"}
-    missing = sorted(required - set(table))
-    if missing:
-        raise ValueError(f"Participant table is missing columns: {missing}")
-    if table["participant_id"].duplicated().any():
-        raise ValueError("Participant IDs must be unique")
-    return table
-
-
-def _epoch_files(directory: Path, pattern: str) -> dict[str, Path]:
-    files: dict[str, Path] = {}
-    for path in sorted(directory.glob(pattern)):
-        match = SUBJECT_PATTERN.search(path.name)
-        if match is None:
-            continue
-        subject_id = match.group(1)
-        if subject_id in files:
-            raise ValueError(f"Multiple epoch files found for {subject_id}")
-        files[subject_id] = path
-    return files
-
-
 def _configure_logger(output_dir: Path, overwrite: bool) -> logging.Logger:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    logger = logging.getLogger("scale_free_analysis")
-    logger.handlers.clear()
-    logger.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
-    console = logging.StreamHandler()
-    console.setLevel(logging.INFO)
-    console.setFormatter(formatter)
-    logger.addHandler(console)
-    file_handler = logging.FileHandler(
-        output_dir / "scale_free_analysis.log",
-        mode="w" if overwrite else "a",
+    return configure_analysis_logger(
+        "scale_free_analysis",
+        output_dir,
+        filename="scale_free_analysis.log",
+        overwrite=overwrite,
     )
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-    return logger
 
 
 def _write_csv(table: pd.DataFrame, path: Path, *, compressed: bool = False) -> None:
@@ -248,27 +212,6 @@ def _hedges_g(pd_values: np.ndarray, control_values: np.ndarray) -> float:
         return 0.0 if np.isclose(np.mean(pd_values), np.mean(control_values)) else np.nan
     correction = 1.0 - 3.0 / (4.0 * (n_pd + n_control) - 9.0)
     return float(correction * (np.mean(pd_values) - np.mean(control_values)) / np.sqrt(pooled_variance))
-
-
-def _fdr_bh(p_values: np.ndarray, alpha: float) -> tuple[np.ndarray, np.ndarray]:
-    p_values = np.asarray(p_values, dtype=float)
-    adjusted = np.full_like(p_values, np.nan)
-    reject = np.zeros(len(p_values), dtype=bool)
-    finite_indices = np.flatnonzero(np.isfinite(p_values))
-    if not len(finite_indices):
-        return adjusted, reject
-    finite = p_values[finite_indices]
-    order = np.argsort(finite)
-    ranked = finite[order]
-    m = len(ranked)
-    corrected = ranked * m / np.arange(1, m + 1)
-    corrected = np.minimum.accumulate(corrected[::-1])[::-1]
-    corrected = np.clip(corrected, 0.0, 1.0)
-    adjusted_finite = np.empty_like(corrected)
-    adjusted_finite[order] = corrected
-    adjusted[finite_indices] = adjusted_finite
-    reject[finite_indices] = adjusted_finite <= float(alpha)
-    return adjusted, reject
 
 
 def _comparisons(
@@ -604,6 +547,34 @@ def run_analysis(
     spectral_example: dict[str, Any] | None = None
     bout_example: dict[str, Any] | None = None
     cycle_example: dict[str, Any] | None = None
+    psd_cache_path = Path(
+        config["input"].get(
+            "psd_feature_file",
+            "psd_analysis/processed/metrics/subject_electrode_psd.npz",
+        )
+    )
+    cached_psd_frequencies: np.ndarray | None = None
+    cached_subject_psd: dict[str, np.ndarray] = {}
+    psd_cache_provenance: dict[str, Any] = {
+        "source": str(psd_cache_path),
+        "reused": False,
+    }
+    if computation_subjects and psd_cache_path.is_file():
+        try:
+            cached_psd_frequencies, cached_subject_psd = load_subject_electrode_psd(
+                psd_cache_path,
+                subjects=computation_subjects,
+                electrodes=common_channels,
+                frequency_range_hz=(
+                    float(config["psd"]["fmin_hz"]),
+                    float(config["psd"]["fmax_hz"]),
+                ),
+            )
+            psd_cache_provenance["reused"] = True
+            logger.info("Reusing validated PSD feature cube from %s", psd_cache_path)
+        except (FileNotFoundError, ValueError) as error:
+            psd_cache_provenance["fallback_reason"] = str(error)
+            logger.warning("PSD cache is incompatible; recalculating spectra: %s", error)
     progress = tqdm(
         total=len(computation_subjects) * len(common_channels),
         desc="specparam + eBOSC + bycycle",
@@ -624,12 +595,17 @@ def run_analysis(
         info = mne.pick_info(epochs.info, picks, copy=True)
         info["bads"] = []
         subject_infos[subject_id] = info
-        psd_frequencies, electrode_psd = compute_subject_electrode_psd(
-            data_v,
-            sfreq,
-            fmin=float(config["psd"]["fmin_hz"]),
-            fmax=float(config["psd"]["fmax_hz"]),
-        )
+        if subject_id in cached_subject_psd:
+            assert cached_psd_frequencies is not None
+            psd_frequencies = cached_psd_frequencies
+            electrode_psd = cached_subject_psd[subject_id]
+        else:
+            psd_frequencies, electrode_psd = compute_subject_electrode_psd(
+                data_v,
+                sfreq,
+                fmin=float(config["psd"]["fmin_hz"]),
+                fmax=float(config["psd"]["fmax_hz"]),
+            )
 
         subject_spectra: dict[str, list[np.ndarray]] = {
             "observed_psd_uv2_hz": [],
@@ -1164,6 +1140,7 @@ def run_analysis(
         "n_common_electrodes": len(common_channels),
         "n_electrode_union": len(electrode_union),
         "feature_cache": feature_cache,
+        "psd_feature_cache": psd_cache_provenance,
         "specparam_primary_fit_range_hz": config["specparam"][
             "frequency_range_hz"
         ],

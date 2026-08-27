@@ -32,6 +32,7 @@ from exploration.modeling import (
     run_nested_validation,
 )
 from exploration.pipeline import load_exploration_config
+from src.plotting import save_figure
 from quantitative_behavioral.pipeline import load_analysis_config as load_behavioral_config
 from quantitative_behavioral.statistics import correlate_subject_features, fdr_bh
 
@@ -392,9 +393,7 @@ def _write_csv(table: pd.DataFrame, path: Path) -> None:
 
 
 def _save_figure(fig: Any, path: Path, dpi: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, path, dpi)
 
 
 def _plot_duration_audit(audit: pd.DataFrame, path: Path, dpi: int) -> None:

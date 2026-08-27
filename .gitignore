@@ -20,7 +20,8 @@ parameter_sweep/
 /eight_electrode_analysis/processed/
 /eight_electrode_analysis/processed_matched/
 /pipeline_logs/
-ds002778-1.0.5
+/.pipeline/
+/ds002778-1.0.5/
 exploration/revision_quick
 __pycache__/
 *copy*

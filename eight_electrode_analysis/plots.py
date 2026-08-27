@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import pandas as pd
+from src.plotting import save_figure
 
 
 def _token(value: str) -> str:
@@ -27,8 +28,7 @@ def plot_selection(info: mne.Info, output: Path, dpi: int) -> None:
     mne.viz.plot_sensors(info, kind="topomap", show_names=True, axes=ax, show=False)
     ax.set_title("Prespecified eight-electrode sensitivity subset")
     fig.tight_layout()
-    fig.savefig(output, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, output, dpi)
 
 
 def plot_effect_pages(
@@ -55,8 +55,7 @@ def plot_effect_pages(
             ax.grid(axis="x", alpha=0.2)
             fig.tight_layout()
             path = output_dir / f"{_token(domain)}_page_{start // rows_per_page + 1:03d}.png"
-            fig.savefig(path, dpi=dpi, bbox_inches="tight")
-            plt.close(fig)
+            save_figure(fig, path, dpi)
             outputs.append(path)
     return outputs
 
@@ -127,8 +126,7 @@ def plot_group_distribution_pages(
             )
             fig.tight_layout(rect=(0, 0, 1, 0.98))
             path = output_dir / f"{_token(domain)}_page_{start // features_per_page + 1:03d}.png"
-            fig.savefig(path, dpi=dpi, bbox_inches="tight")
-            plt.close(fig)
+            save_figure(fig, path, dpi)
             outputs.append(path)
     return outputs
 
@@ -173,7 +171,6 @@ def plot_electrode_heatmaps(
             fig.colorbar(image, ax=ax, label="Standardized PD − Control effect")
             fig.tight_layout()
             path = output_dir / f"{_token(domain)}_page_{start // rows_per_page + 1:03d}.png"
-            fig.savefig(path, dpi=dpi, bbox_inches="tight")
-            plt.close(fig)
+            save_figure(fig, path, dpi)
             outputs.append(path)
     return outputs

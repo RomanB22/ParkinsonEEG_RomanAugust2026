@@ -20,11 +20,11 @@ Run the complete full-cohort stage with:
 bash bycycle_burst_analysis/run_bycycle_burst_analysis.sh --overwrite
 ```
 
-This sensitivity analysis is not run by default from `run_all_analyses.sh` or
-`run_reproducible_pipeline.sh`. To opt into both full- and matched-cohort runs:
+This sensitivity analysis is not run by the default paper profile. To opt into
+both full- and matched-cohort runs:
 
 ```bash
-bash run_reproducible_pipeline.sh run --include-bycycle-bursts
+bash run_pipeline.sh analyses --profile full-qc
 ```
 
 Important outputs are:

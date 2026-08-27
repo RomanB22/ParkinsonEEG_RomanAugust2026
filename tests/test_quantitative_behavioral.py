@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -17,6 +18,11 @@ from quantitative_behavioral.statistics import (
     partial_spearman,
     unadjusted_spearman,
 )
+
+
+HAS_GENERATED_FEATURES = Path("processed/metadata/subjects.csv").is_file() and Path(
+    "ordinal_analysis/processed/metrics/subject_electrode_mean_metrics.csv"
+).is_file()
 
 
 class QuantitativeBehavioralTests(unittest.TestCase):
@@ -71,6 +77,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             ["theta", "alpha", "low_beta", "high_beta"],
         )
 
+    @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_cognitive_status_uses_the_prespecified_moca_boundary(self):
         config = load_analysis_config("quantitative_behavioral/config.json")
         cohort = load_cohort(config)
@@ -188,6 +195,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         self.assertAlmostEqual(result["adjusted_pd_coefficient"], 0.2, delta=0.04)
         self.assertLess(result["adjusted_pd_p_value"], 1e-10)
 
+    @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_real_feature_table_is_subject_balanced_and_excludes_renyi(self):
         config = load_analysis_config("quantitative_behavioral/config.json")
         cohort, features, dictionary = build_subject_features(config)
@@ -213,6 +221,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
             30,
         )
 
+    @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_dimension_blocks_have_102_balanced_regular_and_renyi_features(self):
         config = load_analysis_config("quantitative_behavioral/config.json")
         cohort, _, _ = build_subject_features(config)

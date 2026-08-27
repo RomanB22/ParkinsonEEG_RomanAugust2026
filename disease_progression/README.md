@@ -19,7 +19,7 @@ bash disease_progression/run_disease_progression.sh --overwrite
 The complete post-cleaning runner executes both full and matched versions:
 
 ```bash
-bash run_all_analyses.sh --overwrite --no-progress
+bash run_pipeline.sh analyses --profile paper --overwrite --no-progress
 ```
 
 ## Outputs

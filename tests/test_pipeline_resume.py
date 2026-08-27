@@ -1,112 +1,111 @@
-"""Regression checks for interruption-safe analysis resumption."""
+"""Regression checks for the refactored public pipeline contract."""
 
 from __future__ import annotations
 
-import re
+import tempfile
 import unittest
 from pathlib import Path
 
+from parkinson_eeg.config import load_pipeline_config
+from parkinson_eeg.registry import build_registry
+from parkinson_eeg.runner import PipelineRunner, Selection, profile_targets
+from parkinson_eeg.stages import RunContext, StateStore
 
-class PipelineResumeTests(unittest.TestCase):
-    def _run_stage_body(self, filename: str) -> str:
-        source = Path(filename).read_text(encoding="utf-8")
-        match = re.search(r"\nrun_stage\(\) \{(?P<body>.*?)\n\}", source, re.DOTALL)
-        self.assertIsNotNone(match, f"run_stage was not found in {filename}")
-        return match.group("body")
 
-    def test_noncurrent_full_stage_always_replaces_partial_output(self) -> None:
-        body = self._run_stage_body("run_all_analyses.sh")
-        self.assertIn("command+=(--overwrite)", body)
-        self.assertNotIn('-e "$sentinel"', body)
+class PipelineRefactorTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.config = load_pipeline_config()
+        cls.registry = build_registry()
 
-    def test_noncurrent_matched_stage_always_replaces_partial_output(self) -> None:
-        body = self._run_stage_body("matched_analysis/run_matched_analyses.sh")
-        self.assertIn("command+=(--overwrite)", body)
-        self.assertNotIn('-e "$sentinel"', body)
-
-    def test_noncurrent_ordinal_sweeps_are_overwritten(self) -> None:
-        full = Path("run_all_analyses.sh").read_text(encoding="utf-8")
-        matched = Path("matched_analysis/run_matched_analyses.sh").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("ordinal_sweep_command+=(--overwrite)", full)
-        self.assertIn("sweep_command+=(--overwrite)", matched)
-
-    def test_independent_bycycle_stage_is_in_full_and_matched_runs(self) -> None:
-        full = Path("run_all_analyses.sh").read_text(encoding="utf-8")
-        matched = Path("matched_analysis/run_matched_analyses.sh").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("bycycle_burst_analysis/run_bycycle_burst_analysis.sh", full)
-        self.assertIn("bycycle_burst_analysis/run_bycycle_burst_analysis.sh", matched)
-        self.assertIn("$CONFIG_ROOT/bycycle_burst.json", matched)
-
-    def test_independent_bycycle_stage_is_opt_in_from_every_runner(self) -> None:
-        wrapper = Path("run_reproducible_pipeline.sh").read_text(encoding="utf-8")
-        full = Path("run_all_analyses.sh").read_text(encoding="utf-8")
-        matched = Path("matched_analysis/run_matched_analyses.sh").read_text(
-            encoding="utf-8"
-        )
-        for source in (wrapper, full, matched):
-            self.assertIn("INCLUDE_BYCYCLE_BURSTS=false", source)
-            self.assertIn("--include-bycycle-bursts", source)
-        self.assertIn(
-            'if [[ "$INCLUDE_BYCYCLE_BURSTS" == true ]]; then', full
-        )
-        self.assertIn(
-            'if [[ "$INCLUDE_BYCYCLE_BURSTS" == true ]]; then', matched
-        )
-
-    def test_public_runner_exposes_bounded_profiles(self) -> None:
-        wrapper = Path("run_reproducible_pipeline.sh").read_text(encoding="utf-8")
-        downstream = Path("run_all_analyses.sh").read_text(encoding="utf-8")
-        for source in (wrapper, downstream):
-            self.assertIn("--profile", source)
-            self.assertIn("compute", source)
-            self.assertIn("paper", source)
-            self.assertIn("full-qc", source)
-        self.assertIn('PROFILE="paper"', wrapper)
-        self.assertIn('PROFILE="paper"', downstream)
-
-    def test_dimension_sweep_does_not_recompute_primary_d6(self) -> None:
-        sweep = Path("ordinal_analysis/run_ordinal_parameter_sweep.sh").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("embedding_dimensions=(3 4 5)", sweep)
-        self.assertNotIn("embedding_dimensions=(3 4 5 6)", sweep)
-        self.assertIn("feature_source_sweep_root", sweep)
-
-    def test_preprocessing_validation_does_not_require_absent_optional_workflow(self) -> None:
+    def test_one_public_runner_and_thin_compatibility_aliases(self) -> None:
+        public = Path("run_pipeline.sh").read_text(encoding="utf-8")
+        self.assertIn("python -m parkinson_eeg", public)
         for filename in (
-            "scripts/run_full_cleaning.sh",
-            "scripts/create_conda_environment.sh",
+            "run_reproducible_pipeline.sh",
+            "run_all_analyses.sh",
+            "matched_analysis/run_matched_analyses.sh",
         ):
             source = Path(filename).read_text(encoding="utf-8")
-            self.assertNotIn("tests.test_simple_pipeline", source)
+            self.assertLess(len(source.splitlines()), 15)
+            self.assertIn("run_pipeline.sh", source)
 
-    def test_conda_bootstrap_preserves_incomplete_prefix_before_recreation(self) -> None:
-        setup = Path("scripts/create_conda_environment.sh").read_text(
-            encoding="utf-8"
+    def test_public_config_locks_scientific_invariants(self) -> None:
+        science = self.config.science
+        self.assertEqual(science.psd_range_hz, (1.0, 50.0))
+        self.assertEqual(science.aperiodic_fit_range_hz, (4.0, 50.0))
+        self.assertEqual(science.ordinal_dimensions, (3, 4, 5, 6))
+        self.assertEqual(science.ordinal_delay_samples, (1,))
+        self.assertEqual(science.scalar_colormap, "viridis")
+        self.assertNotIn("broad_5_15", science.bout_bands)
+
+    def test_stage_identifiers_are_unique_and_dependencies_exist(self) -> None:
+        self.assertEqual(len(self.registry), 33)
+        for stage in self.registry.values():
+            self.assertTrue(stage.label)
+            for dependency in stage.dependencies:
+                self.assertIn(dependency, self.registry)
+
+    def test_compute_profile_is_bounded_and_bycycle_is_opt_in(self) -> None:
+        compute = self.config.profile("compute")
+        targets = profile_targets(compute, Selection(cohorts=("full",)))
+        self.assertIn("full.psd", targets)
+        self.assertIn("full.within-bout-ordinal", targets)
+        self.assertNotIn("full.classification", targets)
+        self.assertNotIn("full.bycycle", targets)
+
+        full_qc = self.config.profile("full-qc")
+        qc_targets = profile_targets(full_qc, Selection())
+        self.assertIn("full.bycycle", qc_targets)
+        self.assertIn("matched.bycycle", qc_targets)
+
+    def test_matched_stages_reuse_full_feature_owners(self) -> None:
+        self.assertIn("full.ordinal", self.registry["matched.ordinal"].dependencies)
+        self.assertIn("full.scale-free", self.registry["matched.scale-free"].dependencies)
+        self.assertIn(
+            "full.within-bout-ordinal",
+            self.registry["matched.within-bout-ordinal"].dependencies,
         )
-        self.assertIn("conda-meta/history", setup)
-        self.assertIn(".incomplete.", setup)
-        self.assertIn('mv "$prefix" "$backup"', setup)
-        self.assertIn("CONDA_CHANNELS", setup)
 
-    def test_master_runner_exposes_parallel_preprocessing_and_progress(self) -> None:
-        wrapper = Path("run_reproducible_pipeline.sh").read_text(encoding="utf-8")
-        cleaning = Path("scripts/run_full_cleaning.sh").read_text(encoding="utf-8")
-        batch = Path("scripts/run_preprocessing.py").read_text(encoding="utf-8")
-        self.assertIn("--preprocessing-workers", wrapper)
-        self.assertIn("--workers", cleaning)
-        self.assertIn("conda run --no-capture-output", cleaning)
-        self.assertIn("ProcessPoolExecutor", batch)
-        self.assertIn('desc="ICA cleaning"', batch)
-        self.assertIn("check_preprocessing_outputs.py", wrapper)
-        self.assertIn('"$cleaning_rebuilt" == true', wrapper)
-        self.assertIn("--log-file", wrapper)
-        self.assertIn('exec > >(tee -a "$PIPELINE_LOG") 2>&1', wrapper)
-        self.assertIn("trap finish_pipeline_log EXIT", wrapper)
+    def test_stale_or_missing_stage_commands_replace_partial_outputs(self) -> None:
+        context = RunContext(
+            project_root=Path.cwd(),
+            environment_name="MNE_August2026",
+            profile_name="paper",
+        )
+        command = self.registry["full.ordinal"].build_commands(context, True)[0]
+        self.assertIn("--overwrite", command)
+
+    def test_status_inspection_does_not_write_runner_state(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = StateStore(Path(directory) / "state")
+            context = RunContext(
+                project_root=Path.cwd(),
+                environment_name="MNE_August2026",
+                profile_name="compute",
+            )
+            runner = PipelineRunner(self.config, context, state_store=store)
+            stages = runner.stages_for_profile(
+                self.config.profile("compute"),
+                Selection(cohorts=("full",), include_preprocessing=False),
+            )
+            runner.inspect(stages)
+            self.assertFalse(store.root.exists())
+
+    def test_sweep_owns_only_d3_to_d5_at_tau_one(self) -> None:
+        command = self.registry["full.ordinal-sweep"].build_commands(
+            RunContext(Path.cwd(), "MNE_August2026", "paper"), True
+        )[0]
+        self.assertIn("parkinson_eeg.sweep", command)
+        source = Path("parkinson_eeg/sweep.py").read_text(encoding="utf-8")
+        self.assertIn("dimensions: tuple[int, ...] = (3, 4, 5)", source)
+        self.assertIn("delay_samples: int = 1", source)
+
+    def test_preprocessing_validation_excludes_optional_untracked_workflow(self) -> None:
+        command = self.registry["preprocessing-tests"].build_commands(
+            RunContext(Path.cwd(), "MNE_August2026", "paper"), False
+        )[0]
+        self.assertNotIn("tests.test_simple_pipeline", command)
 
 
 if __name__ == "__main__":

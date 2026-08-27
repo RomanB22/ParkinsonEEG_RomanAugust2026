@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 import pandas as pd
 
@@ -25,7 +26,8 @@ class DiseaseProgressionTests(unittest.TestCase):
             self.config["electrode_scope"]["policy"],
             "all_cohort_shared_electrodes",
         )
-        self.assertEqual(len(resolve_shared_electrodes(self.config)), 60)
+        if Path(self.config["input"]["ordinal_electrode_sets_file"]).is_file():
+            self.assertEqual(len(resolve_shared_electrodes(self.config)), 60)
         self.assertEqual(self.config["analysis"]["primary_outcome"], "updrs")
         self.assertEqual(self.config["analysis"]["secondary_outcomes"], ["moca"])
         self.assertEqual(
@@ -37,6 +39,10 @@ class DiseaseProgressionTests(unittest.TestCase):
         self.assertNotIn("broad_5_15", self.config["features"]["psd_bands"])
         self.assertNotIn("broad_5_15", self.config["features"]["bout_bands"])
 
+    @unittest.skipUnless(
+        Path("processed/metadata/subjects.csv").is_file(),
+        "requires generated feature caches",
+    )
     def test_real_feature_matrix_uses_shared_electrodes_and_one_row_per_subject(self) -> None:
         cohort = load_pd_cohort(self.config)
         features, dictionary, electrodes = build_shared_electrode_features(

@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import pandas as pd
+from src.plotting import save_figure as _save
 
 from .metrics import CORE_METRICS, METRICS
 
@@ -84,12 +85,6 @@ PLANE_PAIRS = (
         "Rényi Hα × Cα (α=10)",
     ),
 )
-
-
-def _save(fig, path: Path, dpi: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
 
 
 def _limits(values: np.ndarray, *, lower_zero: bool = False) -> tuple[float, float]:

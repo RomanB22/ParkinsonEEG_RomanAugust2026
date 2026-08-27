@@ -27,11 +27,20 @@ from exploration.pipeline import load_exploration_config
 from matched_analysis.prepare_matched_cohort import prepare_matched_cohort
 
 
+HAS_GENERATED_FEATURES = Path("processed/metadata/subjects.csv").is_file() and Path(
+    "ordinal_analysis/processed/metrics/subject_electrode_mean_metrics.csv"
+).is_file()
+HAS_TYPICAL_BOUTS = Path(
+    "scale_free_analysis/processed/intermediate/typical_bouts/subject_electrode_band_envelopes.npz"
+).is_file()
+
+
 class ExplorationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.config = load_exploration_config("exploration/config.json")
 
+    @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_real_feature_table_is_one_row_per_subject_and_leakage_free(self):
         table, provenance = build_feature_table(self.config)
         self.assertEqual(len(table), 149)
@@ -52,6 +61,7 @@ class ExplorationTests(unittest.TestCase):
             {"participant_id", "ID", "EEG", "TYPE", "UPDRS", "GROUP"},
         )
 
+    @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_no_model_contains_forbidden_features(self):
         table, _ = build_feature_table(self.config)
         validate_model_features(table, self.config["models"])
@@ -144,6 +154,7 @@ class ExplorationTests(unittest.TestCase):
                 [(3, 1), (4, 1)],
             )
 
+    @unittest.skipUnless(HAS_TYPICAL_BOUTS, "requires generated typical-bout cache")
     def test_typical_bout_reduction_is_complete_and_bounded(self):
         bands = self.config["candidate_features"]["bout_bands"]
         table = summarize_typical_bout_shapes(
@@ -163,6 +174,7 @@ class ExplorationTests(unittest.TestCase):
                 table[f"typical_{band}_relative_phase_consistency"].between(0.0, 1.0).all()
             )
 
+    @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_demographic_matching_is_exact_balanced_and_pair_grouped(self):
         table, _ = build_feature_table(self.config)
         matched, pairs, balance = match_control_pd_pairs(
@@ -189,6 +201,7 @@ class ExplorationTests(unittest.TestCase):
             )
         )
 
+    @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated participant metadata")
     def test_canonical_matched_manifest_drives_every_pipeline_config(self):
         with tempfile.TemporaryDirectory() as directory:
             manifest = prepare_matched_cohort(output_root=directory)
@@ -224,6 +237,7 @@ class ExplorationTests(unittest.TestCase):
                         "scale_free_analysis/processed",
                     )
 
+    @unittest.skipUnless(HAS_GENERATED_FEATURES, "requires generated feature caches")
     def test_precomputed_pairs_are_validated_without_double_matching(self):
         table, _ = build_feature_table(self.config)
         matched, pairs, balance = match_control_pd_pairs(

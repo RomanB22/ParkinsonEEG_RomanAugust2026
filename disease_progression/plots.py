@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import pandas as pd
+from src.plotting import save_figure
 
 
 MOCA_CATEGORY_BOUNDARY = 25.5
@@ -31,8 +32,7 @@ def plot_electrode_selection(info: mne.Info, output: Path, dpi: int) -> None:
     mne.viz.plot_sensors(info, kind="topomap", show_names=True, axes=ax, show=False)
     ax.set_title("All cohort-shared disease-progression electrodes")
     fig.tight_layout()
-    fig.savefig(output, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, output, dpi)
 
 
 def plot_clinical_axes(
@@ -73,8 +73,7 @@ def plot_clinical_axes(
     ax.legend(frameon=False, loc="lower left")
     fig.colorbar(image, ax=ax, label="Age (years)")
     fig.tight_layout()
-    fig.savefig(output, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, output, dpi)
 
 
 def plot_feature_scatter_pages(
@@ -144,8 +143,7 @@ def plot_feature_scatter_pages(
         fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.985))
         page_number = page_start // features_per_page + 1
         path = output_dir / f"{outcome}_scatter_page_{page_number:03d}.png"
-        fig.savefig(path, dpi=dpi, bbox_inches="tight")
-        plt.close(fig)
+        save_figure(fig, path, dpi)
         outputs.append(path)
     return outputs
 
@@ -204,7 +202,6 @@ def plot_forest_pages(
             fig.tight_layout()
             page_number = page_start // rows_per_page + 1
             path = output_dir / f"{_token(str(family))}_forest_page_{page_number:03d}.png"
-            fig.savefig(path, dpi=dpi, bbox_inches="tight")
-            plt.close(fig)
+            save_figure(fig, path, dpi)
             outputs.append(path)
     return outputs

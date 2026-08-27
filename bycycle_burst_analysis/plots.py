@@ -13,6 +13,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from scipy.signal import butter, sosfiltfilt
+from src.plotting import save_figure as _save
 
 
 METRIC_LABELS = {
@@ -29,12 +30,6 @@ METRIC_LABELS = {
     "period_consistency_mean": "Mean period consistency",
     "monotonicity_mean": "Mean monotonicity",
 }
-
-
-def _save(fig: Any, path: Path, dpi: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
 
 
 def plot_detection_example(

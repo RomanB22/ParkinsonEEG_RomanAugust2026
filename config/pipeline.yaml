@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "environment": {
+    "name": "MNE_August2026"
+  },
+  "paths": {
+    "preprocessing_config": "config/preprocessing.yaml",
+    "participants_file": "processed/metadata/subjects.csv",
+    "epochs_dir": "processed/epochs",
+    "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif"
+  },
+  "science": {
+    "psd_range_hz": [1.0, 50.0],
+    "aperiodic_fit_range_hz": [4.0, 50.0],
+    "ordinal_dimensions": [3, 4, 5, 6],
+    "ordinal_delay_samples": [1],
+    "renyi_alphas": [0.1, 0.5, 0.9, 1.1, 2.0, 5.0, 10.0],
+    "bout_bands": {
+      "theta": [4.0, 7.0],
+      "alpha": [8.0, 13.0],
+      "low_beta": [13.0, 20.0],
+      "high_beta": [20.0, 30.0]
+    },
+    "eight_electrodes": ["F4", "P4", "O2", "P6", "CP2", "CP1", "PO7", "P8"],
+    "scalar_colormap": "viridis",
+    "fdr_alpha": 0.05
+  },
+  "profiles": {
+    "compute": {
+      "description": "Reusable full-cohort feature caches with minimal figures",
+      "include_sweep": true,
+      "include_reports": false,
+      "include_models": false,
+      "include_matched": false,
+      "include_tests": false,
+      "include_bycycle": false
+    },
+    "paper": {
+      "description": "Complete primary, matched, inferential, clinical, and modeling battery",
+      "include_sweep": true,
+      "include_reports": true,
+      "include_models": true,
+      "include_matched": true,
+      "include_tests": true,
+      "include_bycycle": false
+    },
+    "full-qc": {
+      "description": "Paper profile plus the independent bycycle burst sensitivity",
+      "include_sweep": true,
+      "include_reports": true,
+      "include_models": true,
+      "include_matched": true,
+      "include_tests": true,
+      "include_bycycle": true
+    }
+  }
+}

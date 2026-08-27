@@ -19,12 +19,7 @@ from sklearn.metrics import (
     precision_recall_curve,
     roc_curve,
 )
-
-
-def _save(fig: Any, path: Path, dpi: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=dpi, bbox_inches="tight")
-    plt.close(fig)
+from src.plotting import save_figure as _save
 
 
 def feature_label(name: str) -> str:

@@ -14,6 +14,7 @@ import matplotlib.pyplot as plt
 import mne
 import numpy as np
 import pandas as pd
+from src.plotting import save_figure as _save
 
 from .metrics import METRICS, ordinal_patterns
 
@@ -28,12 +29,6 @@ METRIC_CMAPS = {
     "complexity": "viridis",
     "fisher_information": "viridis",
 }
-
-
-def _save(fig: Any, path: Path, dpi: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(path, dpi=int(dpi), bbox_inches="tight")
-    plt.close(fig)
 
 
 def _finite_limits(values: np.ndarray) -> tuple[float, float]:

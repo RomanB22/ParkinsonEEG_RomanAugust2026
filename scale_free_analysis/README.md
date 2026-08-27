@@ -35,6 +35,13 @@ uses fixed mode and the other uses knee mode. Both use the paper-aligned
 settings: peak widths 1–12 Hz, at most eight
 peaks, minimum peak height 0, and peak threshold 2.
 
+In the central pipeline, this identical Welch array is loaded losslessly from
+`psd_analysis/processed/metrics/subject_electrode_psd.npz` rather than
+calculated twice. Subject IDs, electrode order, array shape, finite values, and
+the exact 1–50 Hz grid are validated before reuse. A focused standalone run
+falls back to the same local Welch calculation when that cache is absent or
+incompatible, and records the decision in its manifest.
+
 BIC compares the two candidates for each subject/electrode while penalizing the
 knee model's extra parameter. It is calculated on log10-power residuals as
 `n × ln(RSS/n) + k × ln(n)`, where `k` includes the aperiodic parameters and

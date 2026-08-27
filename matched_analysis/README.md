@@ -39,22 +39,21 @@ variables.
 ## Run it
 
 ```bash
-bash matched_analysis/run_matched_analyses.sh
+bash run_pipeline.sh analyses --profile paper --cohort matched
 ```
 
 The independent bycycle burst sensitivity is optional and skipped by default.
 Include it explicitly with:
 
 ```bash
-bash matched_analysis/run_matched_analyses.sh --include-bycycle-bursts
+bash run_pipeline.sh analyses --profile full-qc --cohort matched
 ```
 
-Use `--overwrite` to rebuild all matched products. The master scripts run both
+Use `--overwrite` to rebuild all matched products. The paper profile runs both
 cohorts automatically:
 
 ```bash
-bash run_all_analyses.sh
-bash run_reproducible_pipeline.sh run
+bash run_pipeline.sh analyses --profile paper
 ```
 
 Matched outputs are kept alongside full outputs in `processed_matched/` folders,

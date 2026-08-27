@@ -15,6 +15,7 @@ from scipy.stats import (
     t as student_t,
     ttest_ind,
 )
+from src.group_statistics import fdr_bh
 
 
 def compare_aperiodic_exponent_groups(
@@ -143,28 +144,6 @@ def compare_aperiodic_exponent_groups(
     result["adjusted_pd_fdr_reject"] = rejected
     result["fdr_alpha"] = float(fdr_alpha)
     return result
-
-
-def fdr_bh(p_values: np.ndarray, alpha: float) -> tuple[np.ndarray, np.ndarray]:
-    """Benjamini–Hochberg correction that preserves missing p-values."""
-    values = np.asarray(p_values, dtype=float)
-    adjusted = np.full(values.shape, np.nan, dtype=float)
-    rejected = np.zeros(values.shape, dtype=bool)
-    finite_indices = np.flatnonzero(np.isfinite(values))
-    if not len(finite_indices):
-        return adjusted, rejected
-    finite = values[finite_indices]
-    order = np.argsort(finite)
-    ranked = finite[order]
-    m = len(ranked)
-    corrected = ranked * m / np.arange(1, m + 1)
-    corrected = np.minimum.accumulate(corrected[::-1])[::-1]
-    corrected = np.clip(corrected, 0.0, 1.0)
-    restored = np.empty_like(corrected)
-    restored[order] = corrected
-    adjusted[finite_indices] = restored
-    rejected[finite_indices] = restored <= float(alpha)
-    return adjusted, rejected
 
 
 def _validate_vectors(x: np.ndarray, y: np.ndarray, covariates: np.ndarray | None) -> None:

@@ -1,6 +1,8 @@
 import unittest
 
 import numpy as np
+import tempfile
+from pathlib import Path
 import pandas as pd
 from scipy.signal import welch
 
@@ -11,10 +13,37 @@ from psd_analysis.metrics import (
     relative_band_powers,
     summarize_subject_band_power,
 )
+from src.feature_store import load_subject_electrode_psd
 from psd_analysis.pipeline import load_psd_config
 
 
 class PsdAnalysisTests(unittest.TestCase):
+    def test_canonical_psd_cache_can_be_strictly_subset_and_reused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "psd.npz"
+            frequencies = np.arange(1.0, 50.25, 0.25)
+            cube = np.arange(2 * 3 * len(frequencies), dtype=float).reshape(
+                2, 3, len(frequencies)
+            )
+            np.savez_compressed(
+                path,
+                subject_ids=np.asarray(["sub-001", "sub-002"]),
+                electrodes=np.asarray(["F4", "P4", "O2"]),
+                frequencies_hz=frequencies,
+                psd_uv2_hz=cube,
+            )
+            loaded_frequencies, loaded = load_subject_electrode_psd(
+                path,
+                subjects=["sub-002"],
+                electrodes=["O2", "F4"],
+                frequency_range_hz=(4.0, 50.0),
+            )
+        self.assertEqual(loaded_frequencies[0], 4.0)
+        self.assertEqual(loaded_frequencies[-1], 50.0)
+        np.testing.assert_array_equal(
+            loaded["sub-002"], cube[1, [2, 0]][:, frequencies >= 4.0]
+        )
+
     def test_welch_psd_finds_ten_hz_signal(self):
         sfreq = 120.0
         times = np.arange(480) / sfreq

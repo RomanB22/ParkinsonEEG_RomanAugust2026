@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
 
 from eight_electrode_analysis.pipeline import (
     ELECTRODES,
@@ -28,6 +29,10 @@ class EightElectrodeAnalysisTests(unittest.TestCase):
             {"delta", "theta", "alpha", "beta", "low_gamma", "low_beta", "high_beta"},
         )
 
+    @unittest.skipUnless(
+        Path("processed/metadata/subjects.csv").is_file(),
+        "requires generated feature caches",
+    )
     def test_real_tables_cover_all_domains_and_exact_electrode_set(self) -> None:
         values, dictionary, subject, electrode = build_analysis_tables(self.config)
         self.assertEqual(len(dictionary), 235)
