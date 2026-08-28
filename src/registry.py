@@ -27,7 +27,6 @@ def _python_builder(
     *arguments: str,
     supports_progress: bool = False,
     supports_overwrite: bool = True,
-    implicit_overwrite: bool = True,
     compute_skip_figures: bool = False,
 ):
     def build(context: RunContext, replace: bool) -> list[list[str]]:
@@ -36,9 +35,7 @@ def _python_builder(
             command.append("--no-progress")
         if compute_skip_figures and context.profile_name == "compute":
             command.append("--skip-figures")
-        if supports_overwrite and (
-            context.overwrite or (replace and implicit_overwrite)
-        ):
+        if supports_overwrite and context.overwrite:
             command.append("--overwrite")
         return [command]
 
@@ -57,7 +54,7 @@ def _sweep_builder(base: str, output: str):
         )
         if context.no_progress:
             command.append("--no-progress")
-        if replace:
+        if context.overwrite:
             command.append("--overwrite")
         return [command]
 
@@ -130,7 +127,7 @@ def _bycycle_builder(config: str, output: str):
         )
         if context.no_progress:
             analysis.append("--no-progress")
-        if replace:
+        if context.overwrite:
             analysis.append("--overwrite")
         figures = python_command(
             "-m",
@@ -155,7 +152,7 @@ def _full_scale_builder(context: RunContext, replace: bool) -> list[list[str]]:
     )
     if context.no_progress:
         command.append("--no-progress")
-    if replace:
+    if context.overwrite:
         command.append("--overwrite")
     return [command]
 
@@ -170,7 +167,7 @@ def _matched_scale_builder(context: RunContext, replace: bool) -> list[list[str]
     )
     if context.no_progress:
         command.append("--no-progress")
-    if replace:
+    if context.overwrite:
         command.append("--overwrite")
     return [command]
 
@@ -197,7 +194,7 @@ def _fit_qc_builder(matched: bool):
                     "outputs/matched/bouts/metrics/subject_band_metrics_fit_qc.csv",
                 ]
             )
-        if replace:
+        if context.overwrite:
             command.append("--overwrite")
         return [command]
 
@@ -294,7 +291,6 @@ def build_registry() -> dict[str, Stage]:
             _python_builder(
                 "analyses.ordinal.run_ordinal_analysis",
                 supports_progress=True,
-                implicit_overwrite=False,
                 compute_skip_figures=True,
             ),
             (
@@ -540,7 +536,6 @@ def build_registry() -> dict[str, Stage]:
                 "--config",
                 "outputs/matched/cohort/configs/ordinal.json",
                 supports_progress=True,
-                implicit_overwrite=False,
             ),
             (
                 _a("outputs/matched/ordinal/manifest.json", contains=('"mode": "filtered_subject_level_reuse"',), excludes=RETIRED_BANDS),

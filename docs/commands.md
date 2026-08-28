@@ -28,16 +28,17 @@ bash run_pipeline.sh status --profile paper
 bash run_pipeline.sh run --profile paper
 ```
 
-The default is resumable. `--overwrite` recomputes every selected stage.
+The default is resumable. `--overwrite` recomputes every selected stage, and is
+forwarded only when it appears explicitly in the public command. A stale,
+missing, or partial stage never receives it automatically.
 For preprocessing, an automatically detected stale stage does not imply ICA
 refitting: complete subject outputs with a matching preprocessing signature are
 reused. A compatible saved ICA from an incomplete/review-only subject is also
 loaded instead of refit. ICA is forcibly refit only when `--overwrite` is
 explicitly supplied.
 
-Primary ordinal analysis likewise never receives an implicit `--overwrite`.
-Without that flag, compatible subject-level metrics from a completed compute
-run are validated and reused, either to resume compute or to add paper figures.
+Compatible primary ordinal metrics from a completed compute run are validated
+and reused, either to resume compute or to add paper figures.
 
 ## Downstream analyses
 

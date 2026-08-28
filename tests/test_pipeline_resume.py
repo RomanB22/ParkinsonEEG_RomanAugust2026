@@ -75,14 +75,19 @@ class PipelineRefactorTests(unittest.TestCase):
             self.registry["matched.within-bout-ordinal"].dependencies,
         )
 
-    def test_stale_ordinal_does_not_implicitly_overwrite(self) -> None:
+    def test_no_stage_command_receives_implicit_overwrite(self) -> None:
         context = RunContext(
             project_root=Path.cwd(),
             environment_name="MNE_August2026",
             profile_name="paper",
         )
-        command = self.registry["full.ordinal"].build_commands(context, True)[0]
-        self.assertNotIn("--overwrite", command)
+        for stage_id, stage in self.registry.items():
+            for command in stage.build_commands(context, True):
+                self.assertNotIn(
+                    "--overwrite",
+                    command,
+                    msg=f"{stage_id} added an implicit --overwrite",
+                )
 
         explicit = RunContext(
             project_root=Path.cwd(),
@@ -90,8 +95,20 @@ class PipelineRefactorTests(unittest.TestCase):
             profile_name="paper",
             overwrite=True,
         )
-        command = self.registry["full.ordinal"].build_commands(explicit, True)[0]
-        self.assertIn("--overwrite", command)
+        for stage_id in (
+            "clean",
+            "full.psd",
+            "full.ordinal",
+            "full.ordinal-sweep",
+            "full.scale-free",
+            "full.bycycle",
+            "full.fit-qc",
+        ):
+            commands = self.registry[stage_id].build_commands(explicit, True)
+            self.assertTrue(
+                any("--overwrite" in command for command in commands),
+                msg=f"{stage_id} ignored explicit --overwrite",
+            )
 
     def test_stale_clean_does_not_implicitly_refit_ica(self) -> None:
         resumable = RunContext(

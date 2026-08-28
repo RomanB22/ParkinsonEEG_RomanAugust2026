@@ -41,8 +41,10 @@ The default behavior is resumable. For each stage the runner reports:
 - `MISSING`: one or more required artifacts are absent;
 - `ALWAYS`: a validation stage that intentionally reruns.
 
-Use `--overwrite` only when every selected stage should be recomputed. A stale
-or partial stage receives `--overwrite` automatically.
+Use `--overwrite` only when every selected stage should be recomputed. The
+runner never adds `--overwrite` merely because a stage is stale, missing, or
+partial. Without explicit permission, each stage may safely resume/reuse its
+compatible outputs or stop and request an explicit overwrite.
 
 ## Human ICA checkpoint
 
@@ -57,4 +59,3 @@ bash run_pipeline.sh run --profile paper
 For an explicitly unattended reproducibility run,
 `--skip-manual-ica-review` applies the recorded high-confidence ICLabel
 proposals and marks that choice in preprocessing provenance.
-

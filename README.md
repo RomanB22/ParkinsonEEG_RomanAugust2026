@@ -22,8 +22,9 @@ bash run_pipeline.sh run --profile paper
 ```
 
 The runner creates or reuses the `MNE_August2026` conda environment, resumes
-current stages, replaces partial or stale stages, and writes a consolidated log
-under `pipeline_logs/`.
+current stages, and writes a consolidated log under `pipeline_logs/`. It never
+passes `--overwrite` to a stage unless that flag was explicitly included in the
+public command.
 
 For an explicitly unattended run:
 
