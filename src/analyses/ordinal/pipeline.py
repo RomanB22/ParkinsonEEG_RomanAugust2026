@@ -146,6 +146,25 @@ def _write_csv(table: pd.DataFrame, path: Path) -> None:
     table.to_csv(path, index=False, float_format="%.17g")
 
 
+def _can_reuse_existing_ordinal_output(
+    output_dir: Path,
+    *,
+    generate_figures: bool,
+) -> bool:
+    """Allow compatible metric reuse without deleting or downgrading figures."""
+    manifest_path = output_dir / "manifest.json"
+    if not manifest_path.is_file():
+        return False
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    existing_figures = manifest.get("figures_generated")
+    if not isinstance(existing_figures, bool):
+        return False
+    return bool(generate_figures or not existing_figures)
+
+
 def _load_reusable_subject_metrics(
     source_output_dir: Path,
     *,
@@ -288,9 +307,18 @@ def run_analysis(
     input_config = config["input"]
     output_dir = Path(config["output_dir"])
     result_path = output_dir / "metrics" / "electrode_metrics.csv"
-    if result_path.exists() and not overwrite:
+    reuse_existing_output = bool(
+        result_path.exists()
+        and not overwrite
+        and _can_reuse_existing_ordinal_output(
+            output_dir,
+            generate_figures=generate_figures,
+        )
+    )
+    if result_path.exists() and not overwrite and not reuse_existing_output:
         raise FileExistsError(
-            f"Ordinal outputs already exist at {result_path}; rerun with --overwrite"
+            f"Ordinal outputs already exist at {result_path}. Automatic overwrite "
+            "is disabled; pass --overwrite explicitly to recompute them."
         )
     if overwrite:
         remove_retired_band_outputs(output_dir)
@@ -348,7 +376,11 @@ def run_analysis(
     )
     subject_infos: dict[str, mne.Info] = {}
     common_info: mne.Info | None = None
-    reusable_output = input_config.get("feature_source_output_dir")
+    reusable_output = (
+        output_dir
+        if reuse_existing_output
+        else input_config.get("feature_source_output_dir")
+    )
     feature_cache: dict[str, Any]
     if reusable_output:
         logger.info(

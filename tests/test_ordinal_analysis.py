@@ -20,6 +20,7 @@ from analyses.ordinal.metrics import (
     subject_electrode_means,
 )
 from analyses.ordinal.pipeline import (
+    _can_reuse_existing_ordinal_output,
     _load_reusable_subject_metrics,
     load_analysis_config,
 )
@@ -27,6 +28,43 @@ from analyses.ordinal.plots import electrode_metric_zscores
 
 
 class OrdinalMetricTests(unittest.TestCase):
+    def test_existing_metrics_can_resume_compute_or_be_promoted_to_figures(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            manifest = output / "manifest.json"
+            manifest.write_text(
+                json.dumps({"figures_generated": False}),
+                encoding="utf-8",
+            )
+            self.assertTrue(
+                _can_reuse_existing_ordinal_output(
+                    output,
+                    generate_figures=True,
+                )
+            )
+            self.assertTrue(
+                _can_reuse_existing_ordinal_output(
+                    output,
+                    generate_figures=False,
+                )
+            )
+            manifest.write_text(
+                json.dumps({"figures_generated": True}),
+                encoding="utf-8",
+            )
+            self.assertTrue(
+                _can_reuse_existing_ordinal_output(
+                    output,
+                    generate_figures=True,
+                )
+            )
+            self.assertFalse(
+                _can_reuse_existing_ordinal_output(
+                    output,
+                    generate_figures=False,
+                )
+            )
+
     def test_renyi_alpha_grid_includes_requested_extremes(self):
         self.assertEqual(
             tuple(alpha for alpha, _, _ in RENYI_ALPHA_METRICS),

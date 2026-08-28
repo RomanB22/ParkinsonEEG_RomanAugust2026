@@ -75,13 +75,22 @@ class PipelineRefactorTests(unittest.TestCase):
             self.registry["matched.within-bout-ordinal"].dependencies,
         )
 
-    def test_stale_or_missing_stage_commands_replace_partial_outputs(self) -> None:
+    def test_stale_ordinal_does_not_implicitly_overwrite(self) -> None:
         context = RunContext(
             project_root=Path.cwd(),
             environment_name="MNE_August2026",
             profile_name="paper",
         )
         command = self.registry["full.ordinal"].build_commands(context, True)[0]
+        self.assertNotIn("--overwrite", command)
+
+        explicit = RunContext(
+            project_root=Path.cwd(),
+            environment_name="MNE_August2026",
+            profile_name="paper",
+            overwrite=True,
+        )
+        command = self.registry["full.ordinal"].build_commands(explicit, True)[0]
         self.assertIn("--overwrite", command)
 
     def test_stale_clean_does_not_implicitly_refit_ica(self) -> None:

@@ -27,6 +27,7 @@ def _python_builder(
     *arguments: str,
     supports_progress: bool = False,
     supports_overwrite: bool = True,
+    implicit_overwrite: bool = True,
     compute_skip_figures: bool = False,
 ):
     def build(context: RunContext, replace: bool) -> list[list[str]]:
@@ -35,7 +36,9 @@ def _python_builder(
             command.append("--no-progress")
         if compute_skip_figures and context.profile_name == "compute":
             command.append("--skip-figures")
-        if supports_overwrite and replace:
+        if supports_overwrite and (
+            context.overwrite or (replace and implicit_overwrite)
+        ):
             command.append("--overwrite")
         return [command]
 
@@ -291,6 +294,7 @@ def build_registry() -> dict[str, Stage]:
             _python_builder(
                 "analyses.ordinal.run_ordinal_analysis",
                 supports_progress=True,
+                implicit_overwrite=False,
                 compute_skip_figures=True,
             ),
             (
@@ -531,7 +535,13 @@ def build_registry() -> dict[str, Stage]:
             "matched",
             "analysis",
             ("matched.prepare", "full.ordinal"),
-            _python_builder("analyses.ordinal.run_ordinal_analysis", "--config", "outputs/matched/cohort/configs/ordinal.json", supports_progress=True),
+            _python_builder(
+                "analyses.ordinal.run_ordinal_analysis",
+                "--config",
+                "outputs/matched/cohort/configs/ordinal.json",
+                supports_progress=True,
+                implicit_overwrite=False,
+            ),
             (
                 _a("outputs/matched/ordinal/manifest.json", contains=('"mode": "filtered_subject_level_reuse"',), excludes=RETIRED_BANDS),
                 _a("outputs/matched/ordinal/metrics/subject_electrode_mean_metrics.csv", contains=("renyi_entropy_alpha_10",)),

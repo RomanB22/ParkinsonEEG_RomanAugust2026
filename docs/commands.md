@@ -35,6 +35,10 @@ reused. A compatible saved ICA from an incomplete/review-only subject is also
 loaded instead of refit. ICA is forcibly refit only when `--overwrite` is
 explicitly supplied.
 
+Primary ordinal analysis likewise never receives an implicit `--overwrite`.
+Without that flag, compatible subject-level metrics from a completed compute
+run are validated and reused, either to resume compute or to add paper figures.
+
 ## Downstream analyses
 
 ```bash
