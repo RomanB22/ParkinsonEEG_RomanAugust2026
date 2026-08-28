@@ -243,8 +243,20 @@ class PipelineRunner:
             if not self.context.overwrite and state == "current":
                 print("  current output found; skipping")
                 continue
-            if not self.context.overwrite and state == "legacy" and not stage.always_run:
-                print("  complete legacy output found; adopting runner fingerprint")
+            if (
+                not self.context.overwrite
+                and state in {"legacy", "stale"}
+                and not stage.always_run
+            ):
+                if state == "legacy":
+                    print(
+                        "  complete legacy output found; adopting runner fingerprint"
+                    )
+                else:
+                    print(
+                        "  complete stale output found; preserving it because "
+                        "--overwrite was not explicitly supplied"
+                    )
                 if not dry_run:
                     self.state_store.write(
                         stage, fingerprint, commands, adopted=True

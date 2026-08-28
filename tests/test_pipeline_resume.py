@@ -5,11 +5,13 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock
 
 from config import load_pipeline_config
 from registry import build_registry
 from runner import PipelineRunner, Selection, profile_targets
 from stages import RunContext, StateStore
+from stages import Stage
 
 
 class PipelineRefactorTests(unittest.TestCase):
@@ -157,6 +159,37 @@ class PipelineRefactorTests(unittest.TestCase):
             )
             runner.inspect(stages)
             self.assertFalse(store.root.exists())
+
+    def test_complete_stale_stage_is_adopted_without_execution(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = StateStore(Path(directory) / "state")
+            context = RunContext(
+                project_root=Path.cwd(),
+                environment_name="MNE_August2026",
+                profile_name="paper",
+            )
+            runner = PipelineRunner(self.config, context, state_store=store)
+            builder = Mock(return_value=[["command-that-must-not-run"]])
+            stage = Stage(
+                "test.stale",
+                "Complete stale test output",
+                "full",
+                "test",
+                (),
+                builder,
+                (),
+            )
+            runner.inspect = Mock(
+                return_value=[(stage, "stale", "source changed", "new-fingerprint")]
+            )
+
+            runner.run([stage], dry_run=False)
+
+            builder.assert_called_once_with(context, True)
+            record = store.read(stage.id)
+            self.assertIsNotNone(record)
+            self.assertEqual(record["fingerprint"], "new-fingerprint")
+            self.assertTrue(record["adopted_existing_outputs"])
 
     def test_sweep_owns_only_d3_to_d5_at_tau_one(self) -> None:
         command = self.registry["full.ordinal-sweep"].build_commands(

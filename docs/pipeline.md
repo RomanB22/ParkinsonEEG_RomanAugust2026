@@ -44,7 +44,9 @@ The default behavior is resumable. For each stage the runner reports:
 Use `--overwrite` only when every selected stage should be recomputed. The
 runner never adds `--overwrite` merely because a stage is stale, missing, or
 partial. Without explicit permission, each stage may safely resume/reuse its
-compatible outputs or stop and request an explicit overwrite.
+compatible outputs or stop and request an explicit overwrite. A stale stage
+whose required artifacts still pass validation is preserved and adopted under
+the current runner fingerprint; invalid or missing artifacts are never adopted.
 
 ## Human ICA checkpoint
 

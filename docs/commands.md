@@ -30,7 +30,9 @@ bash run_pipeline.sh run --profile paper
 
 The default is resumable. `--overwrite` recomputes every selected stage, and is
 forwarded only when it appears explicitly in the public command. A stale,
-missing, or partial stage never receives it automatically.
+missing, or partial stage never receives it automatically. Complete stale
+outputs that still pass artifact validation are preserved and adopted; stages
+with missing or invalid artifacts execute their non-overwriting resume path.
 For preprocessing, an automatically detected stale stage does not imply ICA
 refitting: complete subject outputs with a matching preprocessing signature are
 reused. A compatible saved ICA from an incomplete/review-only subject is also
