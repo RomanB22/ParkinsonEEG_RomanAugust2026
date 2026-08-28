@@ -61,9 +61,8 @@ bash run_pipeline.sh list
 bash run_pipeline.sh validate-config
 ```
 
-`run_reproducible_pipeline.sh`, `run_all_analyses.sh`, and
-the legacy matched runner remain as thin compatibility aliases.
-They contain no pipeline logic.
+`run_pipeline.sh` is the sole public repository-root runner. The legacy matched
+runner remains as a thin cohort-selection alias and contains no pipeline logic.
 
 ## Scientific scope
 

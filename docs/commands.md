@@ -84,7 +84,5 @@ bash run_pipeline.sh run --profile paper --log-file pipeline_logs/paper_run.log
 These forward directly to the same runner:
 
 ```bash
-bash run_reproducible_pipeline.sh run --profile paper
-bash run_all_analyses.sh --profile paper
 bash src/analyses/matching/run_matched_analyses.sh --profile paper
 ```

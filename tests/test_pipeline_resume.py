@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock
 
 from config import load_pipeline_config
 from registry import build_registry
 from runner import PipelineRunner, Selection, profile_targets
-from stages import RunContext, StateStore
-from stages import Stage
+from stages import RunContext, Stage, StateStore
 
 
 class PipelineRefactorTests(unittest.TestCase):
@@ -20,16 +21,14 @@ class PipelineRefactorTests(unittest.TestCase):
         cls.config = load_pipeline_config()
         cls.registry = build_registry()
 
-    def test_one_public_runner_and_thin_compatibility_aliases(self) -> None:
+    def test_public_runner_and_matched_compatibility_alias(self) -> None:
         public = Path("run_pipeline.sh").read_text(encoding="utf-8")
-        for filename in (
-            "run_reproducible_pipeline.sh",
-            "run_all_analyses.sh",
-            "src/analyses/matching/run_matched_analyses.sh",
-        ):
-            source = Path(filename).read_text(encoding="utf-8")
-            self.assertLess(len(source.splitlines()), 15)
-            self.assertIn("run_pipeline.sh", source)
+        self.assertIn("src/cli.py", public)
+        alias = Path(
+            "src/analyses/matching/run_matched_analyses.sh"
+        ).read_text(encoding="utf-8")
+        self.assertLess(len(alias.splitlines()), 15)
+        self.assertIn("run_pipeline.sh", alias)
 
     def test_public_config_locks_scientific_invariants(self) -> None:
         science = self.config.science
@@ -183,7 +182,8 @@ class PipelineRefactorTests(unittest.TestCase):
                 return_value=[(stage, "stale", "source changed", "new-fingerprint")]
             )
 
-            runner.run([stage], dry_run=False)
+            with redirect_stdout(io.StringIO()):
+                runner.run([stage], dry_run=False)
 
             builder.assert_called_once_with(context, True)
             record = store.read(stage.id)
@@ -196,7 +196,7 @@ class PipelineRefactorTests(unittest.TestCase):
             RunContext(Path.cwd(), "MNE_August2026", "paper"), True
         )[0]
         self.assertIn("sweep", command)
-        source = Path("sweep.py").read_text(encoding="utf-8")
+        source = Path("src/sweep.py").read_text(encoding="utf-8")
         self.assertIn("dimensions: tuple[int, ...] = (3, 4, 5)", source)
         self.assertIn("delay_samples: int = 1", source)
 
