@@ -162,16 +162,19 @@ visible before interpreting a group-average curve.
 ### 3. Subject-balanced stereotypical bout representations
 
 For a visually interpretable average bout, each accepted epoch is band-pass
-filtered and converted to its complex Hilbert analytic signal. Each
-subject/electrode/band signal is divided by its median Hilbert amplitude over
-valid epoch interiors, and every detected bout is aligned to its temporal
-midpoint in a ±0.5-second window. Each panel row contains:
+filtered and converted to its complex Hilbert analytic signal. Each detected
+bout is aligned to its temporal midpoint in a ±0.5-second window. A
+subject/electrode/band median normalization is used internally and retained in
+the intermediate file. Before plotting, the normalized envelope is converted
+back to microvolts and its median baseline is subtracted. Each panel row
+contains:
 
-- the normalized Hilbert amplitude envelope;
+- the Hilbert amplitude above the median baseline in microvolts;
 - circular mean Hilbert phase relative to the bout center, with dotted
   resultant length `R` showing phase consistency from 0 to 1;
-- the real phase-aligned analytic signal, which provides an average oscillatory
-  bout shape without cancellation from arbitrary absolute phase.
+- the real phase-aligned analytic signal in microvolts, which provides an
+  average oscillatory bout shape without cancellation from arbitrary absolute
+  phase.
 
 For the latter two quantities, every bout is rotated so its analytic phase is
 zero at its center. Consequently, the phase and shape panels describe relative

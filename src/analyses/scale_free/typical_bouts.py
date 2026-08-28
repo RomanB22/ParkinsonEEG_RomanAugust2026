@@ -274,7 +274,7 @@ def _plot_scalar_axis(
     *,
     title: str,
     ylabel: str,
-    reference: float,
+    reference: float | None,
     include_counts: bool,
 ) -> None:
     colors = {"PD": "#D55E00", "Control": "#0072B2"}
@@ -295,7 +295,8 @@ def _plot_scalar_axis(
         axis.plot(times, mean, color=colors[group], linewidth=1.6, label=label)
         axis.fill_between(times, lower, upper, color=colors[group], alpha=0.20)
     axis.axvline(0.0, color="0.35", linestyle="--", linewidth=0.8)
-    axis.axhline(reference, color="0.5", linestyle=":", linewidth=0.8)
+    if reference is not None:
+        axis.axhline(reference, color="0.5", linestyle=":", linewidth=0.8)
     axis.set(title=title, xlabel="Time from bout center (s)", ylabel=ylabel)
     axis.grid(alpha=0.18)
     axis.legend(frameon=False, fontsize=6.5)
@@ -389,8 +390,8 @@ def _plot_representations(
             policy,
             confidence_level,
             title=f"{display} — envelope",
-            ylabel="Envelope / baseline",
-            reference=1.0,
+            ylabel="Hilbert amplitude above baseline (µV)",
+            reference=0.0,
             include_counts=True,
         )
         _plot_phase_axis(
@@ -415,7 +416,7 @@ def _plot_representations(
             policy,
             confidence_level,
             title=f"{display} — phase-aligned shape",
-            ylabel="Band-passed voltage / baseline",
+            ylabel="Band-passed voltage (µV)",
             reference=0.0,
             include_counts=False,
         )
@@ -491,7 +492,8 @@ def _write_gallery(root: Path, electrodes: list[str]) -> None:
         "table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:.45rem}"
         "a{color:#0067a5}</style></head><body>"
         "<h1>Subject-balanced stereotypical bout representations</h1>"
-        "<p>Each figure shows the normalized Hilbert envelope, circular mean "
+        "<p>Each figure shows the baseline-subtracted Hilbert envelope in "
+        "microvolts, circular mean "
         "phase relative to the bout center with phase consistency R, and the "
         "phase-aligned band-pass waveform. Confidence shading is across subject "
         "means, not across bouts.</p>"
@@ -684,6 +686,8 @@ def generate_typical_bout_gallery(
     )
     counts = np.stack([row["bout_counts"] for row in results])
     baselines = np.stack([row["baseline_amplitude_uv"] for row in results])
+    amplitude_waveforms_uv = (waveforms - 1.0) * baselines[..., np.newaxis]
+    phase_aligned_shapes_uv = phase_aligned_shapes * baselines[..., np.newaxis]
     fit = pd.read_csv(output_root / "metrics" / "electrode_aperiodic_metrics.csv")
     fit_lookup = fit.pivot(index="subject_id", columns="electrode", values="specparam_fit_qc_pass")
     fit_lookup = fit_lookup.reindex(index=participants["subject_id"], columns=electrodes)
@@ -707,8 +711,10 @@ def generate_typical_bout_gallery(
         bands=np.asarray(list(bands)),
         times_seconds=times,
         normalized_amplitude_envelopes=waveforms,
+        baseline_subtracted_amplitude_envelopes_uv=amplitude_waveforms_uv,
         relative_phase_phasors=phase_phasors,
         phase_aligned_normalized_shapes=phase_aligned_shapes,
+        phase_aligned_shapes_uv=phase_aligned_shapes_uv,
         bout_counts=counts,
         baseline_amplitude_uv=baselines,
         electrode_fit_qc=fit_lookup.to_numpy(dtype=bool),
@@ -769,9 +775,9 @@ def generate_typical_bout_gallery(
         safe = electrode.replace("/", "_")
         for policy, directory in (("all", "all_subjects"), ("fit_qc", "fit_qc")):
             _plot_electrode(
-                waveforms,
+                amplitude_waveforms_uv,
                 phase_phasors,
-                phase_aligned_shapes,
+                phase_aligned_shapes_uv,
                 counts,
                 subject_table,
                 electrode_index,
@@ -790,9 +796,9 @@ def generate_typical_bout_gallery(
         fig, axes = _representation_figure(len(bands))
         _plot_representations(
             axes,
-            waveforms,
+            amplitude_waveforms_uv,
             phase_phasors,
-            phase_aligned_shapes,
+            phase_aligned_shapes_uv,
             counts,
             subject_table,
             None,
@@ -818,7 +824,8 @@ def generate_typical_bout_gallery(
         "bands": list(bands),
         "alignment": "detected bout midpoint",
         "window_seconds_each_side": float(settings["center_window_seconds"]),
-        "normalization": "subject/electrode/band median Hilbert amplitude in valid epoch interiors",
+        "plot_amplitude_units": "microvolts above the subject/electrode/band median Hilbert baseline",
+        "stored_normalization": "subject/electrode/band median Hilbert amplitude in valid epoch interiors",
         "phase": "circular mean relative to each bout center; resultant length R reports consistency",
         "average_shape": "real phase-aligned analytic signal with center phase rotated to zero",
         "aggregation": "bouts within subject/electrode/band, then subjects with equal weight",
