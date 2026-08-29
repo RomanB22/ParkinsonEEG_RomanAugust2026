@@ -17,6 +17,7 @@ are separated here so their ownership and dependencies remain easy to follow.
 | `duration_qc` | accepted-duration sensitivity | [Duration QC](duration_qc.md) |
 | `eight_electrode` | prespecified electrode subset | [Eight electrodes](eight_electrode.md) |
 | `matching` | shared age/sex matched cohort | [Matching](matching.md) |
+| `medication` | ds002778 HC, paired PD ON/OFF, and MMSE | [Medication-state analysis](medication.md) |
 
 Analysis configuration files use the same short names under
 `config/analyses/`. Generated artifacts use them under `outputs/full/` and

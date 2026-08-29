@@ -15,6 +15,8 @@ from .dataset import (
     load_participants,
     load_subject,
     read_json,
+    recording_id_from_path,
+    session_id_from_path,
     sidecar_paths,
     subject_id_from_path,
 )
@@ -44,7 +46,9 @@ def inspect_dataset(config: dict[str, Any]) -> dict[str, Any]:
     rows = []
     channel_metadata_rows = []
     for set_path in recordings:
-        subject_id = subject_id_from_path(set_path)
+        participant_id = subject_id_from_path(set_path)
+        subject_id = recording_id_from_path(set_path)
+        session_id = session_id_from_path(set_path)
         paths = sidecar_paths(set_path)
         sidecar = read_json(paths["eeg_json"])
         channels = pd.read_csv(paths["channels_tsv"], sep="\t")
@@ -52,15 +56,43 @@ def inspect_dataset(config: dict[str, Any]) -> dict[str, Any]:
         eeg = [name for name in stored if name not in auxiliary]
         auxiliaries = [name for name in stored if name in auxiliary]
         channel_sets[subject_id] = set(eeg)
-        participant_row = participants.loc[participants["participant_id"] == subject_id]
-        group = participant_row.iloc[0]["GROUP"] if len(participant_row) == 1 else "unknown"
+        participant_row = participants.loc[
+            participants["participant_id"] == participant_id
+        ]
+        if len(participant_row) == 1 and "GROUP" in participants:
+            group = str(participant_row.iloc[0]["GROUP"])
+        elif participant_id.removeprefix("sub-").lower().startswith("pd"):
+            group = "PD"
+        elif participant_id.removeprefix("sub-").lower().startswith("hc"):
+            group = "Control"
+        else:
+            group = "unknown"
         reference = str(sidecar.get("EEGReference", "unknown"))
         rows.append(
             {
                 "subject_id": subject_id,
+                "participant_id": participant_id,
+                "session_id": session_id,
                 "group": group,
-                "set_file": str(set_path.resolve()),
-                "fdt_file_exists": set_path.with_suffix(".fdt").exists(),
+                "source_file": str(set_path.resolve()),
+                "source_format": set_path.suffix.lower().lstrip("."),
+                # Backward-compatible aliases retained for the original
+                # EEGLAB inspection outputs.
+                "set_file": (
+                    str(set_path.resolve())
+                    if set_path.suffix.lower() == ".set"
+                    else ""
+                ),
+                "fdt_file_exists": (
+                    set_path.with_suffix(".fdt").exists()
+                    if set_path.suffix.lower() == ".set"
+                    else pd.NA
+                ),
+                "companion_fdt_exists": (
+                    set_path.with_suffix(".fdt").exists()
+                    if set_path.suffix.lower() == ".set"
+                    else pd.NA
+                ),
                 "sampling_rate": sidecar.get("SamplingFrequency"),
                 "recording_duration_sec": sidecar.get("RecordingDuration"),
                 "stored_channel_count": len(stored),
@@ -117,15 +149,27 @@ def inspect_dataset(config: dict[str, Any]) -> dict[str, Any]:
         json.dumps(common_payload, indent=2), encoding="utf-8"
     )
 
-    groups = participants["GROUP"].value_counts(dropna=False).to_dict()
+    groups = recording_table[["participant_id", "group"]].drop_duplicates()[
+        "group"
+    ].value_counts(dropna=False).to_dict()
     rates = sorted(recording_table["sampling_rate"].dropna().unique().tolist())
     references = recording_table["original_reference"].value_counts().to_dict()
+    source_formats = recording_table["source_format"].value_counts().to_dict()
+    if set(source_formats) == {"set"}:
+        decision_notes = """- EEGLAB `.set` files require their external `.fdt` companions.
+- Sidecars label channel type and units as `n/a`; MNE converts EEG samples to volts.
+- Pz is the reported online reference but is not stored as a data channel; CPz is recorded and Pz is not synthesized.
+- Medication status is unavailable in `participants.tsv`."""
+    else:
+        decision_notes = """- BioSemi BDF recordings are loaded directly with MNE and converted to volts.
+- Repeated sessions retain recording IDs such as `sub-pd3_ses-off`; biological participant IDs remain separate.
+- Medication state is encoded by the BIDS session (`ses-off`/`ses-on`)."""
     report = f"""# Dataset inspection report
 
 ## Dataset structure
 
 - Participants in `participants.tsv`: {len(participants)}
-- Resting-state EEGLAB `.set` recordings: {len(recordings)}
+- Resting-state EEG recordings: {len(recordings)}
 - Group counts: {groups}
 - Sampling rates found: {rates} Hz
 - Recording duration range: {recording_table['recording_duration_sec'].min():.2f}–{recording_table['recording_duration_sec'].max():.2f} s
@@ -136,13 +180,11 @@ def inspect_dataset(config: dict[str, Any]) -> dict[str, Any]:
 
 ## Decisions and cautions
 
-- The source data are EEGLAB `.set` plus external `.fdt`; both are required when loading.
-- Sidecars label channel type and units as `n/a`. MNE's EEGLAB reader converts EEG samples to volts; the pipeline records these unresolved source labels rather than pretending they were supplied.
-- The sidecars report Pz as the original online reference. Pz is not stored as a data channel; CPz is recorded. The pipeline does not synthesize Pz.
-- Auxiliary channels named Resp/X/Y/Z are excluded from EEG cleaning but recorded in provenance.
-- Valid EEGLAB electrode positions are preserved. Standard 10–05 positions are only a fallback for incomplete coordinates and are assigned only to recorded channels. Missing channels are never created or interpolated.
-- Medication status is not present in `participants.tsv` and is therefore reported as unavailable.
-- Final analysis data are filtered to 1–100 Hz, notched at 60 Hz, common-average referenced for ICA/ICLabel, and resampled from 500 Hz to 250 Hz.
+- Source formats: {source_formats}.
+{decision_notes}
+- Configured auxiliary channels are excluded from scalp EEG but retained in provenance.
+- Valid imported electrode positions are preserved; a standard montage is only a fallback for recorded channels with missing coordinates.
+- Final data are filtered {config['filter']['l_freq']:g}–{config['filter']['h_freq']:g} Hz, notched at {config['filter']['notch_freq_hz']:g} Hz, common-average referenced, and resampled to {config['resampling']['target_sfreq']:g} Hz.
 
 ## Generated metadata
 
@@ -158,7 +200,16 @@ def inspect_dataset(config: dict[str, Any]) -> dict[str, Any]:
     # Basic raw inspection for one participant from each group.
     representative_ids = []
     for group in ("PD", "Control"):
-        matches = participants.loc[participants["GROUP"] == group, "participant_id"]
+        if "GROUP" in participants:
+            matches = participants.loc[
+                participants["GROUP"] == group, "participant_id"
+            ]
+        else:
+            prefix = "sub-pd" if group == "PD" else "sub-hc"
+            matches = participants.loc[
+                participants["participant_id"].astype(str).str.startswith(prefix),
+                "participant_id",
+            ]
         if len(matches):
             representative_ids.append(str(matches.iloc[0]))
     for subject_id in representative_ids:

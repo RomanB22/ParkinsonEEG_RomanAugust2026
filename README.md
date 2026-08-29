@@ -101,3 +101,19 @@ tables.
 
 Original files under `dataset/` are read-only inputs. Generated full-cohort and
 matched results live under `outputs/` and are ignored by Git.
+
+## Paired medication-state dataset
+
+OpenNeuro `ds002778-1.0.5` has a separate workflow for 16 healthy controls and
+15 PD participants recorded both ON and OFF medication. It uses MMSE
+continuously and preserves ON/OFF pairing:
+
+```bash
+bash src/analyses/medication/run_ds002778_analysis.sh metadata
+bash src/analyses/medication/run_ds002778_analysis.sh review --workers 4
+bash src/analyses/medication/run_ds002778_analysis.sh preprocess --workers 4
+bash src/analyses/medication/run_ds002778_analysis.sh analyze
+```
+
+See [the medication-state methods](docs/analyses/medication.md) before running
+the full workflow.

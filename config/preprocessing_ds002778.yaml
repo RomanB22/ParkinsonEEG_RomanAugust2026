@@ -1,0 +1,318 @@
+{
+  "project": {
+    "dataset_dir": "ds002778-1.0.5",
+    "output_dir": "processed_ds002778",
+    "task": "rest"
+  },
+  "filter": {
+    "l_freq": 1.0,
+    "h_freq": 100.0,
+    "method": "fir",
+    "phase": "zero",
+    "notch_enabled": true,
+    "notch_freq_hz": 60.0,
+    "notch_width_hz": 2.0,
+    "reason": "The retained 1-100 Hz band includes 60 Hz, so notch filtering precedes resampling."
+  },
+  "resampling": {
+    "target_sfreq": 250.0,
+    "method": "fft",
+    "npad": "auto"
+  },
+  "channels": {
+    "auxiliary_names": [
+      "EXG1",
+      "EXG2",
+      "EXG3",
+      "EXG4",
+      "EXG5",
+      "EXG6",
+      "EXG7",
+      "EXG8",
+      "Status"
+    ],
+    "flat_std_uv": 0.1,
+    "metric_robust_z": 6.0,
+    "correlation_robust_z": 6.0,
+    "minimum_independent_flags": 2,
+    "minimum_median_correlation": -0.2
+  },
+  "artifacts": {
+    "window_sec": 1.0,
+    "step_sec": 0.5,
+    "absolute_peak_to_peak_uv": 500.0,
+    "global_peak_to_peak_robust_z": 10.0,
+    "minimum_global_peak_to_peak_uv": 100.0,
+    "padding_sec": 0.25,
+    "merge_gap_sec": 0.25
+  },
+  "ica": {
+    "method": "infomax",
+    "extended": true,
+    "n_components": 0.99,
+    "random_state": 42,
+    "max_iter": 1000,
+    "fit_l_freq": 1.0,
+    "fit_h_freq": 100.0,
+    "temporary_resample_sfreq": 250.0,
+    "suggestion_frontal_correlation": 0.3,
+    "suggestion_frontal_weight_ratio": 1.5,
+    "iclabel_enabled": true,
+    "iclabel_backend": "onnx",
+    "iclabel_artifact_probability_threshold": 0.6,
+    "iclabel_minimum_class_probability": 0.3,
+    "manual_exclude_components": {},
+    "manual_exclude_reasons": {},
+    "manual_review_confirmed": {},
+    "automatic_exclude_components": {
+      "sub-hc21_ses-hc": [
+        1,
+        12,
+        0,
+        7,
+        3,
+        14
+      ],
+      "sub-hc2_ses-hc": [
+        4,
+        0,
+        1,
+        8,
+        9,
+        12
+      ],
+      "sub-hc1_ses-hc": [
+        7,
+        11,
+        0,
+        3,
+        13,
+        16,
+        17
+      ],
+      "sub-hc10_ses-hc": [
+        0,
+        9,
+        12,
+        3,
+        16,
+        8
+      ],
+      "sub-hc18_ses-hc": [
+        4,
+        18,
+        0,
+        7,
+        1,
+        6,
+        11
+      ],
+      "sub-hc20_ses-hc": [
+        1,
+        9,
+        15,
+        0,
+        22,
+        7,
+        11,
+        10,
+        12
+      ],
+      "sub-hc24_ses-hc": [
+        10,
+        4,
+        0,
+        3,
+        17,
+        8,
+        13,
+        5
+      ],
+      "sub-hc25_ses-hc": [
+        2,
+        0,
+        8,
+        9,
+        10,
+        1,
+        5,
+        7,
+        4,
+        3,
+        14
+      ],
+      "sub-hc30_ses-hc": [
+        2,
+        0,
+        1,
+        9,
+        8
+      ],
+      "sub-hc29_ses-hc": [
+        13,
+        16,
+        0,
+        3,
+        7,
+        11,
+        8
+      ],
+      "sub-hc31_ses-hc": [
+        9,
+        6,
+        0,
+        22,
+        4,
+        2,
+        7,
+        5,
+        8,
+        3,
+        19
+      ],
+      "sub-hc32_ses-hc": [
+        0,
+        6,
+        22,
+        19
+      ]
+    },
+    "automatic_exclude_reasons": {
+      "sub-hc21_ses-hc": {
+        "1": "ICLabel proposal: eye blink p=1.000; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "12": "ICLabel proposal: muscle artifact p=0.999; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "0": "ICLabel proposal: eye blink p=0.999; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "7": "ICLabel proposal: muscle artifact p=0.996; known-artifact total p=0.996. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "3": "ICLabel proposal: eye blink p=0.806; known-artifact total p=0.902. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "14": "ICLabel proposal: muscle artifact p=0.800; known-artifact total p=0.805. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc2_ses-hc": {
+        "4": "ICLabel proposal: muscle artifact p=0.998; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "0": "ICLabel proposal: eye blink p=0.997; known-artifact total p=0.998. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "1": "ICLabel proposal: eye blink p=0.994; known-artifact total p=0.995. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "8": "ICLabel proposal: eye blink p=0.726; known-artifact total p=0.751. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "9": "ICLabel proposal: muscle artifact p=0.660; known-artifact total p=0.694. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "12": "ICLabel proposal: eye blink p=0.639; known-artifact total p=0.658. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc1_ses-hc": {
+        "7": "ICLabel proposal: muscle artifact p=1.000; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "11": "ICLabel proposal: muscle artifact p=0.999; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "0": "ICLabel proposal: eye blink p=0.986; known-artifact total p=0.993. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "3": "ICLabel proposal: eye blink p=0.961; known-artifact total p=0.991. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "13": "ICLabel proposal: muscle artifact p=0.911; known-artifact total p=0.911. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "16": "ICLabel proposal: muscle artifact p=0.884; known-artifact total p=0.885. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "17": "ICLabel proposal: muscle artifact p=0.697; known-artifact total p=0.759. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc10_ses-hc": {
+        "0": "ICLabel proposal: eye blink p=0.994; known-artifact total p=0.996. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "9": "ICLabel proposal: muscle artifact p=0.854; known-artifact total p=0.990. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "12": "ICLabel proposal: muscle artifact p=0.770; known-artifact total p=0.935. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "3": "ICLabel proposal: channel noise p=0.494; known-artifact total p=0.786. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "16": "ICLabel proposal: eye blink p=0.615; known-artifact total p=0.662. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "8": "ICLabel proposal: muscle artifact p=0.370; known-artifact total p=0.689. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc18_ses-hc": {
+        "4": "ICLabel proposal: muscle artifact p=0.999; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "18": "ICLabel proposal: eye blink p=0.983; known-artifact total p=0.991. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "0": "ICLabel proposal: eye blink p=0.971; known-artifact total p=0.978. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "7": "ICLabel proposal: muscle artifact p=0.914; known-artifact total p=0.954. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "1": "ICLabel proposal: eye blink p=0.655; known-artifact total p=0.865. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "6": "ICLabel proposal: muscle artifact p=0.705; known-artifact total p=0.823. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "11": "ICLabel proposal: muscle artifact p=0.714; known-artifact total p=0.772. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc20_ses-hc": {
+        "1": "ICLabel proposal: muscle artifact p=0.999; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "9": "ICLabel proposal: muscle artifact p=0.999; known-artifact total p=0.999. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "15": "ICLabel proposal: muscle artifact p=0.993; known-artifact total p=0.996. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "0": "ICLabel proposal: eye blink p=0.995; known-artifact total p=0.996. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "22": "ICLabel proposal: muscle artifact p=0.585; known-artifact total p=0.989. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "7": "ICLabel proposal: muscle artifact p=0.940; known-artifact total p=0.980. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "11": "ICLabel proposal: muscle artifact p=0.943; known-artifact total p=0.952. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "10": "ICLabel proposal: muscle artifact p=0.892; known-artifact total p=0.960. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "12": "ICLabel proposal: muscle artifact p=0.810; known-artifact total p=0.828. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc24_ses-hc": {
+        "10": "ICLabel proposal: muscle artifact p=0.998; known-artifact total p=0.998. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "4": "ICLabel proposal: eye blink p=0.998; known-artifact total p=0.998. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "0": "ICLabel proposal: eye blink p=0.993; known-artifact total p=0.996. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "3": "ICLabel proposal: muscle artifact p=0.887; known-artifact total p=0.993. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "17": "ICLabel proposal: muscle artifact p=0.908; known-artifact total p=0.991. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "8": "ICLabel proposal: muscle artifact p=0.894; known-artifact total p=0.921. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "13": "ICLabel proposal: muscle artifact p=0.897; known-artifact total p=0.911. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "5": "ICLabel proposal: muscle artifact p=0.846; known-artifact total p=0.847. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc25_ses-hc": {
+        "2": "ICLabel proposal: muscle artifact p=1.000; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "0": "ICLabel proposal: eye blink p=1.000; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "8": "ICLabel proposal: muscle artifact p=0.992; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "9": "ICLabel proposal: muscle artifact p=0.999; known-artifact total p=0.999. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "10": "ICLabel proposal: muscle artifact p=0.997; known-artifact total p=0.999. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "1": "ICLabel proposal: muscle artifact p=0.997; known-artifact total p=0.998. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "5": "ICLabel proposal: eye blink p=0.987; known-artifact total p=0.997. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "7": "ICLabel proposal: muscle artifact p=0.996; known-artifact total p=0.997. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "4": "ICLabel proposal: muscle artifact p=0.989; known-artifact total p=0.993. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "3": "ICLabel proposal: muscle artifact p=0.970; known-artifact total p=0.983. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "14": "ICLabel proposal: muscle artifact p=0.915; known-artifact total p=0.921. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc30_ses-hc": {
+        "2": "ICLabel proposal: muscle artifact p=1.000; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "0": "ICLabel proposal: eye blink p=0.999; known-artifact total p=0.999. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "1": "ICLabel proposal: eye blink p=0.986; known-artifact total p=0.989. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "9": "ICLabel proposal: muscle artifact p=0.817; known-artifact total p=0.861. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "8": "ICLabel proposal: muscle artifact p=0.491; known-artifact total p=0.633. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc29_ses-hc": {
+        "13": "ICLabel proposal: muscle artifact p=0.977; known-artifact total p=0.999. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "16": "ICLabel proposal: eye blink p=0.718; known-artifact total p=0.999. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "0": "ICLabel proposal: eye blink p=0.990; known-artifact total p=0.996. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "3": "ICLabel proposal: eye blink p=0.993; known-artifact total p=0.994. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "7": "ICLabel proposal: muscle artifact p=0.948; known-artifact total p=0.950. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "11": "ICLabel proposal: muscle artifact p=0.772; known-artifact total p=0.780. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "8": "ICLabel proposal: muscle artifact p=0.625; known-artifact total p=0.663. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc31_ses-hc": {
+        "9": "ICLabel proposal: muscle artifact p=0.991; known-artifact total p=1.000. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "6": "ICLabel proposal: eye blink p=0.999; known-artifact total p=0.999. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "0": "ICLabel proposal: eye blink p=0.996; known-artifact total p=0.997. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "22": "ICLabel proposal: muscle artifact p=0.986; known-artifact total p=0.993. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "4": "ICLabel proposal: muscle artifact p=0.980; known-artifact total p=0.991. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "2": "ICLabel proposal: muscle artifact p=0.963; known-artifact total p=0.992. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "7": "ICLabel proposal: muscle artifact p=0.986; known-artifact total p=0.991. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "5": "ICLabel proposal: muscle artifact p=0.922; known-artifact total p=0.986. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "8": "ICLabel proposal: muscle artifact p=0.980; known-artifact total p=0.985. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "3": "ICLabel proposal: muscle artifact p=0.951; known-artifact total p=0.962. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "19": "ICLabel proposal: muscle artifact p=0.931; known-artifact total p=0.934. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      },
+      "sub-hc32_ses-hc": {
+        "0": "ICLabel proposal: eye blink p=0.995; known-artifact total p=0.996. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "6": "ICLabel proposal: eye blink p=0.925; known-artifact total p=0.931. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "22": "ICLabel proposal: muscle artifact p=0.807; known-artifact total p=0.812. Automatically accepted via --skip-manual-ica-review; not visually confirmed.",
+        "19": "ICLabel proposal: muscle artifact p=0.417; known-artifact total p=0.610. Automatically accepted via --skip-manual-ica-review; not visually confirmed."
+      }
+    }
+  },
+  "epochs": {
+    "duration_sec": 4.0,
+    "overlap_sec": 0.0,
+    "peak_to_peak_uv": 500.0,
+    "robust_z": 8.0,
+    "baseline": null,
+    "autoreject_enabled": false
+  },
+  "qc": {
+    "preferred_channels": [
+      "Fp1",
+      "Fz",
+      "Cz",
+      "Pz",
+      "O1"
+    ],
+    "trace_start_sec": 20.0,
+    "trace_duration_sec": 10.0,
+    "psd_fmin_hz": 1.0,
+    "psd_fmax_hz": 100.0,
+    "final_psd_fmax_hz": 100.0,
+    "dpi": 150,
+    "ica_components_per_page": 12
+  }
+}

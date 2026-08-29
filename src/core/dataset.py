@@ -16,7 +16,8 @@ import numpy as np
 import pandas as pd
 
 
-SUBJECT_PATTERN = re.compile(r"(sub-\d+)")
+SUBJECT_PATTERN = re.compile(r"(sub-[A-Za-z0-9]+)")
+SESSION_PATTERN = re.compile(r"(ses-[A-Za-z0-9]+)")
 
 
 def subject_id_from_path(path: str | Path) -> str:
@@ -26,10 +27,38 @@ def subject_id_from_path(path: str | Path) -> str:
     return match.group(1)
 
 
+def session_id_from_path(path: str | Path) -> str | None:
+    """Return the BIDS session entity, when one is present."""
+    match = SESSION_PATTERN.search(str(path))
+    return match.group(1) if match else None
+
+
+def recording_id_from_path(path: str | Path) -> str:
+    """Return a stable analysis-unit ID for a BIDS recording.
+
+    Session-free datasets retain their historical ``sub-*`` identifiers.  A
+    repeated-measures dataset receives IDs such as ``sub-pd3_ses-off`` so no
+    ON/OFF recording can overwrite another recording from the same person.
+    """
+    subject_id = subject_id_from_path(path)
+    session_id = session_id_from_path(path)
+    return f"{subject_id}_{session_id}" if session_id else subject_id
+
+
 def discover_recordings(dataset_dir: str | Path, task: str = "Rest") -> list[Path]:
-    paths = sorted(Path(dataset_dir).glob(f"sub-*/eeg/*_task-{task}_eeg.set"))
+    """Discover supported BIDS EEG recordings with or without sessions."""
+    root = Path(dataset_dir)
+    paths = sorted(
+        {
+            path
+            for suffix in ("set", "bdf")
+            for path in root.glob(f"sub-*/**/*_task-{task}_eeg.{suffix}")
+        }
+    )
     if not paths:
-        raise FileNotFoundError(f"No task-{task} EEGLAB .set files found under {dataset_dir}")
+        raise FileNotFoundError(
+            f"No supported task-{task} .set/.bdf EEG files found under {dataset_dir}"
+        )
     return paths
 
 
@@ -47,7 +76,7 @@ def read_json(path: str | Path) -> dict[str, Any]:
 
 def sidecar_paths(set_path: str | Path) -> dict[str, Path]:
     set_path = Path(set_path)
-    stem = set_path.name.removesuffix("_eeg.set")
+    stem = set_path.stem.removesuffix("_eeg")
     return {
         "eeg_json": set_path.with_name(f"{stem}_eeg.json"),
         "channels_tsv": set_path.with_name(f"{stem}_channels.tsv"),
@@ -80,9 +109,16 @@ def load_subject(set_path: str | Path, auxiliary_names: list[str] | None = None)
     """
     set_path = Path(set_path)
     subject_id = subject_id_from_path(set_path)
+    session_id = session_id_from_path(set_path)
+    recording_id = recording_id_from_path(set_path)
     paths = sidecar_paths(set_path)
     sidecar = read_json(paths["eeg_json"])
-    raw = mne.io.read_raw_eeglab(set_path, preload=True, verbose="ERROR")
+    if set_path.suffix.lower() == ".set":
+        raw = mne.io.read_raw_eeglab(set_path, preload=True, verbose="ERROR")
+    elif set_path.suffix.lower() == ".bdf":
+        raw = mne.io.read_raw_bdf(set_path, preload=True, verbose="ERROR")
+    else:
+        raise ValueError(f"Unsupported EEG source format: {set_path.suffix}")
 
     raw.info["line_freq"] = float(sidecar.get("PowerLineFrequency", 60.0))
     auxiliaries = [name for name in (auxiliary_names or []) if name in raw.ch_names]
@@ -110,6 +146,8 @@ def load_subject(set_path: str | Path, auxiliary_names: list[str] | None = None)
 
     provenance = {
         "subject_id": subject_id,
+        "session_id": session_id,
+        "recording_id": recording_id,
         "original_file": str(set_path.resolve()),
         "sidecar_file": str(paths["eeg_json"].resolve()),
         "original_reference": str(sidecar.get("EEGReference", "unknown")),

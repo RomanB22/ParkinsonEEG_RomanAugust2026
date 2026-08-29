@@ -1,0 +1,102 @@
+{
+  "dataset": {
+    "openneuro_accession": "ds002778-1.0.5",
+    "dataset_dir": "ds002778-1.0.5",
+    "task": "rest",
+    "expected_condition_counts": {
+      "HC": 16,
+      "PD_OFF": 15,
+      "PD_ON": 15
+    }
+  },
+  "input": {
+    "epochs_dir": "processed_ds002778/epochs",
+    "epoch_glob": "sub-*_ses-*_task-rest_desc-cleaned_epo.fif"
+  },
+  "output_dir": "outputs/ds002778",
+  "bands": {
+    "delta": [1.0, 4.0],
+    "theta": [4.0, 8.0],
+    "alpha": [8.0, 13.0],
+    "beta": [13.0, 30.0],
+    "gamma": [30.0, 50.0]
+  },
+  "psd": {
+    "method": "welch",
+    "fmin_hz": 1.0,
+    "fmax_hz": 50.0
+  },
+  "ordinal": {
+    "enabled": true,
+    "embedding_dimension": 6,
+    "delay_samples": 1,
+    "bands": ["delta", "theta", "alpha", "beta", "gamma"],
+    "bandpass_filter_order": 4
+  },
+  "specparam": {
+    "aperiodic_mode": "best_bic",
+    "aperiodic_modes": ["fixed", "knee"],
+    "model_selection_criterion": "bic",
+    "frequency_range_hz": [4.0, 50.0],
+    "peak_width_limits_hz": [1.0, 12.0],
+    "max_n_peaks": 8,
+    "min_peak_height": 0.0,
+    "peak_threshold": 2.0
+  },
+  "aperiodic_fit_qc": {
+    "minimum_r_squared": 0.9,
+    "maximum_error_mae_log10": 0.15,
+    "maximum_absolute_residual_log10": 0.75,
+    "exponent_range": [0.0, 3.0],
+    "minimum_subject_qc_fraction": 0.8,
+    "policy": "retain all primary fits and report a separate QC-qualified exponent"
+  },
+  "ebosc": {
+    "enabled": true,
+    "frequency_min_hz": 4.0,
+    "frequency_max_hz": 50.0,
+    "frequency_step_hz": 1.0,
+    "wavenumber": 6.0,
+    "power_percentile": 0.95,
+    "minimum_cycles": 3.0,
+    "edge_padding_sec": 0.5,
+    "bands": ["theta", "alpha", "beta", "gamma"]
+  },
+  "duration_sensitivity": {
+    "enabled": true,
+    "minimum_retained_epochs": 20,
+    "selection": "evenly_spaced_across_recording"
+  },
+  "statistics": {
+    "planned_contrasts": [
+      "PD_OFF_minus_HC",
+      "PD_ON_minus_HC",
+      "PD_ON_minus_PD_OFF"
+    ],
+    "minimum_per_condition": 10,
+    "minimum_pairs": 10,
+    "minimum_mmse_participants": 10,
+    "confidence_level": 0.95,
+    "bootstrap_resamples": 2000,
+    "random_seed": 20260829,
+    "fdr_alpha": 0.05,
+    "fdr_scope": "within_feature_family_contrast_duration_and_sensitivity_cohort"
+  },
+  "plots": {
+    "dpi": 150,
+    "condition_colors": {
+      "HC": "#0072B2",
+      "PD_OFF": "#D55E00",
+      "PD_ON": "#009E73"
+    },
+    "feature_ids": [
+      "psd_delta_relative_power",
+      "psd_theta_relative_power",
+      "psd_alpha_relative_power",
+      "psd_beta_relative_power",
+      "aperiodic_aperiodic_exponent",
+      "ordinal_entropy",
+      "bouts_beta_oscillatory_occupancy"
+    ]
+  }
+}

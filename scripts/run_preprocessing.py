@@ -22,7 +22,11 @@ from core.config import (
     preprocessing_signature,
     write_ica_review_proposal,
 )
-from core.dataset import discover_recordings, subject_id_from_path
+from core.dataset import (
+    discover_recordings,
+    recording_id_from_path,
+    subject_id_from_path,
+)
 from core.metadata import expected_channels_from_dataset, update_preprocessing_qc
 from core.preprocessing import process_subject
 
@@ -33,13 +37,14 @@ def _subject_output_is_complete(
     *,
     review_only: bool,
     config: dict | None = None,
+    task: str = "Rest",
 ) -> bool:
     """Return whether the required subject outputs already exist."""
     output_dir = Path(output_dir)
     required = [
         output_dir
         / "ica"
-        / f"{subject_id}_task-Rest_desc-preprocessing-ica.fif",
+        / f"{subject_id}_task-{task}_desc-preprocessing-ica.fif",
         output_dir / "qc" / subject_id / "decisions.json",
     ]
     if not review_only:
@@ -47,10 +52,10 @@ def _subject_output_is_complete(
             [
                 output_dir
                 / "cleaned_raw"
-                / f"{subject_id}_task-Rest_desc-cleaned_raw.fif",
+                / f"{subject_id}_task-{task}_desc-cleaned_raw.fif",
                 output_dir
                 / "epochs"
-                / f"{subject_id}_task-Rest_desc-cleaned_epo.fif",
+                / f"{subject_id}_task-{task}_desc-cleaned_epo.fif",
             ]
         )
     if not all(path.is_file() for path in required):
@@ -68,12 +73,13 @@ def _existing_ica_reuse_status(
     output_dir: str | Path,
     subject_id: str,
     config: dict,
+    task: str = "Rest",
 ) -> str:
     """Classify an existing ICA as missing, reusable, or incompatible."""
     ica_path = (
         Path(output_dir)
         / "ica"
-        / f"{subject_id}_task-Rest_desc-preprocessing-ica.fif"
+        / f"{subject_id}_task-{task}_desc-preprocessing-ica.fif"
     )
     if not ica_path.is_file():
         return "missing"
@@ -82,6 +88,7 @@ def _existing_ica_reuse_status(
         subject_id,
         review_only=True,
         config=config,
+        task=task,
     ):
         return "reusable"
     return "incompatible"
@@ -157,7 +164,11 @@ def main() -> None:
         "--output-dir",
         help="Optional preprocessing output override for development pilots",
     )
-    parser.add_argument("--subjects", nargs="*", help="Optional participant IDs; default is all recordings")
+    parser.add_argument(
+        "--subjects",
+        nargs="*",
+        help="Optional participant or recording IDs; default is all recordings",
+    )
     parser.add_argument("--review-only", action="store_true")
     review_group = parser.add_mutually_exclusive_group()
     review_group.add_argument("--allow-unreviewed", action="store_true")
@@ -198,17 +209,27 @@ def main() -> None:
     recordings = discover_recordings(dataset_dir, task)
     if args.subjects:
         requested = set(args.subjects)
-        recordings = [path for path in recordings if subject_id_from_path(path) in requested]
-        found = {subject_id_from_path(path) for path in recordings}
+        recordings = [
+            path
+            for path in recordings
+            if subject_id_from_path(path) in requested
+            or recording_id_from_path(path) in requested
+        ]
+        found = {
+            requested_id
+            for path in recordings
+            for requested_id in (subject_id_from_path(path), recording_id_from_path(path))
+            if requested_id in requested
+        }
         missing = sorted(requested - found)
         if missing:
             raise FileNotFoundError(f"No recording found for: {missing}")
 
     if not args.review_only and not args.allow_unreviewed and not args.skip_manual_ica_review:
         unreviewed = [
-            subject_id_from_path(path)
+            recording_id_from_path(path)
             for path in recordings
-            if not is_ica_review_confirmed(config, subject_id_from_path(path))
+            if not is_ica_review_confirmed(config, recording_id_from_path(path))
         ]
         if unreviewed:
             preview = ", ".join(unreviewed[:10])
@@ -220,13 +241,14 @@ def main() -> None:
     expected = expected_channels_from_dataset(dataset_dir, task, config["channels"]["auxiliary_names"])
     if not args.overwrite:
         completed = [
-            subject_id_from_path(path)
+            recording_id_from_path(path)
             for path in recordings
             if _subject_output_is_complete(
                 config["project"]["output_dir"],
-                subject_id_from_path(path),
+                recording_id_from_path(path),
                 review_only=args.review_only,
                 config=config,
+                task=task,
             )
         ]
         if completed:
@@ -234,19 +256,20 @@ def main() -> None:
             recordings = [
                 path
                 for path in recordings
-                if subject_id_from_path(path) not in completed_set
+                if recording_id_from_path(path) not in completed_set
             ]
             print(
                 f"Reusing complete preprocessing outputs for {len(completed)} "
-                "participant(s); processing only missing subjects"
+                "recording(s); processing only missing recordings"
             )
 
     worker_count = min(args.workers, max(1, len(recordings)))
     ica_reuse_status = {
-        subject_id_from_path(path): _existing_ica_reuse_status(
+        recording_id_from_path(path): _existing_ica_reuse_status(
             config["project"]["output_dir"],
-            subject_id_from_path(path),
+            recording_id_from_path(path),
             config,
+            task,
         )
         for path in recordings
     }
@@ -328,7 +351,7 @@ def main() -> None:
                     config,
                     expected,
                     config_path=args.config,
-                    reuse_existing_ica=reusable_ica[subject_id_from_path(set_path)],
+                    reuse_existing_ica=reusable_ica[recording_id_from_path(set_path)],
                     **common_kwargs,
                 )
                 finish_result(result)
@@ -351,9 +374,7 @@ def main() -> None:
                         config,
                         expected,
                         config_path=args.config,
-                        reuse_existing_ica=reusable_ica[
-                            subject_id_from_path(set_path)
-                        ],
+                        reuse_existing_ica=reusable_ica[recording_id_from_path(set_path)],
                         **common_kwargs,
                     )
                     finish_result(result)
@@ -368,10 +389,10 @@ def main() -> None:
                             expected,
                             config_path=None,
                             reuse_existing_ica=reusable_ica[
-                                subject_id_from_path(set_path)
+                                recording_id_from_path(set_path)
                             ],
                             **common_kwargs,
-                        ): subject_id_from_path(set_path)
+                        ): recording_id_from_path(set_path)
                         for set_path in recordings
                     }
                     for future in as_completed(futures):
@@ -384,7 +405,7 @@ def main() -> None:
     finally:
         progress.close()
     if rows:
-        print(f"Completed {len(rows)} participant(s)")
+        print(f"Completed {len(rows)} recording(s)")
 
 
 if __name__ == "__main__":

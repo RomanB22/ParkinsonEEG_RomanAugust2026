@@ -14,6 +14,7 @@ def configure_runtime() -> None:
     os.environ.setdefault("MPLCONFIGDIR", str(cache_root / "matplotlib"))
     os.environ.setdefault("MPLBACKEND", "Agg")
     os.environ.setdefault("XDG_CACHE_HOME", str(cache_root / "cache"))
+    os.environ.setdefault("ORT_DISABLE_TELEMETRY", "1")
 
 
 configure_runtime()
