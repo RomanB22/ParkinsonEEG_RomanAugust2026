@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from config import DEFAULT_CONFIG, load_pipeline_config
+from config import DEFAULT_CONFIG, PipelineConfig, load_pipeline_config
 from runner import PipelineRunner, Selection
 from stages import RunContext, command_environment, command_text, python_command
 
@@ -17,6 +17,11 @@ def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Public pipeline configuration")
     parser.add_argument("--profile", default="paper", choices=("compute", "paper", "full-qc"))
     parser.add_argument("--cohort", choices=("full", "matched", "both"), default="both")
+    parser.add_argument(
+        "--dataset",
+        default="primary",
+        help="Dataset profile from config/pipeline.yaml, or 'both' (default: primary)",
+    )
     parser.add_argument("--overwrite", action="store_true", help="Recompute selected stages")
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running them")
     parser.add_argument("--no-progress", action="store_true")
@@ -57,11 +62,46 @@ def build_parser() -> argparse.ArgumentParser:
 
     review = commands.add_parser("review", help="Generate ICA review material and stop")
     review.add_argument("--config", default=str(DEFAULT_CONFIG))
+    review.add_argument(
+        "--dataset",
+        default="primary",
+        help="Dataset profile from config/pipeline.yaml, or 'both'",
+    )
     review.add_argument("--overwrite", action="store_true")
     review.add_argument("--no-progress", action="store_true")
     review.add_argument("--preprocessing-workers", type=int, default=int(os.environ.get("PARKINSON_EEG_PREPROCESSING_WORKERS", "2")))
     review.add_argument("--env")
     review.add_argument("--log-file", help=argparse.SUPPRESS)
+
+    preprocess = commands.add_parser(
+        "preprocess",
+        help="Run the same preprocessing contract for either or both datasets",
+    )
+    preprocess.add_argument(
+        "phase",
+        choices=("inspect", "review", "clean", "status"),
+        help="Inspect metadata, generate ICA review material, create epochs, or check completeness",
+    )
+    preprocess.add_argument("--config", default=str(DEFAULT_CONFIG))
+    preprocess.add_argument(
+        "--dataset",
+        default="primary",
+        help="Dataset profile from config/pipeline.yaml, or 'both'",
+    )
+    preprocess.add_argument(
+        "--subjects",
+        nargs="*",
+        help="Optional participant or recording IDs passed to each selected dataset",
+    )
+    preprocess.add_argument("--workers", type=int, default=int(os.environ.get("PARKINSON_EEG_PREPROCESSING_WORKERS", "2")))
+    preprocess.add_argument("--overwrite", action="store_true")
+    preprocess.add_argument("--no-progress", action="store_true")
+    preprocess.add_argument("--skip-manual-ica-review", action="store_true")
+    preprocess.add_argument("--allow-unreviewed", action="store_true")
+    preprocess.add_argument("--no-ica-downsampling", action="store_true")
+    preprocess.add_argument("--dry-run", action="store_true")
+    preprocess.add_argument("--env")
+    preprocess.add_argument("--log-file", help=argparse.SUPPRESS)
 
     commands.add_parser("list", help="List stable stage identifiers")
     commands.add_parser("validate-config", help="Validate shared scientific settings")
@@ -92,36 +132,116 @@ def _context(args: argparse.Namespace, environment: str) -> RunContext:
     )
 
 
-def _review(args: argparse.Namespace, environment: str) -> None:
-    if getattr(args, "dry_run", False):
-        raise ValueError("Review mode creates ICA material and cannot be a dry run")
-    context = _context(args, environment)
-    commands = [
-        python_command("scripts/inspect_dataset.py", "--config", "config/preprocessing.yaml"),
-        python_command(
-            "-m",
-            "unittest",
-            "-v",
-            "tests.test_cleaning",
-            "tests.test_config",
-            "tests.test_dataset",
-            "tests.test_ica",
-        ),
-        [
+def _dataset_names(config: PipelineConfig, selection: str) -> tuple[str, ...]:
+    if selection == "both":
+        return tuple(config.datasets)
+    config.dataset(selection)
+    return (selection,)
+
+
+def _preprocessing_commands(
+    args: argparse.Namespace, config: PipelineConfig
+) -> list[tuple[str, list[str]]]:
+    """Build one shared inspection/review/clean workflow for selected datasets."""
+    phase = str(args.phase)
+    dataset_names = _dataset_names(config, str(args.dataset))
+    commands: list[tuple[str, list[str]]] = []
+    if phase == "status":
+        return [
+            (
+                f"Check {config.dataset(name).label}",
+                python_command(
+                    "scripts/check_preprocessing_outputs.py",
+                    "--config",
+                    str(config.dataset(name).preprocessing_config),
+                ),
+            )
+            for name in dataset_names
+        ]
+    for name in dataset_names:
+        dataset = config.dataset(name)
+        commands.append(
+            (
+                f"Inspect {dataset.label}",
+                python_command(
+                    "scripts/inspect_dataset.py",
+                    "--config",
+                    str(dataset.preprocessing_config),
+                ),
+            )
+        )
+    if phase == "inspect":
+        return commands
+
+    commands.append(
+        (
+            "Validate the shared preprocessing implementation",
+            python_command(
+                "-m",
+                "unittest",
+                "-v",
+                "tests.test_cleaning",
+                "tests.test_config",
+                "tests.test_dataset",
+                "tests.test_ica",
+            ),
+        )
+    )
+    for name in dataset_names:
+        dataset = config.dataset(name)
+        command = [
             *python_command("scripts/run_preprocessing.py"),
             "--config",
-            "config/preprocessing.yaml",
-            "--review-only",
+            str(dataset.preprocessing_config),
             "--workers",
-            str(context.preprocessing_workers),
-            *(["--no-progress"] if context.no_progress else []),
-            *(["--overwrite"] if context.overwrite else []),
-        ],
-    ]
-    for command in commands:
-        print(f"+ {command_text(command)}", flush=True)
-        subprocess.run(command, cwd=context.project_root, env=command_environment(context), check=True)
-    print("\nICA review material is ready. Confirm decisions before running clean mode.")
+            str(args.workers),
+        ]
+        if phase == "review":
+            command.append("--review-only")
+        if args.subjects:
+            command.extend(["--subjects", *args.subjects])
+        if args.no_progress:
+            command.append("--no-progress")
+        if args.overwrite:
+            command.append("--overwrite")
+        if phase == "clean" and args.skip_manual_ica_review:
+            command.append("--skip-manual-ica-review")
+        if phase == "clean" and args.allow_unreviewed:
+            command.append("--allow-unreviewed")
+        if args.no_ica_downsampling:
+            command.append("--no-ica-downsampling")
+        commands.append((f"{phase.title()} {dataset.label}", command))
+    return commands
+
+
+def _preprocess(
+    args: argparse.Namespace, environment: str, config: PipelineConfig
+) -> None:
+    if args.workers < 1:
+        raise ValueError("--workers must be a positive integer")
+    if args.phase == "review" and (
+        args.skip_manual_ica_review or args.allow_unreviewed
+    ):
+        raise ValueError(
+            "--skip-manual-ica-review and --allow-unreviewed apply only to clean mode"
+        )
+    context = _context(args, environment)
+    for label, command in _preprocessing_commands(args, config):
+        print(f"\n[{label}]\n+ {command_text(command)}", flush=True)
+        if not args.dry_run:
+            subprocess.run(
+                command,
+                cwd=context.project_root,
+                env=command_environment(context),
+                check=True,
+            )
+    if args.dry_run:
+        return
+    if args.phase == "review":
+        names = ", ".join(_dataset_names(config, args.dataset))
+        print(f"\nICA review material is ready for: {names}.")
+    elif args.phase == "clean":
+        print("\nSelected datasets completed the shared preprocessing contract.")
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -144,8 +264,16 @@ def main(argv: list[str] | None = None) -> None:
         environment = getattr(args, "env", None) or os.environ.get(
             "PARKINSON_EEG_CONDA_ENV", config.environment_name
         )
-        if args.command == "review":
-            _review(args, environment)
+        if args.command in {"review", "preprocess"}:
+            if args.command == "review":
+                args.phase = "review"
+                args.workers = args.preprocessing_workers
+                args.subjects = None
+                args.skip_manual_ica_review = False
+                args.allow_unreviewed = False
+                args.no_ica_downsampling = False
+                args.dry_run = False
+            _preprocess(args, environment, config)
             return
 
         profile = config.profile(args.profile)
@@ -162,7 +290,38 @@ def main(argv: list[str] | None = None) -> None:
                 skip_tests=args.skip_tests,
                 include_bycycle=True if args.include_bycycle_bursts else None,
             )
-            stages = runner.stages_for_profile(profile, selection)
+            selected_datasets = (
+                tuple(config.datasets)
+                if args.dataset == "both"
+                else (args.dataset,)
+            )
+            stages = []
+            if "primary" in selected_datasets:
+                stages.extend(runner.stages_for_profile(profile, selection))
+            for dataset_name in selected_datasets:
+                if dataset_name == "primary":
+                    continue
+                analysis_stage = config.dataset(dataset_name).analysis_stage
+                if analysis_stage is None:
+                    raise ValueError(
+                        f"Dataset {dataset_name!r} has no downstream analysis stage"
+                    )
+                dataset_stages = runner.stages_for_one(
+                    analysis_stage,
+                    include_dependencies=True,
+                )
+                if args.command == "analyses":
+                    from runner import PREPROCESSING_STAGES
+
+                    dataset_stages = [
+                        stage
+                        for stage in dataset_stages
+                        if stage.id not in PREPROCESSING_STAGES
+                    ]
+                known = {stage.id for stage in stages}
+                stages.extend(
+                    stage for stage in dataset_stages if stage.id not in known
+                )
 
         if args.command in {"plan", "status"}:
             runner.show(stages, include_commands=args.command == "plan")

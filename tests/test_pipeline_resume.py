@@ -5,11 +5,14 @@ from __future__ import annotations
 import io
 import tempfile
 import unittest
+from argparse import Namespace
 from contextlib import redirect_stdout
 from pathlib import Path
 from unittest.mock import Mock
 
 from config import load_pipeline_config
+from cli import _preprocessing_commands
+from core.config import load_config as load_preprocessing_config
 from registry import build_registry
 from runner import PipelineRunner, Selection, profile_targets
 from stages import RunContext, Stage, StateStore
@@ -48,8 +51,66 @@ class PipelineRefactorTests(unittest.TestCase):
             },
         )
 
+    def test_both_datasets_share_one_preprocessing_interface(self) -> None:
+        self.assertEqual(set(self.config.datasets), {"primary", "ds002778"})
+        self.assertEqual(
+            self.config.dataset("primary").preprocessing_config,
+            Path("config/preprocessing.yaml"),
+        )
+        self.assertEqual(
+            self.config.dataset("ds002778").preprocessing_config,
+            Path("config/preprocessing_ds002778.yaml"),
+        )
+        args = Namespace(
+            phase="clean",
+            dataset="both",
+            workers=3,
+            subjects=None,
+            no_progress=True,
+            overwrite=False,
+            skip_manual_ica_review=True,
+            allow_unreviewed=False,
+            no_ica_downsampling=False,
+        )
+        commands = _preprocessing_commands(args, self.config)
+        cleaning = [command for label, command in commands if label.startswith("Clean ")]
+        self.assertEqual(len(cleaning), 2)
+        self.assertIn("config/preprocessing.yaml", cleaning[0])
+        self.assertIn("config/preprocessing_ds002778.yaml", cleaning[1])
+        for command in cleaning:
+            self.assertIn("scripts/run_preprocessing.py", command)
+            self.assertIn("--skip-manual-ica-review", command)
+            self.assertNotIn("--overwrite", command)
+
+        preprocessing_configs = [
+            load_preprocessing_config(dataset.preprocessing_config)
+            for dataset in self.config.datasets.values()
+        ]
+        for preprocessing in preprocessing_configs:
+            self.assertEqual(
+                (
+                    preprocessing["filter"]["l_freq"],
+                    preprocessing["filter"]["h_freq"],
+                    preprocessing["resampling"]["target_sfreq"],
+                    preprocessing["epochs"]["duration_sec"],
+                ),
+                (1.0, 100.0, 250.0, 4.0),
+            )
+
+    def test_ds002778_is_a_first_class_analysis_stage(self) -> None:
+        dataset = self.config.dataset("ds002778")
+        self.assertEqual(dataset.analysis_stage, "ds002778.analysis")
+        stage = self.registry[dataset.analysis_stage]
+        self.assertEqual(stage.dependencies, ("ds002778.clean",))
+        artifact_paths = {str(artifact.path) for artifact in stage.artifacts}
+        self.assertIn("outputs/ds002778/manifest.json", artifact_paths)
+        self.assertIn(
+            "outputs/ds002778/figures/comparable_pipeline/psd/group_median_psd_with_ci.png",
+            artifact_paths,
+        )
+
     def test_stage_identifiers_are_unique_and_dependencies_exist(self) -> None:
-        self.assertEqual(len(self.registry), 33)
+        self.assertEqual(len(self.registry), 36)
         for stage in self.registry.values():
             self.assertTrue(stage.label)
             for dependency in stage.dependencies:

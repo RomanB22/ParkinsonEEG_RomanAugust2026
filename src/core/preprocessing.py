@@ -270,7 +270,18 @@ def process_subject(
         raise RuntimeError(f"Expected final sampling frequency {expected_sfreq:g} Hz")
     qc.plot_signal(filtered, channels, start, duration, "FILTERED EEG — 1–100 Hz + 60 Hz notch, 250 Hz sampling", qc_dir / "03_filtered_signal.png", dpi)
     qc.plot_psd(filtered, channels, float(qcc["psd_fmin_hz"]), float(qcc["final_psd_fmax_hz"]), "Filtered EEG PSD — 1–100 Hz + 60 Hz notch", qc_dir / "04_filtered_psd.png", dpi)
-    qc.plot_signal_comparison(raw, filtered, channels, start, duration, "raw 500 Hz", "1–100 Hz at 250 Hz", "Raw vs filtered/resampled EEG", qc_dir / "05_raw_vs_filtered.png", dpi)
+    qc.plot_signal_comparison(
+        raw,
+        filtered,
+        channels,
+        start,
+        duration,
+        f"raw {raw.info['sfreq']:g} Hz",
+        f"1–100 Hz at {filtered.info['sfreq']:g} Hz",
+        "Raw vs filtered/resampled EEG",
+        qc_dir / "05_raw_vs_filtered.png",
+        dpi,
+    )
 
     bad_result = detect_bad_channels(filtered, config["channels"])
     filtered.info["bads"] = list(bad_result.bad_channels)

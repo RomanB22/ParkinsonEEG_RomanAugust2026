@@ -156,19 +156,32 @@ def _paired_contrast(
             "bootstrap_ci_lower": np.nan,
             "bootstrap_ci_upper": np.nan,
         }
-    paired_test = ttest_rel(paired["PD_ON"], paired["PD_OFF"])
     mean_difference = float(np.mean(differences))
     difference_sd = float(np.std(differences, ddof=1))
     standard_error = difference_sd / np.sqrt(len(differences))
     critical = float(
         student_t.ppf(0.5 + confidence_level / 2.0, len(differences) - 1)
     )
-    try:
-        signed_rank = wilcoxon(differences, alternative="two-sided")
-        wilcoxon_statistic = float(signed_rank.statistic)
-        wilcoxon_p = float(signed_rank.pvalue)
-    except ValueError:
+    # SciPy's asymptotic Wilcoxon implementation divides by a zero standard
+    # error when every paired difference is exactly zero.  This is a valid
+    # null result for our purposes, but calling scipy.stats.wilcoxon emits one
+    # RuntimeWarning per feature and returns NaN on recent SciPy versions.
+    # Handle the degenerate null explicitly and retain it in FDR correction as
+    # p=1.  The paired t statistic is likewise represented as 0 rather than
+    # the undefined 0/0 returned by scipy.stats.ttest_rel.
+    if np.count_nonzero(differences) == 0:
+        paired_statistic, paired_p = 0.0, 1.0
         wilcoxon_statistic, wilcoxon_p = 0.0, 1.0
+    else:
+        paired_test = ttest_rel(paired["PD_ON"], paired["PD_OFF"])
+        paired_statistic = float(paired_test.statistic)
+        paired_p = float(paired_test.pvalue)
+        try:
+            signed_rank = wilcoxon(differences, alternative="two-sided")
+            wilcoxon_statistic = float(signed_rank.statistic)
+            wilcoxon_p = float(signed_rank.pvalue)
+        except ValueError:
+            wilcoxon_statistic, wilcoxon_p = 0.0, 1.0
     rng = np.random.default_rng(seed)
     indices = rng.integers(
         0, len(differences), size=(bootstrap_resamples, len(differences))
@@ -182,8 +195,8 @@ def _paired_contrast(
         "effect": mean_difference,
         "ci_lower": mean_difference - critical * standard_error,
         "ci_upper": mean_difference + critical * standard_error,
-        "statistic": float(paired_test.statistic),
-        "primary_p_value": float(paired_test.pvalue),
+        "statistic": paired_statistic,
+        "primary_p_value": paired_p,
         "standardized_effect": (
             mean_difference / difference_sd if difference_sd > 0 else np.nan
         ),

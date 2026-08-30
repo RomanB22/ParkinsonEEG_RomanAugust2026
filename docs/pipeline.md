@@ -18,7 +18,17 @@ inspect -> preprocessing tests -> ICA cleaning + epochs
 
 full-cohort features -> canonical demographic matching
                      -> matched cohort summaries and inference
+
+ds002778 inspection -> shared cleaning/epochs
+                    -> PSD + ordinal + specparam + eBOSC features
+                    -> paired ON/OFF + HC/MMSE inference
+                    -> comparable PSD, distribution, and topographic figures
 ```
+
+Select one registered dataset or both with `--dataset primary`,
+`--dataset ds002778`, or `--dataset both`. Shared signal features and plotting
+conventions are reused; each dataset retains the inferential design required by
+its sampling structure.
 
 ## Profiles
 

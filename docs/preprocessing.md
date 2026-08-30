@@ -4,7 +4,20 @@ This document follows the actual code from raw input to accepted resting-state
 epochs. The goal is to preserve spectral slope and oscillatory peaks while
 removing only clear contamination. No epoch normalization, baseline correction,
 spectral flattening, or `specparam` analysis is performed. The filtered signal
-is resampled from the 500 Hz acquisition rate to a final 250 Hz rate.
+is resampled from its source acquisition rate to a final 250 Hz rate.
+
+The same implementation is used for the primary EEGLAB dataset and the
+sessioned ds002778 BioSemi dataset. Run it through the unified interface:
+
+```bash
+bash run_pipeline.sh preprocess inspect --dataset both
+bash run_pipeline.sh preprocess review --dataset both --workers 4
+bash run_pipeline.sh preprocess clean --dataset both --workers 4
+```
+
+The two configurations adapt only source discovery and dataset facts (format,
+task case, auxiliary channels, participant/session IDs, and output location).
+Every recording then follows the same numbered preprocessing and QC contract.
 
 ## 1. Dataset inspection
 

@@ -1,11 +1,21 @@
 import unittest
+import warnings
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import pandas as pd
 
 from analyses.medication.cohort import build_cohort
+from analyses.medication.comparison_plots import (
+    TOPOGRAPHIC_METRICS,
+    plot_group_mean_topomaps,
+    plot_group_psd_curves,
+)
 from analyses.medication.pipeline import load_analysis_config
+from analyses.medication.statistical_plots import plot_all_feature_violins
 from analyses.medication.statistics import (
+    _paired_contrast,
     compute_condition_statistics,
     compute_mmse_statistics,
 )
@@ -74,6 +84,11 @@ class MedicationDatasetTests(unittest.TestCase):
         config = load_analysis_config("config/analyses/ds002778.json")
         self.assertEqual(config["statistics"]["minimum_pairs"], 10)
         self.assertEqual(config["ordinal"]["embedding_dimension"], 6)
+        self.assertTrue(config["within_bout_ordinal"]["enabled"])
+        self.assertEqual(
+            config["within_bout_ordinal"]["metrics"],
+            ["entropy", "complexity", "fisher_information"],
+        )
 
     def test_biosemi_preprocessing_contract_is_dataset_specific(self):
         config = load_preprocessing_config("config/preprocessing_ds002778.yaml")
@@ -180,6 +195,163 @@ class MedicationStatisticsTests(unittest.TestCase):
         self.assertAlmostEqual(row["mmse_slope"], 0.4, delta=0.04)
         self.assertTrue(np.isfinite(row["statistic"]))
         self.assertTrue(np.isfinite(row["primary_p_value"]))
+
+    def test_all_zero_paired_differences_are_a_valid_null_without_warnings(self):
+        rows = []
+        for index in range(10):
+            participant_id = f"sub-pd{index + 1}"
+            for condition in ("PD_OFF", "PD_ON"):
+                rows.append(
+                    {
+                        "participant_id": participant_id,
+                        "condition": condition,
+                        "value": 2.0,
+                    }
+                )
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            result = _paired_contrast(
+                pd.DataFrame.from_records(rows),
+                minimum_pairs=10,
+                confidence_level=0.95,
+                bootstrap_resamples=200,
+                seed=42,
+            )
+        self.assertEqual(result["analysis_status"], "ok")
+        self.assertEqual(result["effect"], 0.0)
+        self.assertEqual(result["statistic"], 0.0)
+        self.assertEqual(result["primary_p_value"], 1.0)
+        self.assertEqual(result["wilcoxon_statistic"], 0.0)
+        self.assertEqual(result["wilcoxon_p_value"], 1.0)
+
+
+class MedicationComparisonFigureTests(unittest.TestCase):
+    @staticmethod
+    def _config():
+        return {
+            "bands": {"delta": [1.0, 4.0]},
+            "ebosc": {"bands": []},
+            "specparam": {"frequency_range_hz": [4.0, 50.0]},
+            "statistics": {
+                "bootstrap_resamples": 100,
+                "confidence_level": 0.95,
+                "random_seed": 42,
+            },
+            "plots": {
+                "dpi": 50,
+                "condition_colors": {
+                    "HC": "#0072B2",
+                    "PD_OFF": "#D55E00",
+                    "PD_ON": "#009E73",
+                },
+            },
+        }
+
+    @staticmethod
+    def _recordings():
+        rows = []
+        for participant in ("sub-hc1", "sub-hc2"):
+            rows.append(
+                {
+                    "recording_id": f"{participant}_ses-hc",
+                    "participant_id": participant,
+                    "condition": "HC",
+                    "mmse": 29,
+                }
+            )
+        for participant in ("sub-pd1", "sub-pd2"):
+            for condition, session in (("PD_OFF", "off"), ("PD_ON", "on")):
+                rows.append(
+                    {
+                        "recording_id": f"{participant}_ses-{session}",
+                        "participant_id": participant,
+                        "condition": condition,
+                        "mmse": 28,
+                    }
+                )
+        return pd.DataFrame.from_records(rows)
+
+    def test_violin_battery_keeps_all_missing_declared_features(self):
+        recordings = self._recordings()
+        features = pd.DataFrame.from_records(
+            {
+                "recording_id": row.recording_id,
+                "duration_variant": "all_retained",
+                "feature_id": "psd_gamma_relative_power",
+                "family": "psd",
+                "band": "gamma",
+                "metric": "relative_power",
+                "value": np.nan,
+            }
+            for row in recordings.itertuples()
+        )
+        with TemporaryDirectory() as temporary_directory:
+            paths = plot_all_feature_violins(
+                features,
+                recordings,
+                temporary_directory,
+                self._config(),
+            )
+            self.assertEqual(len(paths), 1)
+            self.assertTrue(paths[0].is_file())
+
+    def test_primary_topographic_battery_covers_original_feature_families(self):
+        families = {specification.family for specification in TOPOGRAPHIC_METRICS}
+        self.assertTrue(
+            {"psd", "ordinal", "aperiodic", "bouts", "periodic_peak"}.issubset(
+                families
+            )
+        )
+
+    def test_group_psd_and_topomap_figures_are_written(self):
+        recordings = self._recordings()
+        psd_rows = []
+        feature_rows = []
+        montage_channels = [
+            "Fp1", "AF3", "F7", "F3", "FC1", "FC5", "T7", "C3",
+            "CP1", "CP5", "P7", "P3", "Pz", "PO3", "O1", "Oz",
+            "O2", "PO4", "P4", "P8", "CP6", "CP2", "C4", "T8",
+            "FC6", "FC2", "F4", "F8", "AF4", "Fp2", "Fz", "Cz",
+        ]
+        for recording_index, row in recordings.iterrows():
+            for frequency in (1.0, 2.0, 3.0):
+                psd_rows.append(
+                    {
+                        "recording_id": row["recording_id"],
+                        "duration_variant": "all_retained",
+                        "frequency_hz": frequency,
+                        "median_psd_uv2_hz": 1.0 + recording_index + frequency,
+                    }
+                )
+            for electrode_index, electrode in enumerate(montage_channels):
+                feature_rows.append(
+                    {
+                        "recording_id": row["recording_id"],
+                        "duration_variant": "all_retained",
+                        "electrode": electrode,
+                        "family": "psd",
+                        "metric": "relative_power",
+                        "band": "delta",
+                        "value": 0.1 + 0.001 * electrode_index + 0.01 * recording_index,
+                    }
+                )
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            psd_paths = plot_group_psd_curves(
+                pd.DataFrame.from_records(psd_rows),
+                recordings,
+                root / "psd",
+                self._config(),
+            )
+            topomap_paths = plot_group_mean_topomaps(
+                pd.DataFrame.from_records(feature_rows),
+                recordings,
+                root / "topomaps",
+                self._config(),
+            )
+            self.assertEqual(len(psd_paths), 2)
+            self.assertEqual(len(topomap_paths), 1)
+            self.assertTrue(all(path.is_file() for path in [*psd_paths, *topomap_paths]))
 
 
 if __name__ == "__main__":

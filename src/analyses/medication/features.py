@@ -16,6 +16,7 @@ import pandas as pd
 from tqdm.auto import tqdm
 
 from analyses.ordinal.metrics import analyze_epoch_data, filter_epoch_data
+from analyses.bouts.metrics import analyze_bout_segments
 from analyses.psd.metrics import (
     compute_subject_electrode_psd,
     integrate_bands,
@@ -48,6 +49,7 @@ BOUT_METRICS = (
     "bout_cycles_mean",
     "bout_snr_mean",
 )
+WITHIN_BOUT_ORDINAL_FAMILY = "within_bout_ordinal"
 
 
 def _finite_aggregate(values: Iterable[float], method: str) -> float:
@@ -155,6 +157,7 @@ def _analyze_variant(
         str(name): tuple(float(value) for value in limits)
         for name, limits in config["bands"].items()
     }
+    band_filtered_data: dict[str, np.ndarray] = {}
     absolute = integrate_bands(frequencies, electrode_psd, bands)
     relative, total = relative_band_powers(
         frequencies,
@@ -242,16 +245,18 @@ def _analyze_variant(
         ordinal_inputs: list[tuple[str, np.ndarray]] = [("broadband", data)]
         for band in ordinal["bands"]:
             low, high = bands[str(band)]
+            filtered = filter_epoch_data(
+                data,
+                sfreq=sfreq,
+                low_hz=low,
+                high_hz=high,
+                order=int(ordinal["bandpass_filter_order"]),
+            )
+            band_filtered_data[str(band)] = filtered
             ordinal_inputs.append(
                 (
                     str(band),
-                    filter_epoch_data(
-                        data,
-                        sfreq=sfreq,
-                        low_hz=low,
-                        high_hz=high,
-                        order=int(ordinal["bandpass_filter_order"]),
-                    ),
+                    filtered,
                 )
             )
         for band, ordinal_data in ordinal_inputs:
@@ -308,6 +313,23 @@ def _analyze_variant(
     fit_qc_exponents: list[float] = []
     peak_by_band_metric: dict[tuple[str, str], list[float]] = {}
     bout_by_band_metric: dict[tuple[str, str], list[float]] = {}
+    within_bout_by_band_metric: dict[tuple[str, str], list[float]] = {}
+    within_bout_enabled = bool(
+        include_bouts and config["within_bout_ordinal"].get("enabled", True)
+    )
+    if within_bout_enabled:
+        ordinal = config["ordinal"]
+        for band in bout_settings["bands"]:
+            band_name = str(band)
+            if band_name not in band_filtered_data:
+                low, high = bands[band_name]
+                band_filtered_data[band_name] = filter_epoch_data(
+                    data,
+                    sfreq=sfreq,
+                    low_hz=low,
+                    high_hz=high,
+                    order=int(ordinal["bandpass_filter_order"]),
+                )
     for electrode_index, electrode in enumerate(channel_names):
         try:
             aperiodic, peak_rows, curves = fit_specparam_spectrum(
@@ -461,6 +483,34 @@ def _analyze_variant(
                 )
                 for metric, value in values.items():
                     bout_by_band_metric.setdefault((str(band), metric), []).append(value)
+                if within_bout_enabled:
+                    _, ordinal_summary, _, _ = analyze_bout_segments(
+                        band_filtered_data[str(band)][:, electrode_index, :],
+                        episodes,
+                        dx=int(config["ordinal"]["embedding_dimension"]),
+                        tau=int(config["ordinal"]["delay_samples"]),
+                        tie_precision=None,
+                    )
+                    ordinal_values = {
+                        metric: float(ordinal_summary[metric])
+                        for metric in CORE_ORDINAL_METRICS
+                    }
+                    electrode_rows.extend(
+                        _electrode_rows(
+                            recording_id,
+                            duration_variant,
+                            electrode,
+                            WITHIN_BOUT_ORDINAL_FAMILY,
+                            WITHIN_BOUT_ORDINAL_FAMILY,
+                            str(band),
+                            ordinal_values,
+                            n_epochs=n_epochs,
+                        )
+                    )
+                    for metric, value in ordinal_values.items():
+                        within_bout_by_band_metric.setdefault(
+                            (str(band), metric), []
+                        ).append(value)
 
     for metric, values in aperiodic_by_metric.items():
         subject_rows.append(
@@ -539,6 +589,21 @@ def _analyze_variant(
                 n_epochs=n_epochs,
                 n_electrodes=n_electrodes,
                 aggregation="mean",
+            )
+        )
+    for (band, metric), values in within_bout_by_band_metric.items():
+        subject_rows.append(
+            _subject_row(
+                recording_id,
+                duration_variant,
+                WITHIN_BOUT_ORDINAL_FAMILY,
+                WITHIN_BOUT_ORDINAL_FAMILY,
+                band,
+                metric,
+                _finite_aggregate(values, "mean"),
+                n_epochs=n_epochs,
+                n_electrodes=n_electrodes,
+                aggregation="mean_of_boundary_safe_electrode_metrics",
             )
         )
     return subject_rows, electrode_rows, psd_rows

@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from analyses.bycycle.detector import detect_epoch_bursts, summarize_detection
+from analyses.bycycle.pipeline import _event_agreement
 from analyses.bycycle.plots import plot_subject_average_violins
 
 
@@ -92,6 +93,34 @@ class BycycleBurstAnalysisTests(unittest.TestCase):
             )
             self.assertEqual(len(outputs), 2)
             self.assertTrue(all(path.exists() for path in outputs))
+
+    def test_indexed_event_agreement_preserves_interval_statistics(self) -> None:
+        electrode_metrics = pd.DataFrame(
+            [{"subject_id": "sub-1", "group": "PD", "electrode": "Cz", "band": "alpha"}]
+        )
+        reference = pd.DataFrame(
+            [
+                {"electrode": "Cz", "band": "alpha", "epoch_index": 0, "onset_s": 0.0, "offset_s": 1.0},
+                {"electrode": "Cz", "band": "alpha", "epoch_index": 1, "onset_s": 1.0, "offset_s": 2.0},
+            ]
+        )
+        detected = pd.DataFrame(
+            [
+                {"subject_id": "sub-1", "electrode": "Cz", "band": "alpha", "epoch_index": 0, "onset_s": 0.5, "offset_s": 1.5},
+                {"subject_id": "sub-1", "electrode": "Cz", "band": "alpha", "epoch_index": 1, "onset_s": 1.0, "offset_s": 2.0},
+            ]
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "intermediate" / "episodes" / "sub-1_bout_episodes.csv.gz"
+            path.parent.mkdir(parents=True)
+            reference.to_csv(path, index=False, compression="gzip")
+            result = _event_agreement(electrode_metrics, detected, Path(directory))
+        self.assertEqual(len(result), 1)
+        self.assertAlmostEqual(result.iloc[0]["ebosc_detected_duration_s"], 2.0)
+        self.assertAlmostEqual(result.iloc[0]["bycycle_detected_duration_s"], 2.0)
+        self.assertAlmostEqual(result.iloc[0]["intersection_duration_s"], 1.5)
+        self.assertAlmostEqual(result.iloc[0]["dice"], 0.75)
+        self.assertAlmostEqual(result.iloc[0]["jaccard"], 0.6)
 
 
 if __name__ == "__main__":

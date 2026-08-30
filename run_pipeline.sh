@@ -66,7 +66,7 @@ export CONDA_CHANNELS="${CONDA_CHANNELS:-defaults}"
 
 mutating=false
 case "$COMMAND" in
-    run|analyses|review|stage) mutating=true ;;
+    run|analyses|review|preprocess|stage) mutating=true ;;
 esac
 
 finish_pipeline_log() {

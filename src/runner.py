@@ -20,7 +20,13 @@ from stages import (
 )
 
 
-PREPROCESSING_STAGES = {"inspect", "preprocessing-tests", "clean"}
+PREPROCESSING_STAGES = {
+    "inspect",
+    "preprocessing-tests",
+    "clean",
+    "ds002778.inspect",
+    "ds002778.clean",
+}
 
 
 @dataclass(frozen=True)
@@ -216,14 +222,25 @@ class PipelineRunner:
                 for command in stage.build_commands(self.context, replace):
                     print(f"    + {command_text(command)}")
 
-    def _validate_analysis_prerequisite(self) -> None:
-        clean = self.registry["clean"]
-        problems = clean.artifact_problems(self.context.profile_name)
-        if problems:
-            raise RuntimeError(
-                "Downstream-only execution requires a complete cleaned cohort: "
-                + problems[0]
+    def _validate_analysis_prerequisite(self, stages: Sequence[Stage]) -> None:
+        required: list[str] = []
+        if any(
+            stage.cohort in {"full", "matched"}
+            and stage.category != "validation"
+            for stage in stages
+        ):
+            required.append("clean")
+        if any(stage.id == "ds002778.analysis" for stage in stages):
+            required.append("ds002778.clean")
+        for stage_id in required:
+            problems = self.registry[stage_id].artifact_problems(
+                self.context.profile_name
             )
+            if problems:
+                raise RuntimeError(
+                    "Downstream-only execution requires a complete cleaned cohort: "
+                    + problems[0]
+                )
 
     def run(
         self,
@@ -233,7 +250,7 @@ class PipelineRunner:
         analyses_only: bool = False,
     ) -> None:
         if analyses_only and not dry_run:
-            self._validate_analysis_prerequisite()
+            self._validate_analysis_prerequisite(stages)
         total = len(stages)
         for index, stage in enumerate(stages, start=1):
             _, state, detail, fingerprint = self.inspect([stage])[0]

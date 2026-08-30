@@ -62,6 +62,11 @@
     "edge_padding_sec": 0.5,
     "bands": ["theta", "alpha", "beta", "gamma"]
   },
+  "within_bout_ordinal": {
+    "enabled": true,
+    "metrics": ["entropy", "complexity", "fisher_information"],
+    "pooling": "pool_pattern_counts_without_crossing_bout_or_epoch_boundaries"
+  },
   "duration_sensitivity": {
     "enabled": true,
     "minimum_retained_epochs": 20,

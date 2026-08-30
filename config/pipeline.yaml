@@ -9,6 +9,24 @@
     "epochs_dir": "processed/epochs",
     "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif"
   },
+  "datasets": {
+    "primary": {
+      "label": "Primary Parkinson/control dataset (149 recordings)",
+      "preprocessing_config": "config/preprocessing.yaml",
+      "participants_file": "processed/metadata/subjects.csv",
+      "epochs_dir": "processed/epochs",
+      "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif",
+      "analysis_stage": null
+    },
+    "ds002778": {
+      "label": "OpenNeuro ds002778 medication-state dataset (46 recordings)",
+      "preprocessing_config": "config/preprocessing_ds002778.yaml",
+      "participants_file": "processed_ds002778/metadata/subjects.csv",
+      "epochs_dir": "processed_ds002778/epochs",
+      "epoch_glob": "sub-*_ses-*_task-rest_desc-cleaned_epo.fif",
+      "analysis_stage": "ds002778.analysis"
+    }
+  },
   "science": {
     "psd_range_hz": [1.0, 50.0],
     "aperiodic_fit_range_hz": [4.0, 50.0],

@@ -101,6 +101,53 @@ def _clean_builder(context: RunContext, replace: bool) -> list[list[str]]:
     return [command]
 
 
+def _ds002778_inspection_builder(
+    context: RunContext, replace: bool
+) -> list[list[str]]:
+    return [[
+        *python_command("scripts/inspect_dataset.py"),
+        "--config",
+        "config/preprocessing_ds002778.yaml",
+    ]]
+
+
+def _ds002778_clean_builder(
+    context: RunContext, replace: bool
+) -> list[list[str]]:
+    command = [
+        *python_command("scripts/run_preprocessing.py"),
+        "--config",
+        "config/preprocessing_ds002778.yaml",
+        "--workers",
+        str(context.preprocessing_workers),
+    ]
+    if context.no_progress:
+        command.append("--no-progress")
+    if context.skip_manual_ica_review:
+        command.append("--skip-manual-ica-review")
+    if context.overwrite:
+        command.append("--overwrite")
+    return [command]
+
+
+def _ds002778_analysis_builder(
+    context: RunContext, replace: bool
+) -> list[list[str]]:
+    command = python_command(
+        "-m",
+        "analyses.medication.run_ds002778_analysis",
+        "--config",
+        "config/analyses/ds002778.json",
+    )
+    if context.overwrite:
+        command.append("--overwrite")
+    elif Path("outputs/ds002778/features/subject_features_long.csv").is_file():
+        # Refresh statistics and the complete figure battery from reusable
+        # feature caches when a newly required plot is missing.
+        command.append("--statistics-only")
+    return [command]
+
+
 def _complete_cleaned_cohort() -> str | None:
     participants = Path("processed/metadata/subjects.csv")
     epochs = Path("processed/epochs")
@@ -114,6 +161,22 @@ def _complete_cleaned_cohort() -> str | None:
     actual = len(list(epochs.glob("sub-*_task-Rest_desc-cleaned_epo.fif")))
     if actual != expected:
         return f"cleaned epoch cohort is incomplete ({actual}/{expected} subjects)"
+    return None
+
+
+def _complete_ds002778_cleaned_cohort() -> str | None:
+    recordings = Path("processed_ds002778/metadata/recordings.csv")
+    epochs = Path("processed_ds002778/epochs")
+    if not recordings.is_file():
+        return f"missing {recordings}"
+    try:
+        with recordings.open(newline="", encoding="utf-8") as stream:
+            expected = sum(1 for _ in csv.DictReader(stream))
+    except OSError as error:
+        return f"cannot read {recordings}: {error}"
+    actual = len(list(epochs.glob("sub-*_ses-*_task-rest_desc-cleaned_epo.fif")))
+    if actual != expected:
+        return f"ds002778 cleaned epoch cohort is incomplete ({actual}/{expected} recordings)"
     return None
 
 
@@ -267,6 +330,83 @@ def build_registry() -> dict[str, Stage]:
             ),
             (Path("scripts/run_preprocessing.py"), Path("src"), Path("config/preprocessing.yaml")),
             extra_validator=_complete_cleaned_cohort,
+        ),
+        Stage(
+            "ds002778.inspect",
+            "ds002778 dataset inspection and recording metadata",
+            "ds002778",
+            "preprocessing",
+            (),
+            _ds002778_inspection_builder,
+            (
+                _a("processed_ds002778/metadata/subjects.csv"),
+                _a("processed_ds002778/metadata/recordings.csv"),
+                _a("processed_ds002778/metadata/dataset_inspection_report.md"),
+            ),
+            (
+                Path("scripts/inspect_dataset.py"),
+                Path("src/core/metadata.py"),
+                Path("config/preprocessing_ds002778.yaml"),
+            ),
+        ),
+        Stage(
+            "ds002778.clean",
+            "ds002778 shared cleaning and four-second epoching",
+            "ds002778",
+            "preprocessing",
+            ("ds002778.inspect",),
+            _ds002778_clean_builder,
+            (_a("processed_ds002778/metadata/preprocessing_qc.csv"),),
+            (
+                Path("scripts/run_preprocessing.py"),
+                Path("src/core"),
+                Path("config/preprocessing_ds002778.yaml"),
+            ),
+            extra_validator=_complete_ds002778_cleaned_cohort,
+        ),
+        Stage(
+            "ds002778.analysis",
+            "ds002778 shared EEG features, paired inference, and complete figures",
+            "ds002778",
+            "analysis",
+            ("ds002778.clean",),
+            _ds002778_analysis_builder,
+            (
+                _a(
+                    "outputs/ds002778/manifest.json",
+                    contains=(
+                        '"ordinal_included": true',
+                        '"ebosc_bouts_included": true',
+                        '"within_bout_ordinal_included": true',
+                        '"n_figures":',
+                    ),
+                ),
+                _a("outputs/ds002778/features/subject_features_long.csv"),
+                _a("outputs/ds002778/features/electrode_features_long.csv"),
+                _a("outputs/ds002778/statistics/condition_contrasts.csv"),
+                _a("outputs/ds002778/statistics/mmse_associations.csv"),
+                _a("outputs/ds002778/figures/comparable_pipeline/psd/group_median_psd_with_ci.png"),
+                _a("outputs/ds002778/figures/comparable_pipeline/psd/paired_pd_on_minus_off_psd_change.png"),
+                _a("outputs/ds002778/figures/comparable_pipeline/topomaps/group_means/ordinal_entropy_group_means.png"),
+                _a("outputs/ds002778/figures/comparable_pipeline/topomaps/condition_contrasts/psd_relative_power_condition_contrast_effects.png"),
+                _a("outputs/ds002778/figures/comparable_pipeline/topomaps/mmse/aperiodic_aperiodic_exponent_MMSE_partial_Spearman_maps.png"),
+                _a("outputs/ds002778/psd/manifest.json"),
+                _a("outputs/ds002778/psd/metrics/subject_psd.csv"),
+                _a("outputs/ds002778/ordinal/manifest.json"),
+                _a("outputs/ds002778/scale_free/manifest.json"),
+                _a("outputs/ds002778/bouts/manifest.json"),
+                _a("outputs/ds002778/behavioral/manifest.json"),
+                _a("outputs/ds002778/psd/figures/statistical_battery/violins/psd/psd_subject_violins_page_001.png"),
+                _a("outputs/ds002778/ordinal/figures/statistical_battery/group_statistics/ordinal__PD_OFF_minus_HC_forest_page_001.png"),
+                _a("outputs/ds002778/behavioral/figures/statistical_battery/correlations/heatmaps/ordinal_mmse_correlation_heatmap.png"),
+                _a("outputs/ds002778/psd/figures/comparable_pipeline/topomaps/condition_contrasts/psd_relative_power_condition_contrast_effects.png"),
+                _a("outputs/ds002778/bouts/figures/comparable_pipeline/topomaps/condition_contrasts/within_bout_ordinal_entropy_condition_contrast_effects.png"),
+            ),
+            (
+                Path("src/analyses/medication"),
+                Path("config/analyses/ds002778.json"),
+                Path("src/core/group_statistics.py"),
+            ),
         ),
         Stage(
             "full.psd",

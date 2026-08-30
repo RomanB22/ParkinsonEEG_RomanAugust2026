@@ -265,6 +265,27 @@ def _event_agreement(
     reference_root: Path,
 ) -> pd.DataFrame:
     """Compare bycycle and eBOSC event-time masks without joining across epochs."""
+    def interval_index(
+        table: pd.DataFrame,
+    ) -> dict[tuple[str, str], dict[int, np.ndarray]]:
+        if table.empty:
+            return {}
+        required = {"electrode", "band", "epoch_index", "onset_s", "offset_s"}
+        if not required.issubset(table.columns):
+            return {}
+        indexed: dict[tuple[str, str], dict[int, np.ndarray]] = {}
+        for (electrode, band, epoch_index), group in table.groupby(
+            ["electrode", "band", "epoch_index"], sort=False
+        ):
+            indexed.setdefault((str(electrode), str(band)), {})[
+                int(epoch_index)
+            ] = (
+                group[["onset_s", "offset_s"]]
+                .sort_values("onset_s")
+                .to_numpy(float)
+            )
+        return indexed
+
     rows: list[dict[str, Any]] = []
     for subject_id, subject_metrics in electrode_metrics.groupby("subject_id", sort=False):
         reference_path = reference_root / "intermediate" / "episodes" / f"{subject_id}_bout_episodes.csv.gz"
@@ -272,6 +293,8 @@ def _event_agreement(
             continue
         reference = pd.read_csv(reference_path)
         new_subject = new_events.loc[new_events["subject_id"].eq(subject_id)] if not new_events.empty else new_events
+        reference_intervals = interval_index(reference)
+        new_intervals = interval_index(new_subject)
         for metric_row in subject_metrics.itertuples(index=False):
             keys = {
                 "subject_id": subject_id,
@@ -279,19 +302,15 @@ def _event_agreement(
                 "electrode": metric_row.electrode,
                 "band": metric_row.band,
             }
-            first = reference.loc[
-                reference["electrode"].eq(metric_row.electrode)
-                & reference["band"].eq(metric_row.band)
-            ]
-            second = new_subject.loc[
-                new_subject["electrode"].eq(metric_row.electrode)
-                & new_subject["band"].eq(metric_row.band)
-            ] if not new_subject.empty else new_subject
             intersection = first_duration = second_duration = 0.0
-            epochs = sorted(set(first.get("epoch_index", pd.Series(dtype=int)).tolist()) | set(second.get("epoch_index", pd.Series(dtype=int)).tolist()))
+            electrode = str(metric_row.electrode)
+            band = str(metric_row.band)
+            first_by_epoch = reference_intervals.get((electrode, band), {})
+            second_by_epoch = new_intervals.get((electrode, band), {})
+            epochs = sorted(set(first_by_epoch) | set(second_by_epoch))
             for epoch_index in epochs:
-                first_intervals = first.loc[first["epoch_index"].eq(epoch_index), ["onset_s", "offset_s"]].sort_values("onset_s").to_numpy(float)
-                second_intervals = second.loc[second["epoch_index"].eq(epoch_index), ["onset_s", "offset_s"]].sort_values("onset_s").to_numpy(float)
+                first_intervals = first_by_epoch.get(epoch_index, np.empty((0, 2)))
+                second_intervals = second_by_epoch.get(epoch_index, np.empty((0, 2)))
                 first_duration += float(np.sum(first_intervals[:, 1] - first_intervals[:, 0])) if len(first_intervals) else 0.0
                 second_duration += float(np.sum(second_intervals[:, 1] - second_intervals[:, 0])) if len(second_intervals) else 0.0
                 intersection += _interval_intersection(first_intervals, second_intervals)

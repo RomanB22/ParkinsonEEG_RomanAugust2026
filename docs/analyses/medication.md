@@ -23,6 +23,18 @@ included.
 
 Every command runs inside the `MNE_August2026` conda environment.
 
+Run the complete workflow from the 46 raw BDF recordings through cleaned
+epochs, feature extraction, statistics, and figures:
+
+```bash
+bash src/analyses/medication/run_ds002778_analysis.sh full \
+  --workers 4 --skip-manual-ica-review --overwrite
+```
+
+This unattended form applies high-confidence ICLabel exclusions and records
+that they were not visually confirmed. For a visually reviewed run, omit
+`--skip-manual-ica-review` and complete the review stage before running `full`.
+
 ```bash
 # Validate the raw cohort and write the metadata audit.
 bash src/analyses/medication/run_ds002778_analysis.sh metadata
@@ -49,6 +61,15 @@ Automatic ICA removal is auditable but is not equivalent to visual review.
 The analysis command resumes neither partial feature products nor conflicting
 outputs; use `--overwrite` deliberately when replacing them. Expensive stages
 can be omitted for a technical pilot with `--skip-ordinal` or `--skip-bouts`.
+
+When feature extraction has already completed, regenerate the inference and
+the complete comparison figure battery without repeating raw preprocessing or
+feature extraction:
+
+```bash
+bash src/analyses/medication/run_ds002778_analysis.sh analyze \
+  --statistics-only --overwrite
+```
 
 ## Preprocessing
 
@@ -77,6 +98,9 @@ The primary configuration is `config/analyses/ds002778.json`.
   requiring the configured fit quality and subject electrode coverage.
 - eBOSC oscillatory occupancy, rate, duration, cycles, and threshold ratio for
   theta through gamma.
+- Boundary-safe D=6 permutation entropy, statistical complexity, and Fisher
+  information pooled within detected theta, alpha, beta, and gamma bouts.
+  Ordinal patterns never cross a bout or epoch boundary.
 - All retained epochs are primary. A second analysis uses the same number of
   evenly spaced accepted epochs from every recording as a duration sensitivity.
 
@@ -114,5 +138,28 @@ Generated data live under `outputs/ds002778/`:
 - `statistics/mmse_associations.csv`: continuous MMSE models.
 - `statistics/electrode_*`: secondary spatial versions with FDR across the
   complete electrode-level family.
-- `figures/`: focused condition and MMSE plots.
+- `figures/conditions/` and `figures/mmse/`: focused subject-level plots.
+- `figures/comparable_pipeline/psd/`: group PSD confidence bands, paired
+  medication-state PSD change, and the combined relative-power distributions
+  used by the original PSD workflow.
+- `figures/comparable_pipeline/topomaps/group_means/`: HC, PD OFF, and PD ON
+  maps for relative PSD, ordinal H/C/F, aperiodic offset/exponent, eBOSC
+  occupancy/rate/duration, and periodic peaks.
+- `figures/comparable_pipeline/topomaps/condition_contrasts/`: standardized
+  HC–PD OFF, HC–PD ON, and paired ON–OFF effect maps; rings mark electrodes
+  surviving the configured BH-FDR correction.
+- The relative-power PSD contrast map covers delta through gamma and is backed
+  by `statistics/electrode_condition_contrasts.csv`, with one adjusted or paired
+  test per electrode and BH-FDR correction within each analysis family.
+- Within-bout H/C/F distributions, forest plots, group maps, contrast maps,
+  and MMSE maps are included under the same statistical and topographic trees.
+- `figures/comparable_pipeline/topomaps/mmse/`: age/sex-adjusted partial
+  Spearman maps for HC, PD OFF, PD ON, and the ON–OFF medication response.
+- `figures/statistical_battery/violins/`: paginated subject distributions for
+  every feature, with paired PD OFF/ON observations connected.
+- `figures/statistical_battery/group_statistics/`: forest plots for all three
+  condition contrasts, including 95% intervals and BH-FDR markers.
+- `figures/statistical_battery/correlations/`: MMSE association forest plots
+  and family-level standardized-association heatmaps for HC, PD OFF, PD ON,
+  and the paired medication response.
 - `manifest.json`: parameters, software versions, analyzed sample, and scientific cautions.

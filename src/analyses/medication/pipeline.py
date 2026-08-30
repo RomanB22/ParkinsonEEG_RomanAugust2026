@@ -18,6 +18,9 @@ import numpy as np
 import pandas as pd
 
 from .cohort import build_cohort
+from .comparison_plots import plot_comparable_pipeline_figures
+from .domain_outputs import publish_domain_outputs
+from .statistical_plots import plot_complete_statistical_battery
 from .features import extract_features
 from .plots import plot_condition_features, plot_mmse_features
 from .statistics import compute_condition_statistics, compute_mmse_statistics
@@ -36,6 +39,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "specparam",
         "aperiodic_fit_qc",
         "ebosc",
+        "within_bout_ordinal",
         "duration_sensitivity",
         "statistics",
         "plots",
@@ -55,6 +59,20 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         raise ValueError("The primary ordinal embedding dimension must be D=6")
     if int(config["ordinal"]["delay_samples"]) != 1:
         raise ValueError("The primary ordinal delay must be one sample")
+    within_bout = config["within_bout_ordinal"]
+    if within_bout.get("metrics") != [
+        "entropy",
+        "complexity",
+        "fisher_information",
+    ]:
+        raise ValueError(
+            "within_bout_ordinal.metrics must preserve entropy, complexity, "
+            "and fisher_information"
+        )
+    if within_bout.get("pooling") != (
+        "pool_pattern_counts_without_crossing_bout_or_epoch_boundaries"
+    ):
+        raise ValueError("Within-bout ordinal pooling must preserve every boundary")
     if [float(value) for value in config["specparam"]["frequency_range_hz"]] != [
         4.0,
         50.0,
@@ -166,6 +184,7 @@ def run_analysis(
         }
 
     subject_feature_path = features_dir / "subject_features_long.csv"
+    subject_psd_path = features_dir / "subject_psd.csv"
     if statistics_only:
         if not subject_feature_path.is_file():
             raise FileNotFoundError(
@@ -178,6 +197,11 @@ def run_analysis(
             if electrode_feature_path.is_file()
             else pd.DataFrame()
         )
+        if not subject_psd_path.is_file():
+            raise FileNotFoundError(
+                f"Statistics-only figure generation requires {subject_psd_path}"
+            )
+        subject_psd = pd.read_csv(subject_psd_path)
         feature_products: dict[str, pd.DataFrame] = {}
     else:
         feature_products = extract_features(
@@ -189,12 +213,13 @@ def run_analysis(
         )
         subject_features = feature_products["subject_features"]
         electrode_features = feature_products["electrode_features"]
+        subject_psd = feature_products["subject_psd"]
         _write_csv(subject_features, subject_feature_path)
         _write_csv(
             feature_products["electrode_features"],
             features_dir / "electrode_features_long.csv",
         )
-        _write_csv(feature_products["subject_psd"], features_dir / "subject_psd.csv")
+        _write_csv(subject_psd, subject_psd_path)
         _write_csv(
             feature_products["feature_dictionary"],
             features_dir / "feature_dictionary.csv",
@@ -212,6 +237,8 @@ def run_analysis(
     mmse_statistics = compute_mmse_statistics(subject_features, recordings, config)
     _write_csv(condition_statistics, statistics_dir / "condition_contrasts.csv")
     _write_csv(mmse_statistics, statistics_dir / "mmse_associations.csv")
+    electrode_condition_statistics = pd.DataFrame()
+    electrode_mmse_statistics = pd.DataFrame()
     if not electrode_features.empty:
         print("Computing secondary electrode-level inference...")
         electrode_condition_statistics = compute_condition_statistics(
@@ -247,6 +274,28 @@ def run_analysis(
                 config,
             )
         )
+        figure_paths.extend(
+            plot_comparable_pipeline_figures(
+                subject_features=subject_features,
+                electrode_features=electrode_features,
+                subject_psd=subject_psd,
+                electrode_condition_statistics=electrode_condition_statistics,
+                electrode_mmse_statistics=electrode_mmse_statistics,
+                recordings=recordings,
+                output_dir=figures_dir / "comparable_pipeline",
+                config=config,
+            )
+        )
+        figure_paths.extend(
+            plot_complete_statistical_battery(
+                subject_features=subject_features,
+                recordings=recordings,
+                condition_statistics=condition_statistics,
+                mmse_statistics=mmse_statistics,
+                output_dir=figures_dir / "statistical_battery",
+                config=config,
+            )
+        )
 
     analyzed_recordings = int(subject_features["recording_id"].nunique())
     manifest = {
@@ -267,12 +316,20 @@ def run_analysis(
         "n_features": int(subject_features["feature_id"].nunique()),
         "ordinal_included": bool(subject_features["family"].eq("ordinal").any()),
         "ebosc_bouts_included": bool(subject_features["family"].eq("bouts").any()),
+        "within_bout_ordinal_included": bool(
+            subject_features["family"].eq("within_bout_ordinal").any()
+        ),
+        "n_figures": len(figure_paths),
+        "comparable_figure_directory": str(
+            (figures_dir / "comparable_pipeline").resolve()
+        ),
         "figures": [str(path.resolve()) for path in figure_paths],
         "scientific_notes": [
             "PD ON/OFF recordings are paired by participant.",
             "MMSE is modeled continuously and is not treated as a session-varying outcome.",
             "All MMSE values are in the dataset-defined normal range (>24).",
             "No diagnostic classification or machine-learning analysis is performed.",
+            "Within-bout ordinal patterns are pooled without crossing bout or epoch boundaries.",
         ],
         "software": {
             "python": platform.python_version(),
@@ -285,5 +342,14 @@ def run_analysis(
         },
     }
     output_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    domain_outputs = publish_domain_outputs(output_dir)
+    manifest["domain_outputs"] = {
+        name: {
+            "path": str((output_dir / name).resolve()),
+            "n_figures": int(summary["n_figures"]),
+        }
+        for name, summary in domain_outputs.items()
+    }
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return manifest

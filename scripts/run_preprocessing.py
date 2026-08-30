@@ -225,20 +225,6 @@ def main() -> None:
         if missing:
             raise FileNotFoundError(f"No recording found for: {missing}")
 
-    if not args.review_only and not args.allow_unreviewed and not args.skip_manual_ica_review:
-        unreviewed = [
-            recording_id_from_path(path)
-            for path in recordings
-            if not is_ica_review_confirmed(config, recording_id_from_path(path))
-        ]
-        if unreviewed:
-            preview = ", ".join(unreviewed[:10])
-            raise SystemExit(
-                f"Refusing to clean {len(unreviewed)} unreviewed ICA decompositions ({preview}...). "
-                "Run --review-only first, then add an explicit list for every subject."
-            )
-
-    expected = expected_channels_from_dataset(dataset_dir, task, config["channels"]["auxiliary_names"])
     if not args.overwrite:
         completed = [
             recording_id_from_path(path)
@@ -262,6 +248,29 @@ def main() -> None:
                 f"Reusing complete preprocessing outputs for {len(completed)} "
                 "recording(s); processing only missing recordings"
             )
+
+    # The review gate applies only to recordings that will actually be
+    # processed. Current outputs are safe to reuse without retroactively
+    # changing the review mode recorded in their provenance.
+    if not args.review_only and not args.allow_unreviewed and not args.skip_manual_ica_review:
+        unreviewed = [
+            recording_id_from_path(path)
+            for path in recordings
+            if not is_ica_review_confirmed(config, recording_id_from_path(path))
+        ]
+        if unreviewed:
+            preview = ", ".join(unreviewed[:10])
+            raise SystemExit(
+                f"Refusing to clean {len(unreviewed)} unreviewed ICA decompositions ({preview}...). "
+                "Run --review-only and confirm every decision, or explicitly use "
+                "--skip-manual-ica-review for provenance-recorded automatic ICLabel removal."
+            )
+
+    expected = expected_channels_from_dataset(
+        dataset_dir,
+        task,
+        config["channels"]["auxiliary_names"],
+    )
 
     worker_count = min(args.workers, max(1, len(recordings)))
     ica_reuse_status = {

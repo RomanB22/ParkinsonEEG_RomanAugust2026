@@ -102,18 +102,25 @@ tables.
 Original files under `dataset/` are read-only inputs. Generated full-cohort and
 matched results live under `outputs/` and are ignored by Git.
 
-## Paired medication-state dataset
+## Both datasets through one pipeline
 
-OpenNeuro `ds002778-1.0.5` has a separate workflow for 16 healthy controls and
-15 PD participants recorded both ON and OFF medication. It uses MMSE
-continuously and preserves ON/OFF pairing:
+The primary cohort and OpenNeuro `ds002778-1.0.5` are registered in the same
+stage graph. The latter contains 16 healthy controls and 15 PD participants
+recorded both ON and OFF medication; its inference preserves that pairing and
+uses MMSE continuously.
 
 ```bash
-bash src/analyses/medication/run_ds002778_analysis.sh metadata
-bash src/analyses/medication/run_ds002778_analysis.sh review --workers 4
-bash src/analyses/medication/run_ds002778_analysis.sh preprocess --workers 4
-bash src/analyses/medication/run_ds002778_analysis.sh analyze
+# Preview the unified 36-stage full-QC plan.
+bash run_pipeline.sh plan --profile full-qc --dataset both
+
+# Run/resume preprocessing, shared EEG feature families, valid cohort-specific
+# inference, and every configured figure for both datasets.
+bash run_pipeline.sh run --profile full-qc --dataset both --no-progress
+
+# Downstream-only equivalent when both cleaned epoch cohorts are complete.
+bash run_pipeline.sh analyses --profile full-qc --dataset both --no-progress
 ```
 
-See [the medication-state methods](docs/analyses/medication.md) before running
-the full workflow.
+The legacy medication shell entry point remains available for focused
+development. See [the medication-state methods](docs/analyses/medication.md)
+for the paired statistical design and output details.
