@@ -21,7 +21,7 @@ DOMAIN_FAMILIES = {
 FIGURE_TOKENS = {
     "psd": ("/psd/", "_psd_", "psd_", "relative_power"),
     "ordinal": ("ordinal_",),
-    "scale_free": ("aperiodic_", "periodic_peak_"),
+    "scale_free": ("aperiodic_", "periodic_peak_", "/typical_bouts/"),
     "bouts": ("bouts_", "within_bout_ordinal_"),
 }
 
@@ -113,6 +113,12 @@ def publish_domain_outputs(output_dir: str | Path) -> dict[str, dict[str, Any]]:
             figures_root,
             FIGURE_TOKENS[domain],
         )
+        if domain == "scale_free":
+            gallery_index = figure_root / "typical_bouts" / "index.html"
+            if gallery_index.is_file():
+                destination = figures_root / "typical_bouts" / "index.html"
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(gallery_index, destination)
         manifest = {
             "schema_version": 1,
             "created_utc": datetime.now(timezone.utc).isoformat(),

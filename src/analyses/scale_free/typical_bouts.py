@@ -23,6 +23,23 @@ from scipy.stats import t as student_t
 from analyses.ordinal.metrics import filter_epoch_data
 
 
+def _group_style(subject_table: pd.DataFrame) -> tuple[list[str], dict[str, str]]:
+    """Return caller-specified group order/colors with legacy defaults."""
+    groups = list(subject_table.attrs.get("group_order", ("PD", "Control")))
+    present = set(subject_table["group"].astype(str))
+    groups = [str(group) for group in groups if str(group) in present]
+    groups.extend(sorted(present - set(groups)))
+    defaults = {
+        "PD": "#D55E00",
+        "Control": "#0072B2",
+        "HC": "#0072B2",
+        "PD_OFF": "#D55E00",
+        "PD_ON": "#009E73",
+    }
+    defaults.update(subject_table.attrs.get("group_colors", {}))
+    return groups, defaults
+
+
 def mean_centered_envelope(
     normalized_envelope: np.ndarray,
     episodes: pd.DataFrame,
@@ -277,8 +294,8 @@ def _plot_scalar_axis(
     reference: float | None,
     include_counts: bool,
 ) -> None:
-    colors = {"PD": "#D55E00", "Control": "#0072B2"}
-    for group in ("PD", "Control"):
+    groups, colors = _group_style(subject_table)
+    for group in groups:
         selected, group_bouts = _select_group_curves(
             values,
             bout_counts,
@@ -314,9 +331,9 @@ def _plot_phase_axis(
     *,
     title: str,
 ) -> None:
-    colors = {"PD": "#D55E00", "Control": "#0072B2"}
+    groups, colors = _group_style(subject_table)
     concentration_axis = axis.twinx()
-    for group in ("PD", "Control"):
+    for group in groups:
         selected, _ = _select_group_curves(
             phase_phasors,
             bout_counts,
@@ -516,8 +533,9 @@ def _coverage_summary(
 ) -> pd.DataFrame:
     """Summarize subject support for every group curve and QC policy."""
     rows = []
+    groups, _ = _group_style(coverage)
     for policy in ("all_subjects", "fit_qc"):
-        for group in ("PD", "Control"):
+        for group in groups:
             group_rows = coverage.loc[coverage["group"].eq(group)]
             for electrode in electrodes:
                 for band in bands:
@@ -552,7 +570,9 @@ def _coverage_summary(
                             ),
                         }
                     )
-    return pd.DataFrame.from_records(rows)
+    result = pd.DataFrame.from_records(rows)
+    result.attrs.update(coverage.attrs)
+    return result
 
 
 def _plot_coverage_heatmap(
@@ -565,12 +585,19 @@ def _plot_coverage_heatmap(
     output_path: Path,
     dpi: int,
 ) -> None:
-    fig, axes = plt.subplots(2, 2, figsize=(20, 8), squeeze=False, sharex=True, sharey=True)
+    groups, _ = _group_style(summary)
+    fig, axes = plt.subplots(
+        2,
+        len(groups),
+        figsize=(10 * len(groups), 8),
+        squeeze=False,
+        sharex=True,
+        sharey=True,
+    )
     panels = [
-        ("all_subjects", "PD"),
-        ("all_subjects", "Control"),
-        ("fit_qc", "PD"),
-        ("fit_qc", "Control"),
+        (policy, group)
+        for policy in ("all_subjects", "fit_qc")
+        for group in groups
     ]
     values = summary[value].to_numpy(dtype=float)
     finite = values[np.isfinite(values)]

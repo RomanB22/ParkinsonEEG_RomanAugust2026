@@ -67,6 +67,16 @@
     "metrics": ["entropy", "complexity", "fisher_information"],
     "pooling": "pool_pattern_counts_without_crossing_bout_or_epoch_boundaries"
   },
+  "typical_bouts": {
+    "center_window_seconds": 0.5,
+    "bandpass_filter_order": 4,
+    "confidence_level": 0.95,
+    "workers": 4,
+    "normalization": "recording_electrode_band_median_hilbert_amplitude",
+    "aggregation": "mean_bouts_within_recording_then_equal_weight_recording_mean",
+    "phase_reference": "rotate_each_bout_to_zero_hilbert_phase_at_temporal_center",
+    "representations": ["amplitude_envelope", "relative_phase_and_resultant_length", "phase_aligned_shape"]
+  },
   "duration_sensitivity": {
     "enabled": true,
     "minimum_retained_epochs": 20,

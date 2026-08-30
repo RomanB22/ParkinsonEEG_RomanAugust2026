@@ -89,6 +89,15 @@ class MedicationDatasetTests(unittest.TestCase):
             config["within_bout_ordinal"]["metrics"],
             ["entropy", "complexity", "fisher_information"],
         )
+        self.assertEqual(config["typical_bouts"]["center_window_seconds"], 0.5)
+        self.assertEqual(
+            config["typical_bouts"]["representations"],
+            [
+                "amplitude_envelope",
+                "relative_phase_and_resultant_length",
+                "phase_aligned_shape",
+            ],
+        )
 
     def test_biosemi_preprocessing_contract_is_dataset_specific(self):
         config = load_preprocessing_config("config/preprocessing_ds002778.yaml")

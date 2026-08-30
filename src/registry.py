@@ -401,6 +401,8 @@ def build_registry() -> dict[str, Stage]:
                 _a("outputs/ds002778/behavioral/figures/statistical_battery/correlations/heatmaps/ordinal_mmse_correlation_heatmap.png"),
                 _a("outputs/ds002778/psd/figures/comparable_pipeline/topomaps/condition_contrasts/psd_relative_power_condition_contrast_effects.png"),
                 _a("outputs/ds002778/bouts/figures/comparable_pipeline/topomaps/condition_contrasts/within_bout_ordinal_entropy_condition_contrast_effects.png"),
+                _a("outputs/ds002778/scale_free/figures/typical_bouts/grand_average_all_subjects.png"),
+                _a("outputs/ds002778/scale_free/figures/typical_bouts/all_subjects/Cz.png"),
             ),
             (
                 Path("src/analyses/medication"),

@@ -21,6 +21,7 @@ from .cohort import build_cohort
 from .comparison_plots import plot_comparable_pipeline_figures
 from .domain_outputs import publish_domain_outputs
 from .statistical_plots import plot_complete_statistical_battery
+from .typical_bouts import generate_typical_bout_gallery
 from .features import extract_features
 from .plots import plot_condition_features, plot_mmse_features
 from .statistics import compute_condition_statistics, compute_mmse_statistics
@@ -40,6 +41,7 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "aperiodic_fit_qc",
         "ebosc",
         "within_bout_ordinal",
+        "typical_bouts",
         "duration_sensitivity",
         "statistics",
         "plots",
@@ -73,6 +75,11 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
         "pool_pattern_counts_without_crossing_bout_or_epoch_boundaries"
     ):
         raise ValueError("Within-bout ordinal pooling must preserve every boundary")
+    typical_bouts = config["typical_bouts"]
+    if float(typical_bouts["center_window_seconds"]) <= 0.0:
+        raise ValueError("typical_bouts.center_window_seconds must be positive")
+    if int(typical_bouts["workers"]) < 1:
+        raise ValueError("typical_bouts.workers must be positive")
     if [float(value) for value in config["specparam"]["frequency_range_hz"]] != [
         4.0,
         50.0,
@@ -225,6 +232,20 @@ def run_analysis(
             features_dir / "feature_dictionary.csv",
         )
         _write_csv(feature_products["input_epochs"], features_dir / "input_epochs.csv")
+        bout_episodes = feature_products["bout_episodes"]
+        episode_root = output_dir / "intermediate" / "episodes"
+        if not bout_episodes.empty:
+            episode_root.mkdir(parents=True, exist_ok=True)
+            enriched_episodes = bout_episodes.merge(
+                recordings[["recording_id", "condition"]],
+                on="recording_id",
+                validate="many_to_one",
+            ).rename(columns={"recording_id": "subject_id", "condition": "group"})
+            for recording_id, table in enriched_episodes.groupby("subject_id", sort=False):
+                _write_csv(
+                    table,
+                    episode_root / f"{recording_id}_bout_episodes.csv.gz",
+                )
         inventory = json.loads(feature_products["inventory"].iloc[0]["payload"])
         (features_dir / "electrode_inventory.json").write_text(
             json.dumps(inventory, indent=2) + "\n", encoding="utf-8"
@@ -296,6 +317,17 @@ def run_analysis(
                 config=config,
             )
         )
+        if include_bouts:
+            figure_paths.extend(
+                generate_typical_bout_gallery(
+                    config=config,
+                    recordings=recordings,
+                    subject_features=subject_features,
+                    electrode_features=electrode_features,
+                    input_epochs=pd.read_csv(features_dir / "input_epochs.csv"),
+                    output_dir=output_dir,
+                )
+            )
 
     analyzed_recordings = int(subject_features["recording_id"].nunique())
     manifest = {

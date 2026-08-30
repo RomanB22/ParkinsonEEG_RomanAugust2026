@@ -141,10 +141,16 @@ def _analyze_variant(
     config: dict[str, Any],
     include_ordinal: bool,
     include_bouts: bool,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+) -> tuple[
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+    list[dict[str, Any]],
+]:
     subject_rows: list[dict[str, Any]] = []
     electrode_rows: list[dict[str, Any]] = []
     psd_rows: list[dict[str, Any]] = []
+    episode_rows: list[dict[str, Any]] = []
     n_epochs, n_electrodes = int(data.shape[0]), int(data.shape[1])
     psd_config = config["psd"]
     frequencies, electrode_psd = compute_subject_electrode_psd(
@@ -462,6 +468,11 @@ def _analyze_variant(
                     band_limits=bands[str(band)],
                     sfreq=sfreq,
                 )
+                if duration_variant == "all_retained" and len(episodes):
+                    enriched_episodes = episodes.copy()
+                    enriched_episodes.insert(0, "electrode", electrode)
+                    enriched_episodes.insert(0, "recording_id", recording_id)
+                    episode_rows.extend(enriched_episodes.to_dict(orient="records"))
                 summary = summarize_bouts(
                     episodes,
                     band_mask,
@@ -606,7 +617,7 @@ def _analyze_variant(
                 aggregation="mean_of_boundary_safe_electrode_metrics",
             )
         )
-    return subject_rows, electrode_rows, psd_rows
+    return subject_rows, electrode_rows, psd_rows, episode_rows
 
 
 def extract_features(
@@ -661,6 +672,7 @@ def extract_features(
     subject_rows: list[dict[str, Any]] = []
     electrode_rows: list[dict[str, Any]] = []
     psd_rows: list[dict[str, Any]] = []
+    episode_rows: list[dict[str, Any]] = []
     input_rows: list[dict[str, Any]] = []
     for recording_id in tqdm(
         selected["recording_id"],
@@ -685,7 +697,7 @@ def extract_features(
         )
         for variant, count in variants:
             selected_data = data if count is None else _evenly_spaced_epochs(data, count)
-            subject, electrode, psd = _analyze_variant(
+            subject, electrode, psd, episodes = _analyze_variant(
                 selected_data,
                 common_channels,
                 recording_id=recording_id,
@@ -698,6 +710,7 @@ def extract_features(
             subject_rows.extend(subject)
             electrode_rows.extend(electrode)
             psd_rows.extend(psd)
+            episode_rows.extend(episodes)
 
     subject_table = pd.DataFrame.from_records(subject_rows)
     electrode_table = pd.DataFrame.from_records(electrode_rows)
@@ -721,6 +734,7 @@ def extract_features(
         "subject_features": subject_table,
         "electrode_features": electrode_table,
         "subject_psd": psd_table,
+        "bout_episodes": pd.DataFrame.from_records(episode_rows),
         "feature_dictionary": dictionary,
         "input_epochs": pd.DataFrame.from_records(input_rows),
         "inventory": pd.DataFrame([{"payload": json.dumps(inventory)}]),

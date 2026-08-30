@@ -153,6 +153,11 @@ Generated data live under `outputs/ds002778/`:
   test per electrode and BH-FDR correction within each analysis family.
 - Within-bout H/C/F distributions, forest plots, group maps, contrast maps,
   and MMSE maps are included under the same statistical and topographic trees.
+- `scale_free/figures/typical_bouts/`: midpoint-aligned detected-bout galleries
+  for all 32 electrodes. Each theta-through-gamma row shows the Hilbert
+  amplitude envelope, circular phase and consistency, and phase-aligned
+  waveform for HC, PD OFF, and PD ON. Recording means receive equal weight;
+  PD session identifiers remain linked to their participant IDs in the cache.
 - `figures/comparable_pipeline/topomaps/mmse/`: age/sex-adjusted partial
   Spearman maps for HC, PD OFF, PD ON, and the ON–OFF medication response.
 - `figures/statistical_battery/violins/`: paginated subject distributions for
