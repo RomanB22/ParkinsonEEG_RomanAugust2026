@@ -1,4 +1,4 @@
-# ds002778 medication-state and MMSE analysis
+# ds002778 medication-state, MMSE, and Total UPDRS analysis
 
 This workflow analyzes OpenNeuro `ds002778-1.0.5` without changing the
 original 149-participant pipeline. The analysis unit is a recording, while

@@ -297,6 +297,8 @@ def _updrs_model(
     result["updrs_min"] = result.pop("mmse_min")
     result["updrs_max"] = result.pop("mmse_max")
     result["updrs_slope"] = result.pop("mmse_slope")
+    if result["analysis_status"] == "insufficient_mmse_information":
+        result["analysis_status"] = "insufficient_updrs_information"
     result["primary_model"] = (
         "partial Spearman: EEG feature vs Total UPDRS, adjusted for age and sex"
     )

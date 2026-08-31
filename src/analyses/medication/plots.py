@@ -517,22 +517,26 @@ def plot_focused_updrs(
                     else "Total UPDRS score"
                 )
 
-    figure.suptitle(
-        f"{title}\n"
+    figure.suptitle(title, fontsize=14, y=0.995)
+    figure.text(
+        0.5,
+        0.972,
         "OFF/ON panels use same-session scores; change panels correlate paired "
         "ON−OFF differences",
-        fontsize=14,
+        ha="center",
+        va="top",
+        fontsize=10,
     )
     figure.text(
         0.5,
-        0.965,
+        0.956,
         "Points and dashed trends show raw values; ρ, p, and BH-FDR q use "
         "age/sex-adjusted ranks",
         ha="center",
         va="top",
         fontsize=10,
     )
-    figure.tight_layout(rect=(0.0, 0.0, 1.0, 0.94))
+    figure.tight_layout(rect=(0.0, 0.0, 1.0, 0.925))
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(path, dpi=int(config["plots"]["dpi"]), bbox_inches="tight")

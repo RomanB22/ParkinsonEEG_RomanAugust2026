@@ -237,6 +237,9 @@ class MedicationStatisticsTests(unittest.TestCase):
             set(primary["updrs_model"]),
             {"PD_OFF", "PD_ON", "PD_ON_minus_PD_OFF"},
         )
+        self.assertNotIn(
+            "insufficient_mmse_information", set(result["analysis_status"])
+        )
         change = primary.loc[
             primary["updrs_model"].eq("PD_ON_minus_PD_OFF")
         ].iloc[0]

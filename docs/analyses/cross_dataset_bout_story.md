@@ -22,6 +22,7 @@ recorded both OFF and ON medication, and 16 healthy controls.
 | Theta within-bout entropy and complexity | Higher values were associated with better MOCA performance within PD (`rho` approximately 0.33, FDR `q=0.0056`) | Associations with MMSE were positive within PD but nonsignificant | Candidate cognitive marker, but not yet independently replicated |
 | Theta within-bout Fisher information | No consistent cognitive or diagnostic relationship | No MMSE relationship | Does not currently appear to be a robust marker |
 | Beta bouts per minute | Lower in PD, with the strongest evidence in the full cohort and weaker evidence after demographic matching | Lower in PD OFF but approximately equal to HC in PD ON; nonsignificant | Possible medication-sensitive secondary effect |
+| Delta entropy, complexity, and Fisher information versus motor severity | Not tested against Total UPDRS | No significant OFF, ON, or paired-change association with Total UPDRS | No evidence that these delta ordinal quantities track motor severity in the replication dataset |
 
 ## Disease-associated theta-bout burden
 
@@ -95,6 +96,54 @@ The medication-related reduction in entropy or complexity must not be
 interpreted as cognitive worsening. MMSE was participant-level and did not
 vary between OFF and ON sessions, so the analysis does not test an acute
 cognitive response to medication.
+
+## Total UPDRS and delta ordinal structure in `ds002778`
+
+Total UPDRS is a session-specific motor-severity measure in this dataset. All
+15 PD participants have scores in both states: 20–58 OFF medication and 16–54
+ON medication. Healthy controls were excluded because they do not have a
+comparable session-specific Total UPDRS measure. The primary correlations are
+partial Spearman correlations adjusted for age and sex. OFF and ON models use
+same-session EEG and Total UPDRS values; the change model correlates paired
+ON−OFF EEG changes with paired ON−OFF Total UPDRS changes. The reported `q`
+values use Benjamini–Hochberg FDR correction within each feature family and
+model.
+
+Delta entropy, complexity, and Fisher information refer here to the regular
+1–4 Hz ordinal-band quantities. They are not within-bout estimates because
+the eBOSC bout analysis starts at theta (4 Hz).
+
+| Delta quantity | PD OFF: rho, p, q | PD ON: rho, p, q | ON−OFF change: rho, p, q |
+|---|---:|---:|---:|
+| Permutation entropy | −0.110, 0.721, 0.727 | 0.120, 0.696, 0.867 | −0.350, 0.241, 0.927 |
+| Statistical complexity | −0.110, 0.721, 0.727 | 0.129, 0.674, 0.867 | −0.321, 0.285, 0.927 |
+| Fisher information | 0.197, 0.520, 0.727 | −0.187, 0.542, 0.867 | 0.167, 0.585, 0.927 |
+
+None of these nine focused delta tests was significant before or after FDR
+correction. The negative change correlations for delta entropy and complexity
+are moderate in magnitude, but with only 15 paired observations they are too
+imprecise to support a motor-severity claim. Their similarity also reflects
+that entropy and complexity are derived from the same ordinal distribution.
+
+The previously selected bout quantities were also tested against Total UPDRS:
+
+| Focused quantity | PD OFF: rho, p, q | PD ON: rho, p, q | ON−OFF change: rho, p, q |
+|---|---:|---:|---:|
+| Theta within-bout entropy | 0.250, 0.410, 0.702 | 0.056, 0.855, 0.855 | 0.381, 0.199, 0.391 |
+| Theta within-bout complexity | 0.283, 0.350, 0.699 | 0.087, 0.778, 0.848 | 0.378, 0.203, 0.391 |
+| Theta within-bout Fisher information | 0.129, 0.674, 0.809 | −0.180, 0.556, 0.790 | 0.256, 0.399, 0.479 |
+| Theta oscillatory occupancy | 0.329, 0.272, 0.863 | 0.324, 0.280, 0.602 | −0.167, 0.586, 0.823 |
+| Theta mean bout duration | 0.048, 0.877, 0.877 | 0.230, 0.449, 0.672 | −0.069, 0.823, 0.823 |
+| Beta bouts per minute | −0.139, 0.651, 0.863 | 0.031, 0.920, 0.956 | −0.263, 0.385, 0.769 |
+
+None of these 18 focused bout tests survived FDR correction. Thus, the most
+coherent interpretation is that the focused EEG quantities characterize PD
+and medication-related physiology more clearly than they track concurrent
+motor severity in this small cohort. A broad, exploratory screen did yield
+FDR-positive associations for ON−OFF change in aperiodic fit-QC fraction and
+gamma within-bout entropy; the former is a quality-control measure and the
+latter was not a prespecified focus, so neither changes the focused delta
+conclusion.
 
 ## Integrated model
 
