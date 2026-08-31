@@ -23,7 +23,11 @@ from .domain_outputs import publish_domain_outputs
 from .statistical_plots import plot_complete_statistical_battery
 from .typical_bouts import generate_typical_bout_gallery
 from .features import extract_features
-from .plots import plot_condition_features, plot_mmse_features
+from .plots import (
+    plot_condition_features,
+    plot_mmse_features,
+    plot_within_bout_theta_mmse,
+)
 from .statistics import compute_condition_statistics, compute_mmse_statistics
 
 
@@ -258,6 +262,14 @@ def run_analysis(
     mmse_statistics = compute_mmse_statistics(subject_features, recordings, config)
     _write_csv(condition_statistics, statistics_dir / "condition_contrasts.csv")
     _write_csv(mmse_statistics, statistics_dir / "mmse_associations.csv")
+    within_bout_theta_mmse = mmse_statistics.loc[
+        mmse_statistics["family"].eq("within_bout_ordinal")
+        & mmse_statistics["band"].eq("theta")
+    ]
+    _write_csv(
+        within_bout_theta_mmse,
+        statistics_dir / "within_bout_theta_mmse_associations.csv",
+    )
     electrode_condition_statistics = pd.DataFrame()
     electrode_mmse_statistics = pd.DataFrame()
     if not electrode_features.empty:
@@ -295,6 +307,15 @@ def run_analysis(
                 config,
             )
         )
+        within_bout_theta_path = plot_within_bout_theta_mmse(
+            subject_features,
+            recordings,
+            mmse_statistics,
+            figures_dir / "mmse" / "within_bout_theta_mmse_correlations.png",
+            config,
+        )
+        if within_bout_theta_path is not None:
+            figure_paths.append(within_bout_theta_path)
         figure_paths.extend(
             plot_comparable_pipeline_figures(
                 subject_features=subject_features,

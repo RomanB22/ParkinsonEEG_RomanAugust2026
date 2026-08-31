@@ -22,7 +22,7 @@ FIGURE_TOKENS = {
     "psd": ("/psd/", "_psd_", "psd_", "relative_power"),
     "ordinal": ("ordinal_",),
     "scale_free": ("aperiodic_", "periodic_peak_", "/typical_bouts/"),
-    "bouts": ("bouts_", "within_bout_ordinal_"),
+    "bouts": ("bouts_", "within_bout_ordinal_", "within_bout_theta_"),
 }
 
 

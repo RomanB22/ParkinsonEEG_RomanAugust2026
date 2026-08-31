@@ -429,12 +429,29 @@ def plot_group_mean_topomaps(
             .agg(aggregation)
             .mul(specification.display_scale)
         )
-        figure, axes = plt.subplots(
-            len(CONDITION_ORDER),
-            len(bands),
-            figsize=(3.45 * len(bands), 3.35 * len(CONDITION_ORDER)),
-            squeeze=False,
+        figure = plt.figure(
+            figsize=(3.45 * len(bands), 3.35 * len(CONDITION_ORDER) + 0.55)
         )
+        grid = figure.add_gridspec(
+            len(CONDITION_ORDER) + 1,
+            len(bands),
+            height_ratios=[1.0] * len(CONDITION_ORDER) + [0.055],
+            hspace=0.30,
+            wspace=0.30,
+        )
+        axes = np.asarray(
+            [
+                [
+                    figure.add_subplot(grid[row, column])
+                    for column in range(len(bands))
+                ]
+                for row in range(len(CONDITION_ORDER))
+            ]
+        )
+        colorbar_axes = [
+            figure.add_subplot(grid[len(CONDITION_ORDER), column])
+            for column in range(len(bands))
+        ]
         for column, band in enumerate(bands):
             band_values = grouped.loc[(slice(None), band, slice(None))].to_numpy(float)
             limits = _finite_limits(band_values)
@@ -462,12 +479,17 @@ def plot_group_mean_topomaps(
                         fontweight="bold",
                     )
             if image is not None:
-                figure.colorbar(image, ax=axes[:, column].tolist(), shrink=0.55)
+                colorbar = figure.colorbar(
+                    image,
+                    cax=colorbar_axes[column],
+                    orientation="horizontal",
+                )
+                colorbar.ax.tick_params(labelsize=7)
         figure.suptitle(
             f"{specification.label}: condition {aggregation} topographies\n"
             "Color limits are shared across conditions within each band"
         )
-        figure.subplots_adjust(top=0.89, hspace=0.28, wspace=0.34)
+        figure.subplots_adjust(top=0.89, bottom=0.07)
         path = output_dir / f"{_safe_name(specification.token)}_group_means.png"
         save_figure(figure, path, int(config["plots"]["dpi"]))
         paths.append(path)
@@ -509,12 +531,26 @@ def _plot_inferential_topomaps(
         if not bands:
             continue
         effect_limit = _symmetric_limit(table["standardized_effect"].to_numpy(float))
-        figure, axes = plt.subplots(
-            len(panel_order),
-            len(bands),
-            figsize=(3.5 * len(bands), 3.35 * len(panel_order)),
-            squeeze=False,
+        figure = plt.figure(
+            figsize=(3.5 * len(bands), 3.35 * len(panel_order) + 0.55)
         )
+        grid = figure.add_gridspec(
+            len(panel_order) + 1,
+            len(bands),
+            height_ratios=[1.0] * len(panel_order) + [0.055],
+            hspace=0.30,
+            wspace=0.28,
+        )
+        axes = np.asarray(
+            [
+                [
+                    figure.add_subplot(grid[row, column])
+                    for column in range(len(bands))
+                ]
+                for row in range(len(panel_order))
+            ]
+        )
+        colorbar_axis = figure.add_subplot(grid[len(panel_order), :])
         image = None
         for row, panel in enumerate(panel_order):
             for column, band in enumerate(bands):
@@ -529,7 +565,7 @@ def _plot_inferential_topomaps(
                     axes[row, column],
                     values,
                     info,
-                    cmap="RdBu_r",
+                    cmap="viridis",
                     vlim=(-effect_limit, effect_limit),
                     significant=significant,
                 )
@@ -549,15 +585,15 @@ def _plot_inferential_topomaps(
         if image is not None:
             figure.colorbar(
                 image,
-                ax=axes.ravel().tolist(),
-                shrink=0.48,
+                cax=colorbar_axis,
+                orientation="horizontal",
                 label="Standardized effect",
             )
         figure.suptitle(
             f"{specification.label}: {title_suffix}\n"
             "Black rings mark electrodes surviving the configured BH-FDR correction"
         )
-        figure.subplots_adjust(top=0.89, hspace=0.28, wspace=0.28)
+        figure.subplots_adjust(top=0.89, bottom=0.07)
         path = output_dir / f"{_safe_name(specification.token)}_{_safe_name(title_suffix)}.png"
         save_figure(figure, path, int(config["plots"]["dpi"]))
         paths.append(path)

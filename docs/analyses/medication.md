@@ -136,9 +136,13 @@ Generated data live under `outputs/ds002778/`:
 - `features/`: subject/electrode features, PSD curves, inputs, and channel inventory.
 - `statistics/condition_contrasts.csv`: the three planned contrasts.
 - `statistics/mmse_associations.csv`: continuous MMSE models.
+- `statistics/within_bout_theta_mmse_associations.csv`: focused theta
+  within-bout H/C/F MMSE results across the primary and sensitivity models.
 - `statistics/electrode_*`: secondary spatial versions with FDR across the
   complete electrode-level family.
 - `figures/conditions/` and `figures/mmse/`: focused subject-level plots.
+  The MMSE directory includes a 3 × 4 theta within-bout H/C/F summary with
+  HC, PD OFF, PD ON, and paired ON−OFF-change panels.
 - `figures/comparable_pipeline/psd/`: group PSD confidence bands, paired
   medication-state PSD change, and the combined relative-power distributions
   used by the original PSD workflow.

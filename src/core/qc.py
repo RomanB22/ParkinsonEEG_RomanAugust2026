@@ -182,7 +182,15 @@ def _ica_info(raw, ica):
 
 def _plot_topomap(axis, values, info, title: str):
     try:
-        mne.viz.plot_topomap(values, info, axes=axis, show=False, contours=0, sensors=True)
+        mne.viz.plot_topomap(
+            values,
+            info,
+            axes=axis,
+            show=False,
+            contours=0,
+            sensors=True,
+            cmap="viridis",
+        )
     except Exception as error:  # keep QC informative if a montage is incomplete
         axis.bar(np.arange(len(values)), values, width=1.0)
         axis.set_xticks([])
