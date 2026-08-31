@@ -91,6 +91,7 @@
     "minimum_per_condition": 10,
     "minimum_pairs": 10,
     "minimum_mmse_participants": 10,
+    "minimum_updrs_participants": 10,
     "confidence_level": 0.95,
     "bootstrap_resamples": 2000,
     "random_seed": 20260829,

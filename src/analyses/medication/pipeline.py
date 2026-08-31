@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import platform
+import shutil
 from datetime import datetime, timezone
 from importlib.metadata import version
 from pathlib import Path
@@ -24,11 +25,20 @@ from .statistical_plots import plot_complete_statistical_battery
 from .typical_bouts import generate_typical_bout_gallery
 from .features import extract_features
 from .plots import (
+    FOCUSED_BOUT_MMSE_FEATURES,
+    FOCUSED_DELTA_UPDRS_FEATURES,
     plot_condition_features,
+    plot_focused_bout_mmse,
+    plot_focused_updrs,
     plot_mmse_features,
-    plot_within_bout_theta_mmse,
+    select_focused_bout_mmse_rows,
+    select_focused_delta_updrs_rows,
 )
-from .statistics import compute_condition_statistics, compute_mmse_statistics
+from .statistics import (
+    compute_condition_statistics,
+    compute_mmse_statistics,
+    compute_updrs_statistics,
+)
 
 
 def load_analysis_config(path: str | Path) -> dict[str, Any]:
@@ -120,6 +130,9 @@ def _write_cohort_report(
     mmse = participants.groupby("diagnosis")["mmse"].agg(
         ["count", "mean", "std", "min", "median", "max"]
     )
+    updrs = recordings.groupby("condition")["total_updrs"].agg(
+        ["count", "mean", "std", "min", "median", "max"]
+    )
     flagged = participants.loc[
         participants["provenance_sensitivity_exclusion"], "participant_id"
     ].tolist()
@@ -143,6 +156,17 @@ MMSE is participant-level and does not vary between PD medication sessions.
 Accordingly, ON/OFF inference targets EEG change; MMSE analyses target
 cross-sectional EEG associations and whether the within-participant EEG
 medication response varies with MMSE.
+
+## Total UPDRS by medication condition
+
+```
+{updrs.to_string(float_format=lambda value: f'{value:.3f}')}
+```
+
+Total UPDRS is session-specific and available for every PD OFF and PD ON
+recording. UPDRS analyses use same-session OFF and ON associations plus paired
+ON-minus-OFF EEG change versus ON-minus-OFF UPDRS change. Healthy controls are
+not assigned a comparable Total UPDRS outcome.
 """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(report, encoding="utf-8")
@@ -255,20 +279,37 @@ def run_analysis(
             json.dumps(inventory, indent=2) + "\n", encoding="utf-8"
         )
 
-    print("Computing subject-level condition and MMSE inference...")
+    print("Computing subject-level condition, MMSE, and Total UPDRS inference...")
     condition_statistics = compute_condition_statistics(
         subject_features, recordings, config
     )
     mmse_statistics = compute_mmse_statistics(subject_features, recordings, config)
+    updrs_statistics = compute_updrs_statistics(
+        subject_features, recordings, config
+    )
     _write_csv(condition_statistics, statistics_dir / "condition_contrasts.csv")
     _write_csv(mmse_statistics, statistics_dir / "mmse_associations.csv")
-    within_bout_theta_mmse = mmse_statistics.loc[
-        mmse_statistics["family"].eq("within_bout_ordinal")
-        & mmse_statistics["band"].eq("theta")
-    ]
+    _write_csv(updrs_statistics, statistics_dir / "updrs_associations.csv")
+    focused_bout_mmse = select_focused_bout_mmse_rows(mmse_statistics)
     _write_csv(
-        within_bout_theta_mmse,
+        focused_bout_mmse,
+        statistics_dir / "focused_bout_mmse_associations.csv",
+    )
+    # Retain the original focused-output path for downstream consumers while
+    # expanding it to contain the newly requested bout properties.
+    _write_csv(
+        focused_bout_mmse,
         statistics_dir / "within_bout_theta_mmse_associations.csv",
+    )
+    focused_bout_updrs = select_focused_bout_mmse_rows(updrs_statistics)
+    focused_delta_updrs = select_focused_delta_updrs_rows(updrs_statistics)
+    _write_csv(
+        focused_bout_updrs,
+        statistics_dir / "focused_bout_updrs_associations.csv",
+    )
+    _write_csv(
+        focused_delta_updrs,
+        statistics_dir / "focused_delta_ordinal_updrs_associations.csv",
     )
     electrode_condition_statistics = pd.DataFrame()
     electrode_mmse_statistics = pd.DataFrame()
@@ -307,15 +348,45 @@ def run_analysis(
                 config,
             )
         )
-        within_bout_theta_path = plot_within_bout_theta_mmse(
+        focused_bout_path = plot_focused_bout_mmse(
             subject_features,
             recordings,
             mmse_statistics,
-            figures_dir / "mmse" / "within_bout_theta_mmse_correlations.png",
+            figures_dir
+            / "mmse"
+            / "bouts_and_within_bout_ordinal_mmse_correlations.png",
             config,
         )
-        if within_bout_theta_path is not None:
-            figure_paths.append(within_bout_theta_path)
+        if focused_bout_path is not None:
+            legacy_focused_bout_path = (
+                figures_dir / "mmse" / "within_bout_theta_mmse_correlations.png"
+            )
+            shutil.copy2(focused_bout_path, legacy_focused_bout_path)
+            figure_paths.append(focused_bout_path)
+        focused_bout_updrs_path = plot_focused_updrs(
+            subject_features,
+            recordings,
+            updrs_statistics,
+            figures_dir
+            / "updrs"
+            / "bouts_and_within_bout_ordinal_updrs_correlations.png",
+            config,
+            feature_specifications=FOCUSED_BOUT_MMSE_FEATURES,
+            title="Focused bout EEG metrics versus Total UPDRS",
+        )
+        if focused_bout_updrs_path is not None:
+            figure_paths.append(focused_bout_updrs_path)
+        focused_delta_updrs_path = plot_focused_updrs(
+            subject_features,
+            recordings,
+            updrs_statistics,
+            figures_dir / "updrs" / "delta_ordinal_updrs_correlations.png",
+            config,
+            feature_specifications=FOCUSED_DELTA_UPDRS_FEATURES,
+            title="Delta ordinal EEG metrics versus Total UPDRS",
+        )
+        if focused_delta_updrs_path is not None:
+            figure_paths.append(focused_delta_updrs_path)
         figure_paths.extend(
             plot_comparable_pipeline_figures(
                 subject_features=subject_features,
@@ -380,6 +451,7 @@ def run_analysis(
         "scientific_notes": [
             "PD ON/OFF recordings are paired by participant.",
             "MMSE is modeled continuously and is not treated as a session-varying outcome.",
+            "Total UPDRS is modeled as a session-specific PD outcome in OFF, ON, and paired ON-minus-OFF change analyses.",
             "All MMSE values are in the dataset-defined normal range (>24).",
             "No diagnostic classification or machine-learning analysis is performed.",
             "Within-bout ordinal patterns are pooled without crossing bout or epoch boundaries.",

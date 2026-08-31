@@ -13,11 +13,18 @@ from analyses.medication.comparison_plots import (
     plot_group_psd_curves,
 )
 from analyses.medication.pipeline import load_analysis_config
+from analyses.medication.plots import (
+    FOCUSED_BOUT_MMSE_FEATURES,
+    FOCUSED_DELTA_UPDRS_FEATURES,
+    select_focused_bout_mmse_rows,
+    select_focused_delta_updrs_rows,
+)
 from analyses.medication.statistical_plots import plot_all_feature_violins
 from analyses.medication.statistics import (
     _paired_contrast,
     compute_condition_statistics,
     compute_mmse_statistics,
+    compute_updrs_statistics,
 )
 from core.dataset import (
     discover_recordings,
@@ -46,6 +53,14 @@ class MedicationDatasetTests(unittest.TestCase):
         self.assertEqual(recordings["participant_id"].nunique(), 31)
         self.assertEqual(int(participants["mmse"].min()), 26)
         self.assertEqual(int(participants["mmse"].max()), 30)
+        off_updrs = recordings.loc[
+            recordings["condition"].eq("PD_OFF"), "total_updrs"
+        ]
+        on_updrs = recordings.loc[
+            recordings["condition"].eq("PD_ON"), "total_updrs"
+        ]
+        self.assertEqual((int(off_updrs.min()), int(off_updrs.max())), (20, 58))
+        self.assertEqual((int(on_updrs.min()), int(on_updrs.max())), (16, 54))
         self.assertEqual(
             set(
                 participants.loc[
@@ -83,6 +98,7 @@ class MedicationDatasetTests(unittest.TestCase):
     def test_analysis_config_is_prespecified(self):
         config = load_analysis_config("config/analyses/ds002778.json")
         self.assertEqual(config["statistics"]["minimum_pairs"], 10)
+        self.assertEqual(config["statistics"]["minimum_updrs_participants"], 10)
         self.assertEqual(config["ordinal"]["embedding_dimension"], 6)
         self.assertTrue(config["within_bout_ordinal"]["enabled"])
         self.assertEqual(
@@ -124,6 +140,7 @@ class MedicationStatisticsTests(unittest.TestCase):
                     "age_years": 52 + index,
                     "sex_male": index % 2,
                     "mmse": mmse,
+                    "total_updrs": np.nan,
                     "provenance_sensitivity_exclusion": False,
                 }
             )
@@ -134,9 +151,11 @@ class MedicationStatisticsTests(unittest.TestCase):
             age = 51 + index
             off = 2.5 + 0.04 * index + 0.2 * (mmse - 28) + 0.03 * (index % 2)
             delta = -0.8 + 0.4 * (mmse - 28) + 0.015 * (index % 3)
-            for condition, session, value in (
-                ("PD_OFF", "ses-off", off),
-                ("PD_ON", "ses-on", off + delta),
+            off_updrs = 40.0 + index
+            updrs_delta = 5.0 * delta
+            for condition, session, value, total_updrs in (
+                ("PD_OFF", "ses-off", off, off_updrs),
+                ("PD_ON", "ses-on", off + delta, off_updrs + updrs_delta),
             ):
                 recording_id = f"{participant_id}_{session}"
                 recording_rows.append(
@@ -147,6 +166,7 @@ class MedicationStatisticsTests(unittest.TestCase):
                         "age_years": age,
                         "sex_male": index % 2,
                         "mmse": mmse,
+                        "total_updrs": total_updrs,
                         "provenance_sensitivity_exclusion": index in {5, 14},
                     }
                 )
@@ -158,6 +178,7 @@ class MedicationStatisticsTests(unittest.TestCase):
                 "minimum_per_condition": 10,
                 "minimum_pairs": 10,
                 "minimum_mmse_participants": 10,
+                "minimum_updrs_participants": 10,
                 "confidence_level": 0.95,
                 "bootstrap_resamples": 200,
                 "random_seed": 42,
@@ -205,6 +226,25 @@ class MedicationStatisticsTests(unittest.TestCase):
         self.assertTrue(np.isfinite(row["statistic"]))
         self.assertTrue(np.isfinite(row["primary_p_value"]))
 
+    def test_updrs_model_preserves_paired_session_changes(self):
+        result = compute_updrs_statistics(
+            self.features, self.recordings, self.config
+        )
+        primary = result.loc[
+            result["sensitivity_cohort"].eq("all_participants")
+        ]
+        self.assertEqual(
+            set(primary["updrs_model"]),
+            {"PD_OFF", "PD_ON", "PD_ON_minus_PD_OFF"},
+        )
+        change = primary.loc[
+            primary["updrs_model"].eq("PD_ON_minus_PD_OFF")
+        ].iloc[0]
+        self.assertEqual(change["n_participants"], 15)
+        self.assertEqual(change["analysis_status"], "ok")
+        self.assertGreater(change["statistic"], 0.99)
+        self.assertLess(change["primary_p_value"], 0.001)
+
     def test_all_zero_paired_differences_are_a_valid_null_without_warnings(self):
         rows = []
         for index in range(10):
@@ -232,6 +272,35 @@ class MedicationStatisticsTests(unittest.TestCase):
         self.assertEqual(result["primary_p_value"], 1.0)
         self.assertEqual(result["wilcoxon_statistic"], 0.0)
         self.assertEqual(result["wilcoxon_p_value"], 1.0)
+
+    def test_focused_bout_mmse_selection_includes_six_requested_features(self):
+        rows = [
+            {"family": family, "band": band, "metric": metric}
+            for family, band, metric, _ in FOCUSED_BOUT_MMSE_FEATURES
+        ]
+        rows.append(
+            {"family": "bouts", "band": "gamma", "metric": "bouts_per_minute"}
+        )
+        selected = select_focused_bout_mmse_rows(pd.DataFrame.from_records(rows))
+        self.assertEqual(len(selected), 6)
+        self.assertEqual(
+            set(map(tuple, selected[["family", "band", "metric"]].to_numpy())),
+            {
+                (family, band, metric)
+                for family, band, metric, _ in FOCUSED_BOUT_MMSE_FEATURES
+            },
+        )
+
+    def test_focused_delta_updrs_selection_includes_h_c_and_f(self):
+        rows = [
+            {"family": family, "band": band, "metric": metric}
+            for family, band, metric, _ in FOCUSED_DELTA_UPDRS_FEATURES
+        ]
+        rows.append({"family": "ordinal", "band": "theta", "metric": "entropy"})
+        selected = select_focused_delta_updrs_rows(
+            pd.DataFrame.from_records(rows)
+        )
+        self.assertEqual(len(selected), 3)
 
 
 class MedicationComparisonFigureTests(unittest.TestCase):

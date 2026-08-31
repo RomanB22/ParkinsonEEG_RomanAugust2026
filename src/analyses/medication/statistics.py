@@ -280,6 +280,29 @@ def _mmse_model(
     }
 
 
+def _updrs_model(
+    table: pd.DataFrame,
+    *,
+    minimum_participants: int,
+    confidence_level: float,
+) -> dict[str, Any]:
+    """Fit the primary clinical model using session-specific Total UPDRS."""
+    modeled = table.copy()
+    modeled["mmse"] = modeled["total_updrs"]
+    result = _mmse_model(
+        modeled,
+        minimum_participants=minimum_participants,
+        confidence_level=confidence_level,
+    )
+    result["updrs_min"] = result.pop("mmse_min")
+    result["updrs_max"] = result.pop("mmse_max")
+    result["updrs_slope"] = result.pop("mmse_slope")
+    result["primary_model"] = (
+        "partial Spearman: EEG feature vs Total UPDRS, adjusted for age and sex"
+    )
+    return result
+
+
 def _attach_metadata(features: pd.DataFrame, recordings: pd.DataFrame) -> pd.DataFrame:
     uniqueness = ["recording_id", "duration_variant", "feature_id"]
     if "electrode" in features:
@@ -295,6 +318,11 @@ def _attach_metadata(features: pd.DataFrame, recordings: pd.DataFrame) -> pd.Dat
         "mmse",
         "provenance_sensitivity_exclusion",
     ]
+    columns.extend(
+        column
+        for column in ("total_updrs", "updrs_18_26", "hoehn_yahr")
+        if column in recordings
+    )
     attached = features.merge(
         recordings[columns], on="recording_id", how="left", validate="many_to_one"
     )
@@ -465,6 +493,111 @@ def compute_mmse_statistics(
             "duration_variant",
             "family",
             "mmse_model",
+        ],
+        alpha=float(settings["fdr_alpha"]),
+    )
+
+
+def compute_updrs_statistics(
+    features: pd.DataFrame,
+    recordings: pd.DataFrame,
+    config: dict[str, Any],
+) -> pd.DataFrame:
+    """Compute same-session and paired-change Total UPDRS associations in PD."""
+    attached = _attach_metadata(features, recordings)
+    if "total_updrs" not in attached:
+        raise ValueError("Total UPDRS associations require recording-level scores")
+    settings = config["statistics"]
+    feature_columns = [
+        "duration_variant",
+        "feature_id",
+        "family",
+        "domain",
+        "band",
+        "metric",
+    ]
+    if "electrode" in attached:
+        feature_columns.append("electrode")
+    rows: list[dict[str, Any]] = []
+    cohorts = {
+        "all_participants": attached,
+        "exclude_preprocessed_on_provenance": attached.loc[
+            ~attached["provenance_sensitivity_exclusion"]
+        ],
+    }
+    minimum = int(settings["minimum_updrs_participants"])
+    confidence_level = float(settings["confidence_level"])
+    for cohort_name, cohort in cohorts.items():
+        for keys, table in cohort.groupby(feature_columns, sort=False, dropna=False):
+            specification = dict(zip(feature_columns, keys))
+            for condition in ("PD_OFF", "PD_ON"):
+                result = _updrs_model(
+                    table.loc[table["condition"].eq(condition)],
+                    minimum_participants=minimum,
+                    confidence_level=confidence_level,
+                )
+                rows.append(
+                    {
+                        "sensitivity_cohort": cohort_name,
+                        **specification,
+                        "updrs_model": condition,
+                        "outcome_definition": (
+                            f"{condition} EEG feature versus same-session Total UPDRS"
+                        ),
+                        **result,
+                    }
+                )
+
+            pd_table = table.loc[
+                table["condition"].isin(["PD_OFF", "PD_ON"])
+            ].copy()
+            value_pivot = pd_table.pivot(
+                index="participant_id", columns="condition", values="value"
+            )
+            updrs_pivot = pd_table.pivot(
+                index="participant_id", columns="condition", values="total_updrs"
+            )
+            for condition in ("PD_OFF", "PD_ON"):
+                if condition not in value_pivot:
+                    value_pivot[condition] = np.nan
+                if condition not in updrs_pivot:
+                    updrs_pivot[condition] = np.nan
+            metadata = (
+                pd_table[["participant_id", "age_years", "sex_male"]]
+                .drop_duplicates("participant_id")
+                .set_index("participant_id")
+            )
+            delta = metadata.copy()
+            delta["value"] = value_pivot["PD_ON"] - value_pivot["PD_OFF"]
+            delta["total_updrs"] = (
+                updrs_pivot["PD_ON"] - updrs_pivot["PD_OFF"]
+            )
+            delta = delta.reset_index()
+            result = _updrs_model(
+                delta,
+                minimum_participants=minimum,
+                confidence_level=confidence_level,
+            )
+            rows.append(
+                {
+                    "sensitivity_cohort": cohort_name,
+                    **specification,
+                    "updrs_model": "PD_ON_minus_PD_OFF",
+                    "outcome_definition": (
+                        "within-participant ON-minus-OFF EEG change versus "
+                        "ON-minus-OFF Total UPDRS change"
+                    ),
+                    **result,
+                }
+            )
+    result = pd.DataFrame.from_records(rows)
+    return _apply_fdr(
+        result,
+        group_columns=[
+            "sensitivity_cohort",
+            "duration_variant",
+            "family",
+            "updrs_model",
         ],
         alpha=float(settings["fdr_alpha"]),
     )

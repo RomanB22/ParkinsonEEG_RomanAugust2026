@@ -13,11 +13,19 @@ remain paired.
 - 31 people and 46 recordings total.
 - MMSE is participant-level, ranges from 26 to 30, and does not vary between
   medication sessions.
+- Total UPDRS is session-specific for all 15 PD participants: 20–58 OFF
+  medication and 16–54 ON medication.
 
 MMSE is therefore analyzed continuously as limited cognitive-score variation.
 It is not used to claim longitudinal deterioration or to create impaired versus
 normal subgroups. No diagnostic classification or machine-learning analysis is
 included.
+
+Total UPDRS is analyzed separately as a motor-severity outcome. Same-session
+partial Spearman correlations are computed for PD OFF and PD ON, and paired
+ON−OFF EEG changes are correlated with paired ON−OFF UPDRS changes. Healthy
+controls are excluded because they do not have a comparable session-specific
+Total UPDRS score.
 
 ## Commands
 
@@ -136,13 +144,21 @@ Generated data live under `outputs/ds002778/`:
 - `features/`: subject/electrode features, PSD curves, inputs, and channel inventory.
 - `statistics/condition_contrasts.csv`: the three planned contrasts.
 - `statistics/mmse_associations.csv`: continuous MMSE models.
-- `statistics/within_bout_theta_mmse_associations.csv`: focused theta
-  within-bout H/C/F MMSE results across the primary and sensitivity models.
+- `statistics/updrs_associations.csv`: session-specific Total UPDRS models.
+- `statistics/focused_bout_mmse_associations.csv`: theta within-bout H/C/F,
+  theta oscillatory occupancy, theta mean bout duration, and beta bouts/minute
+  MMSE results across the primary and sensitivity models.
+- `statistics/focused_bout_updrs_associations.csv`: the same focused bout
+  quantities for PD OFF, PD ON, and paired ON−OFF Total UPDRS models.
+- `statistics/focused_delta_ordinal_updrs_associations.csv`: focused delta-band
+  entropy, complexity, and Fisher information Total UPDRS results.
 - `statistics/electrode_*`: secondary spatial versions with FDR across the
   complete electrode-level family.
 - `figures/conditions/` and `figures/mmse/`: focused subject-level plots.
-  The MMSE directory includes a 3 × 4 theta within-bout H/C/F summary with
-  HC, PD OFF, PD ON, and paired ON−OFF-change panels.
+  The MMSE directory includes a 6 × 4 focused bout-feature summary with HC,
+  PD OFF, PD ON, and paired ON−OFF-change panels.
+- `figures/updrs/`: focused bout-feature and delta ordinal correlation figures
+  for PD OFF, PD ON, and paired ON−OFF changes.
 - `figures/comparable_pipeline/psd/`: group PSD confidence bands, paired
   medication-state PSD change, and the combined relative-power distributions
   used by the original PSD workflow.

@@ -66,6 +66,7 @@ def publish_domain_outputs(output_dir: str | Path) -> dict[str, dict[str, Any]]:
     electrode_features = pd.read_csv(feature_root / "electrode_features_long.csv")
     condition = pd.read_csv(statistics_root / "condition_contrasts.csv")
     mmse = pd.read_csv(statistics_root / "mmse_associations.csv")
+    updrs = pd.read_csv(statistics_root / "updrs_associations.csv")
     electrode_condition = pd.read_csv(
         statistics_root / "electrode_condition_contrasts.csv"
     )
@@ -88,6 +89,7 @@ def publish_domain_outputs(output_dir: str | Path) -> dict[str, dict[str, Any]]:
         selected_electrode = electrode_features.loc[electrode_features["family"].isin(families)]
         selected_condition = condition.loc[condition["family"].isin(families)]
         selected_mmse = mmse.loc[mmse["family"].isin(families)]
+        selected_updrs = updrs.loc[updrs["family"].isin(families)]
         selected_electrode_condition = electrode_condition.loc[
             electrode_condition["family"].isin(families)
         ]
@@ -98,6 +100,7 @@ def publish_domain_outputs(output_dir: str | Path) -> dict[str, dict[str, Any]]:
         _write_csv(selected_electrode, metrics_root / "electrode_features.csv")
         _write_csv(selected_condition, metrics_root / "condition_contrasts.csv")
         _write_csv(selected_mmse, metrics_root / "mmse_associations.csv")
+        _write_csv(selected_updrs, metrics_root / "updrs_associations.csv")
         _write_csv(
             selected_electrode_condition,
             metrics_root / "electrode_condition_contrasts.csv",
@@ -132,6 +135,7 @@ def publish_domain_outputs(output_dir: str | Path) -> dict[str, dict[str, Any]]:
             "n_electrode_feature_rows": int(len(selected_electrode)),
             "n_condition_statistics": int(len(selected_condition)),
             "n_mmse_statistics": int(len(selected_mmse)),
+            "n_updrs_statistics": int(len(selected_updrs)),
             "n_figures": len(figures),
             "figures": [str(path.resolve()) for path in figures],
         }
@@ -143,6 +147,7 @@ def publish_domain_outputs(output_dir: str | Path) -> dict[str, dict[str, Any]]:
 
     behavioral_root = root / "behavioral"
     _write_csv(mmse, behavioral_root / "metrics" / "mmse_associations.csv")
+    _write_csv(updrs, behavioral_root / "metrics" / "updrs_associations.csv")
     _write_csv(
         electrode_mmse,
         behavioral_root / "metrics" / "electrode_mmse_associations.csv",
@@ -150,16 +155,17 @@ def publish_domain_outputs(output_dir: str | Path) -> dict[str, dict[str, Any]]:
     behavioral_figures = _copy_figures(
         figure_root,
         behavioral_root / "figures",
-        ("/mmse/", "/correlations/"),
+        ("/mmse/", "/updrs/", "/correlations/"),
     )
     behavioral_manifest = {
         "schema_version": 1,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "dataset": "ds002778",
         "domain": "behavioral",
-        "outcome": "MMSE",
+        "outcome": "MMSE and Total UPDRS",
         "sampling_unit": "participant; PD medication sessions remain paired",
         "n_statistics": int(len(mmse)),
+        "n_updrs_statistics": int(len(updrs)),
         "n_electrode_statistics": int(len(electrode_mmse)),
         "n_figures": len(behavioral_figures),
         "figures": [str(path.resolve()) for path in behavioral_figures],
