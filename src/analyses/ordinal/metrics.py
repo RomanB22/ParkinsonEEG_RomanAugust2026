@@ -15,6 +15,7 @@ from scipy.signal import butter, sosfiltfilt
 
 
 CORE_METRICS = ("entropy", "complexity", "fisher_information")
+WEIGHTED_METRIC = "weighted_permutation_entropy"
 RENYI_ALPHA_METRICS = (
     (0.1, "renyi_entropy_alpha_0_1", "renyi_complexity_alpha_0_1"),
     (0.5, "renyi_entropy_alpha_0_5", "renyi_complexity_alpha_0_5"),
@@ -30,7 +31,7 @@ RENYI_METRICS = tuple(
     for _, entropy_metric, complexity_metric in RENYI_ALPHA_METRICS
     for metric in (entropy_metric, complexity_metric)
 )
-METRICS = (*CORE_METRICS, *RENYI_METRICS)
+METRICS = (*CORE_METRICS, WEIGHTED_METRIC, *RENYI_METRICS)
 
 
 @lru_cache(maxsize=None)
@@ -206,6 +207,47 @@ def metrics_from_probabilities(
     return result
 
 
+def weighted_permutation_entropy_epoch_data(
+    epoch_data: np.ndarray,
+    *,
+    dx: int,
+    tau: int,
+    tie_precision: int | None = None,
+) -> float:
+    """Calculate epoch-safe weighted permutation entropy with ordpy.
+
+    ``ordpy.weighted_permutation_entropy`` accepts one uninterrupted series.
+    Calling it separately for every accepted epoch prevents an embedding from
+    crossing an epoch/rejection boundary; the returned value is the
+    pattern-count-weighted mean across epochs.
+    """
+    _validate_parameters(dx, tau)
+    data = np.asarray(epoch_data, dtype=np.float64)
+    if data.ndim != 2:
+        raise ValueError("epoch_data must have shape (epochs, samples)")
+    span = (int(dx) - 1) * int(tau)
+    if data.shape[0] == 0 or data.shape[1] <= span:
+        raise ValueError("Each epoch must contain at least one embedding window")
+    if not np.all(np.isfinite(data)):
+        raise ValueError("Weighted permutation entropy requires finite epoch samples")
+    values = [
+        float(
+            ordpy.weighted_permutation_entropy(
+                epoch,
+                dx=int(dx),
+                taux=int(tau),
+                tie_precision=tie_precision,
+            )
+        )
+        for epoch in data
+    ]
+    weights = np.full(len(values), data.shape[1] - span, dtype=float)
+    result = float(np.average(values, weights=weights))
+    if not np.isfinite(result):
+        raise RuntimeError("ordpy returned a non-finite weighted permutation entropy")
+    return result
+
+
 def analyze_epoch_data(
     data: np.ndarray,
     channel_names: list[str],
@@ -233,6 +275,12 @@ def analyze_epoch_data(
             tie_precision=tie_precision,
         )
         metric_values = metrics_from_probabilities(probabilities, dx=dx)
+        metric_values[WEIGHTED_METRIC] = weighted_permutation_entropy_epoch_data(
+            array[:, channel_index, :],
+            dx=dx,
+            tau=tau,
+            tie_precision=tie_precision,
+        )
         rows.append(
             {
                 "subject_id": subject_id,

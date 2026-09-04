@@ -189,6 +189,14 @@ def build_analysis_tables(
     subject_values: list[pd.DataFrame] = []
     dictionary_rows: list[dict[str, Any]] = []
     for domain, source, metrics, strata, bands, aggregation in specs:
+        # Keep the sensitivity battery readable while users transition from
+        # legacy caches to caches regenerated with weighted entropy.
+        available_columns = set(pd.read_csv(source, nrows=0).columns)
+        metrics = tuple(
+            metric for metric in metrics
+            if metric != "weighted_permutation_entropy"
+            or metric in available_columns
+        )
         required = {"subject_id", "group", "electrode", *metrics, *strata}
         selected = _select_complete(
             _read(source, required), participants, electrodes=electrodes,

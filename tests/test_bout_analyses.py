@@ -23,7 +23,15 @@ class BoutAnalysesTests(unittest.TestCase):
         self.assertEqual(config["specparam"]["model_selection_criterion"], "bic")
         self.assertEqual(config["ordinal"]["embedding_dimension"], 6)
         self.assertEqual(config["ordinal"]["delay_samples"], 1)
-        self.assertEqual(METRICS, ("entropy", "complexity", "fisher_information"))
+        self.assertEqual(
+            METRICS,
+            (
+                "entropy",
+                "complexity",
+                "fisher_information",
+                "weighted_permutation_entropy",
+            ),
+        )
         self.assertEqual(
             list(config["bands"]),
             ["theta", "alpha", "beta", "gamma"],
@@ -100,6 +108,25 @@ class BoutAnalysesTests(unittest.TestCase):
         self.assertAlmostEqual(actual["entropy"], entropy)
         self.assertAlmostEqual(actual["complexity"], complexity)
         self.assertAlmostEqual(actual["fisher_information"], fisher)
+
+    def test_weighted_entropy_matches_ordpy_for_one_bout(self):
+        signal = np.asarray([3.0, 1.0, 4.0, 1.5, 5.0, 9.0, 2.0])
+        _, _, bouts, _ = analyze_bout_segments(
+            signal[np.newaxis, :],
+            pd.DataFrame(
+                {
+                    "epoch_index": [0],
+                    "start_sample": [0],
+                    "stop_sample_exclusive": [len(signal)],
+                }
+            ),
+            dx=3,
+            tau=1,
+        )
+        expected = ordpy.weighted_permutation_entropy(signal, dx=3, taux=1)
+        self.assertAlmostEqual(
+            bouts.loc[0, "weighted_permutation_entropy"], expected
+        )
 
 
 if __name__ == "__main__":

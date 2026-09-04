@@ -18,6 +18,7 @@ from analyses.ordinal.metrics import (
     metrics_from_probabilities,
     ordinal_probabilities,
     subject_electrode_means,
+    weighted_permutation_entropy_epoch_data,
 )
 from analyses.ordinal.pipeline import (
     _can_reuse_existing_ordinal_output,
@@ -201,6 +202,20 @@ class OrdinalMetricTests(unittest.TestCase):
         for metric in METRICS:
             self.assertIn(metric, metrics)
             self.assertAlmostEqual(means.loc[0, metric], metrics[metric].mean())
+
+    def test_weighted_entropy_is_epoch_safe_and_matches_ordpy(self):
+        data = np.asarray(
+            [
+                [3.0, 1.0, 4.0, 1.5, 5.0, 9.0, 2.0],
+                [2.0, 7.0, 1.0, 8.0, 2.5, 8.5, 1.5],
+            ]
+        )
+        expected = np.mean(
+            [ordpy.weighted_permutation_entropy(epoch, dx=3, taux=1) for epoch in data]
+        )
+        self.assertAlmostEqual(
+            weighted_permutation_entropy_epoch_data(data, dx=3, tau=1), expected
+        )
 
     def test_band_filter_is_epoch_local_and_frequency_selective(self):
         sfreq = 120.0

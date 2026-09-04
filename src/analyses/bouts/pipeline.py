@@ -928,6 +928,7 @@ def run_analysis(
                 "bandpass_filtering",
                 "within_bout_ordinal_encoding",
                 "within_bout_ordinal_metrics",
+                "within_bout_weighted_permutation_entropy",
             ],
             "legacy_episode_threshold_paths_are_symlinks": bool(
                 config["cache"]["link_reused_episode_and_threshold_files"]
