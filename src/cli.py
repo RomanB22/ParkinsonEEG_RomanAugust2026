@@ -23,6 +23,11 @@ def _common(parser: argparse.ArgumentParser) -> None:
         help="Dataset profile from config/pipeline.yaml, or 'both' (default: primary)",
     )
     parser.add_argument("--overwrite", action="store_true", help="Recompute selected stages")
+    parser.add_argument(
+        "--augment-weighted-entropy",
+        action="store_true",
+        help="Append weighted entropy to existing primary ordinal and bout outputs",
+    )
     parser.add_argument("--dry-run", action="store_true", help="Print commands without running them")
     parser.add_argument("--no-progress", action="store_true")
     parser.add_argument("--skip-tests", action="store_true")
@@ -277,6 +282,28 @@ def main(argv: list[str] | None = None) -> None:
             return
 
         profile = config.profile(args.profile)
+        if args.command == "analyses" and args.augment_weighted_entropy:
+            if args.dataset != "primary":
+                raise ValueError("--augment-weighted-entropy currently supports --dataset primary only")
+            if args.overwrite:
+                raise ValueError("Use either --augment-weighted-entropy or --overwrite, not both")
+            import importlib.util as _importlib_util
+            import sys as _sys
+
+            augment_path = Path.cwd() / "scripts" / "augment_weighted_entropy.py"
+            if not augment_path.is_file():
+                raise FileNotFoundError(f"Missing augmentation script: {augment_path}")
+            augment_spec = _importlib_util.spec_from_file_location(
+                "augment_weighted_entropy", augment_path
+            )
+            if augment_spec is None or augment_spec.loader is None:
+                raise RuntimeError(f"Could not load augmentation script: {augment_path}")
+            augment_module = _importlib_util.module_from_spec(augment_spec)
+            _sys.modules[augment_spec.name] = augment_module
+            augment_spec.loader.exec_module(augment_module)
+            _sys.argv = ["augment_weighted_entropy", "--cohort", args.cohort]
+            augment_module.main()
+            return
         context = _context(args, environment)
         runner = PipelineRunner(config, context)
         if args.command == "stage":

@@ -16,13 +16,14 @@ import numpy as np
 import pandas as pd
 from core.plotting import save_figure as _save
 
-from .metrics import CORE_METRICS, METRICS
+from .metrics import CORE_METRICS, METRICS, WEIGHTED_METRIC
 
 
 METRIC_STYLE = {
     "entropy": ("Normalized permutation entropy (H)", "viridis"),
     "complexity": ("Statistical complexity (C)", "viridis"),
     "fisher_information": ("Fisher information (F)", "viridis"),
+    WEIGHTED_METRIC: ("Weighted permutation entropy", "viridis"),
     "renyi_entropy_alpha_0_1": ("Rényi entropy (Hα, α=0.1)", "viridis"),
     "renyi_complexity_alpha_0_1": ("Rényi complexity (Cα, α=0.1)", "viridis"),
     "renyi_entropy_alpha_0_5": ("Rényi entropy (Hα, α=0.5)", "viridis"),
