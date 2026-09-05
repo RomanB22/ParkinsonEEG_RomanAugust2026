@@ -20,6 +20,7 @@ from analyses.ordinal.plots import (
     metric_color_limits,
     plot_group_band_topomaps,
     plot_group_topomaps,
+    plot_subject_average_violins,
 )
 
 
@@ -132,6 +133,34 @@ def augment_ordinal(root: Path) -> None:
         metric_set_label="weighted permutation entropy",
         filename_suffix="weighted_permutation_entropy_group_topomap",
     )
+    colors = config["plots"].get("group_colors", {group: "C0" for group in groups})
+    subject_table = (
+        electrode_table.groupby(["subject_id", "group"], as_index=False)[METRIC]
+        .mean()
+    )
+    plot_subject_average_violins(
+        subject_table,
+        groups,
+        colors,
+        figure_dir / "broadband_subject_mean_violin.png",
+        int(config["plots"].get("dpi", 150)),
+        analysis_label="Weighted permutation entropy",
+        metrics=(METRIC,),
+    )
+    band_subject_table = (
+        band_table.groupby(["subject_id", "group", "band"], as_index=False)[METRIC]
+        .mean()
+    )
+    for band in band_order:
+        plot_subject_average_violins(
+            band_subject_table.loc[band_subject_table["band"].eq(band)],
+            groups,
+            colors,
+            figure_dir / "bands" / f"{band}_subject_mean_violin.png",
+            int(config["plots"].get("dpi", 150)),
+            analysis_label=f"Weighted permutation entropy — {band}",
+            metrics=(METRIC,),
+        )
 
 
 def augment_bouts(root: Path) -> None:
@@ -182,6 +211,16 @@ def augment_bouts(root: Path) -> None:
         for row in electrode_table.itertuples(index=False)
     ]
     _write(electrode_table, electrode_path)
+    subject_path = metrics_dir / "subject_band_metrics.csv"
+    subject_table = pd.read_csv(subject_path)
+    subject_table[METRIC] = [
+        electrode_table.loc[
+            (electrode_table["subject_id"].astype(str) == str(row.subject_id))
+            & (electrode_table["band"] == row.band), METRIC
+        ].mean()
+        for row in subject_table.itertuples(index=False)
+    ]
+    _write(subject_table, subject_path)
     for path in sorted((root / "intermediate" / "bout_metrics").glob("*_bout_ordinal_metrics.csv.gz")):
         subject = path.name.split("_bout_ordinal_metrics", 1)[0]
         table = pd.read_csv(path)
@@ -221,6 +260,16 @@ def augment_bouts(root: Path) -> None:
         metrics=(METRIC,),
         metric_set_label="weighted permutation entropy within bouts",
         filename_suffix="weighted_permutation_entropy_group_topomap",
+    )
+    colors = config["plots"].get("group_colors", {group: "C0" for group in groups})
+    plot_subject_average_violins(
+        subject_table,
+        groups,
+        colors,
+        figure_dir / "subject_mean_violin.png",
+        int(config["plots"].get("dpi", 150)),
+        analysis_label="Weighted permutation entropy within bouts",
+        metrics=(METRIC,),
     )
 
 

@@ -167,10 +167,11 @@ def plot_subject_average_violins(
     path: Path,
     dpi: int,
     analysis_label: str | None = None,
+    metrics: tuple[str, ...] = METRICS,
 ) -> None:
     """Plot subject-level means across electrode metrics."""
     columns = 3
-    rows = math.ceil(len(METRICS) / columns)
+    rows = math.ceil(len(metrics) / columns)
     fig, axes = plt.subplots(
         rows,
         columns,
@@ -178,7 +179,7 @@ def plot_subject_average_violins(
         squeeze=False,
     )
     positions = np.arange(len(group_order), dtype=float)
-    for axis, metric in zip(axes.flat, METRICS):
+    for axis, metric in zip(axes.flat, metrics):
         label, _ = METRIC_STYLE[metric]
         for position, group in zip(positions, group_order):
             values = table.loc[table["group"].eq(group), metric].to_numpy(dtype=float)
@@ -196,7 +197,7 @@ def plot_subject_average_violins(
         axis.set(ylabel=label, title=label)
         axis.set_ylim(_limits(table[metric].to_numpy(), lower_zero=True))
         axis.grid(axis="y", alpha=0.2)
-    for axis in axes.flat[len(METRICS) :]:
+    for axis in axes.flat[len(metrics) :]:
         axis.axis("off")
     title = "Subject means across shared electrode-level ordinal metrics"
     if analysis_label:
