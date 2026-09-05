@@ -35,7 +35,9 @@ from core.analysis_io import discover_epoch_files
 from core.dataset import ordered_channel_inventory
 
 
-CORE_ORDINAL_METRICS = ("entropy", "complexity", "fisher_information")
+CORE_ORDINAL_METRICS = (
+    "entropy", "weighted_permutation_entropy", "complexity", "fisher_information"
+)
 APERIODIC_METRICS = (
     "aperiodic_offset",
     "aperiodic_exponent",

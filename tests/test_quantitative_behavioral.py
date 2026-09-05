@@ -37,7 +37,7 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         self.assertEqual(config["analysis"]["covariates"], ["AGE", "GENDER"])
         self.assertEqual(
             config["features"]["ordinal_metrics"],
-            ["entropy", "complexity", "fisher_information"],
+            ["entropy", "weighted_permutation_entropy", "complexity", "fisher_information"],
         )
         self.assertEqual(config["expected"]["shared_electrodes"], 60)
         self.assertEqual(
@@ -201,14 +201,14 @@ class QuantitativeBehavioralTests(unittest.TestCase):
         cohort, features, dictionary = build_subject_features(config)
         self.assertEqual(len(cohort), 149)
         self.assertEqual(int(cohort["group"].eq("PD").sum()), 100)
-        self.assertEqual(len(dictionary), 52)
+        self.assertEqual(len(dictionary), 62)
         self.assertIn("aperiodic_exponent", set(dictionary["feature_id"]))
         self.assertIn("aperiodic_exponent_qc", set(dictionary["feature_id"]))
         self.assertFalse(dictionary["feature_id"].str.contains("renyi").any())
         self.assertFalse(dictionary["feature_id"].str.contains("broad_5_15").any())
         self.assertFalse(features.duplicated(["subject_id", "feature_id"]).any())
         pd_features = features.loc[features["group"].eq("PD")]
-        self.assertEqual(len(pd_features), 100 * 52)
+        self.assertEqual(len(pd_features), 100 * 62)
         self.assertTrue(
             pd_features.loc[
                 pd_features["feature_id"].ne("aperiodic_exponent_qc"), "value"

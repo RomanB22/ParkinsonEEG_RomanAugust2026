@@ -64,7 +64,7 @@
   },
   "within_bout_ordinal": {
     "enabled": true,
-    "metrics": ["entropy", "complexity", "fisher_information"],
+    "metrics": ["entropy", "weighted_permutation_entropy", "complexity", "fisher_information"],
     "pooling": "pool_pattern_counts_without_crossing_bout_or_epoch_boundaries"
   },
   "typical_bouts": {

@@ -78,11 +78,12 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     within_bout = config["within_bout_ordinal"]
     if within_bout.get("metrics") != [
         "entropy",
+        "weighted_permutation_entropy",
         "complexity",
         "fisher_information",
     ]:
         raise ValueError(
-            "within_bout_ordinal.metrics must preserve entropy, complexity, "
+            "within_bout_ordinal.metrics must preserve entropy, weighted entropy, complexity, "
             "and fisher_information"
         )
     if within_bout.get("pooling") != (

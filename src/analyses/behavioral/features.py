@@ -14,6 +14,7 @@ from core.cognitive_status import classify_moca
 
 METRIC_LABELS = {
     "entropy": "Permutation entropy H",
+    "weighted_permutation_entropy": "Weighted permutation entropy H",
     "complexity": "Statistical complexity C",
     "fisher_information": "Fisher information F",
     "renyi_entropy_alpha_0_1": "Rényi entropy Hα (α=0.1)",
@@ -41,6 +42,7 @@ METRIC_LABELS = {
 
 METRIC_UNITS = {
     "entropy": "normalized",
+    "weighted_permutation_entropy": "normalized",
     "complexity": "normalized",
     "fisher_information": "normalized",
     "renyi_entropy_alpha_0_1": "normalized",

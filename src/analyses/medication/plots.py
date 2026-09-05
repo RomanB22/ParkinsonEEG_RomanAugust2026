@@ -38,6 +38,12 @@ FOCUSED_BOUT_MMSE_FEATURES = (
     (
         "within_bout_ordinal",
         "theta",
+        "weighted_permutation_entropy",
+        "Theta within-bout\nweighted permutation entropy (H)",
+    ),
+    (
+        "within_bout_ordinal",
+        "theta",
         "complexity",
         "Theta within-bout\nstatistical complexity (C)",
     ),
@@ -53,6 +59,7 @@ FOCUSED_BOUT_MMSE_FEATURES = (
 )
 FOCUSED_DELTA_UPDRS_FEATURES = (
     ("ordinal", "delta", "entropy", "Delta permutation entropy (H)"),
+    ("ordinal", "delta", "weighted_permutation_entropy", "Delta weighted permutation entropy (H)"),
     ("ordinal", "delta", "complexity", "Delta statistical complexity (C)"),
     ("ordinal", "delta", "fisher_information", "Delta Fisher information (F)"),
 )

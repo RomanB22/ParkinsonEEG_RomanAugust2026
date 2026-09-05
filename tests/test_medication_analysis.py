@@ -103,7 +103,7 @@ class MedicationDatasetTests(unittest.TestCase):
         self.assertTrue(config["within_bout_ordinal"]["enabled"])
         self.assertEqual(
             config["within_bout_ordinal"]["metrics"],
-            ["entropy", "complexity", "fisher_information"],
+            ["entropy", "weighted_permutation_entropy", "complexity", "fisher_information"],
         )
         self.assertEqual(config["typical_bouts"]["center_window_seconds"], 0.5)
         self.assertEqual(
@@ -285,7 +285,7 @@ class MedicationStatisticsTests(unittest.TestCase):
             {"family": "bouts", "band": "gamma", "metric": "bouts_per_minute"}
         )
         selected = select_focused_bout_mmse_rows(pd.DataFrame.from_records(rows))
-        self.assertEqual(len(selected), 6)
+        self.assertEqual(len(selected), 7)
         self.assertEqual(
             set(map(tuple, selected[["family", "band", "metric"]].to_numpy())),
             {
@@ -303,7 +303,7 @@ class MedicationStatisticsTests(unittest.TestCase):
         selected = select_focused_delta_updrs_rows(
             pd.DataFrame.from_records(rows)
         )
-        self.assertEqual(len(selected), 3)
+        self.assertEqual(len(selected), 4)
 
 
 class MedicationComparisonFigureTests(unittest.TestCase):
