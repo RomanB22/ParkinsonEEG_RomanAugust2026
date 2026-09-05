@@ -230,22 +230,61 @@ def weighted_permutation_entropy_epoch_data(
         raise ValueError("Each epoch must contain at least one embedding window")
     if not np.all(np.isfinite(data)):
         raise ValueError("Weighted permutation entropy requires finite epoch samples")
-    values = [
-        float(
-            ordpy.weighted_permutation_entropy(
-                epoch,
-                dx=int(dx),
-                taux=int(tau),
-                tie_precision=tie_precision,
-            )
-        )
-        for epoch in data
-    ]
-    weights = np.full(len(values), data.shape[1] - span, dtype=float)
-    result = float(np.average(values, weights=weights))
+    # This is the vectorized equivalent of ordpy's implementation: each
+    # ordinal window receives its within-window variance as weight, and those
+    # weights are pooled by permutation state. It avoids thousands of slow
+    # Python-level ordpy calls while retaining ordpy's definition exactly.
+    lookup, powers = _permutation_code_lookup(int(dx))
+    ranked_data = data if tie_precision is None else np.round(data, tie_precision)
+    windows = np.lib.stride_tricks.sliding_window_view(
+        ranked_data, span + 1, axis=1
+    )[..., ::tau]
+    symbols = np.argsort(windows, axis=-1)
+    window_weights = windows.var(axis=-1)
+    permutation_indices = lookup[symbols @ powers]
+    epoch_indices = np.broadcast_to(
+        np.arange(data.shape[0])[:, None], permutation_indices.shape
+    )
+    state_indices = epoch_indices * math.factorial(int(dx)) + permutation_indices
+    weighted_counts = np.bincount(
+        state_indices.reshape(-1),
+        weights=window_weights.reshape(-1),
+        minlength=data.shape[0] * math.factorial(int(dx)),
+    ).reshape(data.shape[0], math.factorial(int(dx)))
+    totals = weighted_counts.sum(axis=1)
+    probabilities = np.divide(
+        weighted_counts,
+        totals[:, None],
+        out=np.zeros_like(weighted_counts),
+        where=totals[:, None] > 0.0,
+    )
+    with np.errstate(divide="ignore", invalid="ignore"):
+        epoch_values = -np.sum(
+            np.where(probabilities > 0.0, probabilities * np.log(probabilities), 0.0),
+            axis=1,
+        ) / np.log(math.factorial(int(dx)))
+    epoch_values = np.where(totals > 0.0, epoch_values, 0.0)
+    result = float(np.mean(epoch_values))
     if not np.isfinite(result):
         raise RuntimeError("ordpy returned a non-finite weighted permutation entropy")
     return result
+
+
+def weighted_permutation_entropy_channels(
+    data: np.ndarray, *, dx: int, tau: int, tie_precision: int | None = None
+) -> np.ndarray:
+    """Vectorized weighted entropy for ``(epochs, channels, samples)`` data."""
+    values = np.asarray(data, dtype=np.float64)
+    if values.ndim != 3:
+        raise ValueError("data must have shape (epochs, channels, samples)")
+    result = []
+    for channel in range(values.shape[1]):
+        result.append(
+            weighted_permutation_entropy_epoch_data(
+                values[:, channel, :], dx=dx, tau=tau, tie_precision=tie_precision
+            )
+        )
+    return np.asarray(result, dtype=float)
 
 
 def analyze_epoch_data(

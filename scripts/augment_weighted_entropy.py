@@ -13,6 +13,7 @@ import pandas as pd
 from analyses.bouts.metrics import analyze_bout_segments
 from analyses.ordinal.metrics import (
     filter_epoch_data,
+    weighted_permutation_entropy_channels,
     weighted_permutation_entropy_epoch_data,
 )
 from analyses.ordinal.plots import (
@@ -60,20 +61,26 @@ def augment_ordinal(root: Path) -> None:
             common_info = mne.pick_info(epochs.info, picks, copy=True)
             common_info["bads"] = []
         sfreq = float(epochs.info["sfreq"])
-        for index, electrode in enumerate(electrodes):
-            broadband_values[(subject, electrode)] = weighted_permutation_entropy_epoch_data(
-                data[:, index, :], dx=dx, tau=tau, tie_precision=None
+        filtered_by_band = {
+            band: filter_epoch_data(
+                data,
+                sfreq=sfreq,
+                low_hz=float(limits[0]),
+                high_hz=float(limits[1]),
+                order=int(config["band_filter"]["order"]),
             )
-            for band, limits in config["bands"].items():
-                filtered = filter_epoch_data(
-                    data[:, index : index + 1, :],
-                    sfreq=sfreq,
-                    low_hz=float(limits[0]),
-                    high_hz=float(limits[1]),
-                    order=int(config["band_filter"]["order"]),
-                )
-                band_values[(subject, band, electrode)] = weighted_permutation_entropy_epoch_data(
-                    filtered[:, 0, :], dx=dx, tau=tau, tie_precision=None
+            for band, limits in config["bands"].items()
+        }
+        broadband = weighted_permutation_entropy_channels(
+            data, dx=dx, tau=tau, tie_precision=None
+        )
+        for index, electrode in enumerate(electrodes):
+            broadband_values[(subject, electrode)] = float(broadband[index])
+            for band in config["bands"]:
+                band_values[(subject, band, electrode)] = float(
+                    weighted_permutation_entropy_channels(
+                        filtered_by_band[band], dx=dx, tau=tau, tie_precision=None
+                    )[index]
                 )
 
     electrode_table[METRIC] = [
