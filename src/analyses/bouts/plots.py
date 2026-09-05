@@ -23,11 +23,13 @@ METRIC_LABELS = {
     "entropy": "Permutation entropy (H)",
     "complexity": "Statistical complexity (C)",
     "fisher_information": "Fisher information (F)",
+    "weighted_permutation_entropy": "Weighted permutation entropy",
 }
 METRIC_CMAPS = {
     "entropy": "viridis",
     "complexity": "viridis",
     "fisher_information": "viridis",
+    "weighted_permutation_entropy": "viridis",
 }
 
 
@@ -309,7 +311,8 @@ def plot_subject_metric_violins(
     dpi: int,
 ) -> None:
     """Compare one electrode-averaged value per subject, group, band, and metric."""
-    fig, axes = plt.subplots(1, 3, figsize=(16, 5.5))
+    fig, axes = plt.subplots(1, len(METRICS), figsize=(5.5 * len(METRICS), 5.5), squeeze=False)
+    axes = axes[0]
     positions = np.arange(len(band_order), dtype=float)
     offsets = np.linspace(-0.17, 0.17, max(1, len(group_order)))
     for axis, metric in zip(axes, METRICS):
