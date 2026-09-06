@@ -98,9 +98,16 @@ tables.
 - [Detailed preprocessing parameters](docs/pipeline_parameters.md)
 - [Group statistics](docs/group_statistics.md)
 - [Analysis methods](docs/analyses/README.md)
+- [Global multi-dataset pipeline](docs/global_pipeline.md)
 
 Original files under `dataset/` are read-only inputs. Generated full-cohort and
 matched results live under `outputs/` and are ignored by Git.
+
+For one standardized input contract across four studies, configure
+[`config/global_pipeline.json`](config/global_pipeline.json) and run
+`bash run_global_pipeline.sh`. It streams cleaned epochs in small blocks and
+produces PSD/topomaps, electrode statistics, the four requested entropy
+quantities, bouts, within-bout entropy, and UPDRS/cognitive correlations.
 
 ## Both datasets through one pipeline
 
