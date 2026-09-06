@@ -72,6 +72,12 @@ def _raw_lookup(dataset: DatasetConfig) -> dict[str, Path]:
 
 
 def convert_dataset(dataset: DatasetConfig) -> list[CanonicalRecording]:
+    if not dataset.epochs_dir.exists():
+        raise FileNotFoundError(
+            f"Dataset {dataset.dataset_id!r}: epochs directory does not exist: "
+            f"{dataset.epochs_dir}. Set enabled=false for unused templates, "
+            "or add preprocessing_config and run with --preprocess."
+        )
     epoch_paths = sorted(dataset.epochs_dir.glob(dataset.epoch_glob))
     if not epoch_paths:
         raise FileNotFoundError(

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 
 from .converter import convert_config
+from .preprocess import run_preprocessing
 from .schema import load_global_config
 
 
@@ -13,10 +14,39 @@ def main() -> None:
     parser.add_argument("--config", default="config/global_pipeline.json")
     parser.add_argument("--datasets", nargs="+", help="Dataset ids to analyze; defaults to every enabled dataset")
     parser.add_argument("--convert-only", action="store_true")
+    parser.add_argument(
+        "--analysis-only",
+        action="store_true",
+        help="Reuse existing cleaned epochs and skip raw-signal preprocessing",
+    )
     parser.add_argument("--skip-figures", action="store_true")
     parser.add_argument("--overwrite", action="store_true")
+    parser.add_argument(
+        "--preprocess",
+        action="store_true",
+        help="Explicit compatibility flag; preprocessing is the default",
+    )
+    parser.add_argument("--preprocessing-workers", type=int, default=1)
+    review = parser.add_mutually_exclusive_group()
+    review.add_argument("--skip-manual-ica-review", action="store_true")
+    review.add_argument("--allow-unreviewed", action="store_true")
+    parser.add_argument("--no-progress", action="store_true")
     args = parser.parse_args()
     config = load_global_config(args.config)
+    if args.convert_only and args.analysis_only:
+        parser.error("--convert-only and --analysis-only are mutually exclusive")
+    if args.preprocess and args.analysis_only:
+        parser.error("--preprocess and --analysis-only are mutually exclusive")
+    if not args.analysis_only and not args.convert_only:
+        run_preprocessing(
+            config,
+            dataset_ids=args.datasets,
+            workers=args.preprocessing_workers,
+            overwrite=args.overwrite,
+            skip_manual_ica_review=args.skip_manual_ica_review,
+            allow_unreviewed=args.allow_unreviewed,
+            no_progress=args.no_progress,
+        )
     if args.convert_only:
         table = convert_config(config, dataset_ids=args.datasets)
         print(f"Converted {len(table)} recordings to {config.output_root / 'canonical'}")

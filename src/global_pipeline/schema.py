@@ -104,6 +104,7 @@ class DatasetConfig:
     epochs_dir: Path
     epoch_glob: str
     raw_glob: str | None = None
+    preprocessing_config: Path | None = None
     enabled: bool = True
     columns: dict[str, str] = field(default_factory=dict)
 
@@ -123,6 +124,7 @@ class DatasetConfig:
 
         epochs_dir = resolve(value.get("epochs_dir", "processed/epochs"))
         metadata = resolve(value.get("metadata"), allow_none=True)
+        preprocessing_config = resolve(value.get("preprocessing_config"), allow_none=True)
         return cls(
             dataset_id=dataset_id,
             root=resolve(value.get("root", ".")),
@@ -130,6 +132,7 @@ class DatasetConfig:
             epochs_dir=epochs_dir,
             epoch_glob=str(value.get("epoch_glob", "sub-*_task-rest_desc-cleaned_epo.fif")),
             raw_glob=(str(value["raw_glob"]) if value.get("raw_glob") else None),
+            preprocessing_config=preprocessing_config,
             enabled=bool(value.get("enabled", True)),
             columns={str(key): str(item) for key, item in value.get("columns", {}).items()},
         )

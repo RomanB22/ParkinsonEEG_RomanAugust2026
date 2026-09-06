@@ -17,6 +17,7 @@ from typing import Any
 import mne
 import numpy as np
 import pandas as pd
+import xarray as xr
 from scipy.signal import hilbert, welch
 from scipy.stats import mannwhitneyu, pearsonr, rankdata, spearmanr, ttest_ind
 
@@ -44,13 +45,29 @@ def _write_table(table: pd.DataFrame, path: Path) -> None:
     table.to_csv(path, index=False, compression="gzip", float_format="%.10g")
 
 
-def _epoch_data(epochs: mne.BaseEpochs, start: int, stop: int, picks: list[int]) -> np.ndarray:
+def _epoch_data(
+    epochs: mne.BaseEpochs,
+    start: int,
+    stop: int,
+    picks: list[int],
+    channel_names: list[str],
+) -> xr.DataArray:
     """Read one block and downcast it immediately to reduce peak memory."""
     try:
         data = epochs.get_data(picks=picks, item=slice(start, stop), copy=True)
     except TypeError:  # Compatibility with older MNE releases.
         data = epochs[start:stop].get_data(picks=picks, copy=True)
-    return np.asarray(data, dtype=np.float32)
+    values = np.asarray(data, dtype=np.float32)
+    return xr.DataArray(
+        values,
+        dims=("epoch", "channel", "time"),
+        coords={
+            "epoch": np.arange(start, stop, dtype=np.int64),
+            "channel": channel_names,
+            "time": np.arange(values.shape[-1], dtype=np.int64) / float(epochs.info["sfreq"]),
+        },
+        name="eeg",
+    )
 
 
 def _runs(mask: np.ndarray, minimum_samples: int) -> list[tuple[int, int]]:
@@ -113,13 +130,13 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
 
     for start in range(0, n_epochs, config.block_epochs):
         stop = min(start + config.block_epochs, n_epochs)
-        block = _epoch_data(epochs, start, stop, eeg_picks)
-        block_n = block.shape[0]
-        block_psd, current_frequencies = welch(
-            block,
+        block = _epoch_data(epochs, start, stop, eeg_picks, channels)
+        block_n = block.sizes["epoch"]
+        current_frequencies, block_psd = welch(
+            block.data,
             fs=sfreq,
             window="hann",
-            nperseg=min(block.shape[-1], max(8, int(round(2.0 * sfreq)))),
+            nperseg=min(block.sizes["time"], max(8, int(round(2.0 * sfreq)))),
             axis=-1,
             detrend="constant",
         )
@@ -128,12 +145,22 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
             psd_sum = np.zeros((len(channels), len(frequencies)), dtype=np.float64)
         elif not np.allclose(frequencies, current_frequencies):
             raise RuntimeError(f"{path}: PSD frequency grid changed between blocks")
-        psd_sum += np.asarray(block_psd, dtype=np.float64).sum(axis=0)
+        psd_da = xr.DataArray(
+            np.asarray(block_psd, dtype=np.float32),
+            dims=("epoch", "channel", "frequency"),
+            coords={
+                "epoch": block.coords["epoch"],
+                "channel": channels,
+                "frequency": frequencies,
+            },
+            name="welch_psd",
+        )
+        psd_sum += psd_da.sum(dim="epoch").astype(np.float64).data
         psd_count += block_n
 
         for band, (low, high) in config.bands.items():
             filtered = filter_epoch_data(
-                block.astype(np.float64, copy=False),
+                block.data.astype(np.float64, copy=False),
                 sfreq=sfreq,
                 low_hz=low,
                 high_hz=high,

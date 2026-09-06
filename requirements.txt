@@ -2,6 +2,7 @@
 mne==1.12.1
 numpy==2.5.2
 pandas==3.0.5
+xarray>=2024.10.0
 matplotlib==3.11.1
 
 # Workflow-specific dependencies.

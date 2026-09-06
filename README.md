@@ -105,9 +105,11 @@ matched results live under `outputs/` and are ignored by Git.
 
 For one standardized input contract across four studies, configure
 [`config/global_pipeline.json`](config/global_pipeline.json) and run
-`bash run_global_pipeline.sh`. It streams cleaned epochs in small blocks and
-produces PSD/topomaps, electrode statistics, the four requested entropy
-quantities, bouts, within-bout entropy, and UPDRS/cognitive correlations.
+`bash run_global_pipeline.sh`. It preprocesses every enabled dataset from raw
+EEG, then streams labeled xarray epoch blocks for PSD/topomaps, electrode
+statistics, the four requested entropy quantities, bouts, within-bout entropy,
+and UPDRS/cognitive correlations. Use `--analysis-only` to reuse current
+cleaned epochs.
 
 ## Both datasets through one pipeline
 

@@ -51,13 +51,13 @@ def discover_recordings(dataset_dir: str | Path, task: str = "Rest") -> list[Pat
     paths = sorted(
         {
             path
-            for suffix in ("set", "bdf")
+            for suffix in ("set", "bdf", "vhdr", "edf")
             for path in root.glob(f"sub-*/**/*_task-{task}_eeg.{suffix}")
         }
     )
     if not paths:
         raise FileNotFoundError(
-            f"No supported task-{task} .set/.bdf EEG files found under {dataset_dir}"
+            f"No supported task-{task} .set/.bdf/.vhdr/.edf EEG files found under {dataset_dir}"
         )
     return paths
 
@@ -117,6 +117,10 @@ def load_subject(set_path: str | Path, auxiliary_names: list[str] | None = None)
         raw = mne.io.read_raw_eeglab(set_path, preload=True, verbose="ERROR")
     elif set_path.suffix.lower() == ".bdf":
         raw = mne.io.read_raw_bdf(set_path, preload=True, verbose="ERROR")
+    elif set_path.suffix.lower() == ".vhdr":
+        raw = mne.io.read_raw_brainvision(set_path, preload=True, verbose="ERROR")
+    elif set_path.suffix.lower() == ".edf":
+        raw = mne.io.read_raw_edf(set_path, preload=True, verbose="ERROR")
     else:
         raise ValueError(f"Unsupported EEG source format: {set_path.suffix}")
 
