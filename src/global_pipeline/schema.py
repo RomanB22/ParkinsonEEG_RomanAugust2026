@@ -259,9 +259,13 @@ def read_canonical_table(path: str | Path) -> pd.DataFrame:
     missing = sorted(set(CANONICAL_COLUMNS) - set(table.columns))
     if missing:
         raise ValueError(f"Canonical recording table is missing columns: {missing}")
-    if table["recording_id"].duplicated().any():
-        duplicate = table.loc[table["recording_id"].duplicated(), "recording_id"].iloc[0]
-        raise ValueError(f"Duplicate canonical recording_id: {duplicate}")
+    key_columns = ["dataset_id", "recording_id"]
+    if table.duplicated(key_columns).any():
+        duplicate = table.loc[table.duplicated(key_columns), key_columns].iloc[0].to_dict()
+        raise ValueError(
+            "Duplicate canonical recording key: "
+            f"{duplicate['dataset_id']}/{duplicate['recording_id']}"
+        )
     if table.empty:
         raise ValueError(f"Canonical recording table is empty: {path}")
     return table

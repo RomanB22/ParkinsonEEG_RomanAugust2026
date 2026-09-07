@@ -92,6 +92,7 @@ Outputs are written under `outputs/global/`:
 canonical/<dataset>/recordings.csv.gz
 metrics/recording_features.csv.gz
 metrics/subject_features.csv.gz
+metrics/analysis_exclusions.csv.gz
 statistics/group_statistics.csv.gz
 statistics/clinical_correlations.csv.gz
 figures/<dataset>/*_topomaps.png

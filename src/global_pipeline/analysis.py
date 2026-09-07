@@ -849,8 +849,23 @@ def run_global_pipeline(
     recording_tables: list[pd.DataFrame] = []
     diagnostics: list[dict[str, Any]] = []
     spectra: list[dict[str, Any]] = []
+    analysis_exclusions: list[dict[str, Any]] = []
     for record in canonical.to_dict(orient="records"):
-        features, info = _analyze_recording(record, config)
+        try:
+            features, info = _analyze_recording(record, config)
+        except ValueError as error:
+            if "no accepted epochs" not in str(error):
+                raise
+            analysis_exclusions.append(
+                {
+                    "dataset_id": record["dataset_id"],
+                    "recording_id": record["recording_id"],
+                    "participant_id": record["participant_id"],
+                    "epoch_path": record["epoch_path"],
+                    "reason": str(error),
+                }
+            )
+            continue
         recording_tables.append(features)
         spectra.append({
             "dataset_id": record["dataset_id"],
@@ -861,8 +876,15 @@ def run_global_pipeline(
             "mean_psd": info["mean_psd"],
         })
         diagnostics.append({"recording_id": record["recording_id"], "n_channels": len(info["channels"]), "sampling_frequency_hz": info["sfreq"]})
+    if not recording_tables:
+        raise RuntimeError("No recordings with accepted epochs were available for analysis")
     feature_table = pd.concat(recording_tables, ignore_index=True)
     _write_table(feature_table, output / "metrics" / "recording_features.csv.gz")
+    if analysis_exclusions:
+        _write_table(
+            pd.DataFrame.from_records(analysis_exclusions),
+            output / "metrics" / "analysis_exclusions.csv.gz",
+        )
     subject_features = feature_table.groupby(["dataset_id", "participant_id", "group"], dropna=False).mean(numeric_only=True).reset_index()
     _write_table(subject_features, output / "metrics" / "subject_features.csv.gz")
     stats = group_statistics(feature_table, config)
@@ -950,8 +972,11 @@ def run_global_pipeline(
         "output_root": str(output),
         "n_datasets": int(canonical["dataset_id"].nunique()),
         "n_recordings": int(len(canonical)),
+        "n_analyzed_recordings": int(len(recording_tables)),
+        "n_excluded_recordings": int(len(analysis_exclusions)),
         "n_subjects": int(canonical["participant_id"].nunique()),
         "groups": canonical["group"].value_counts().to_dict(),
+        "analysis_exclusions": analysis_exclusions,
         "entropy_metrics": list(ENTROPY_METRICS),
         "memory_policy": "MNE epochs are read in block_epochs-sized blocks; raw samples are not saved in feature tables",
         "diagnostics": diagnostics,

@@ -87,6 +87,23 @@ class GlobalPipelineInputTests(unittest.TestCase):
             selected = convert_config(config, dataset_ids=["study_2"])
             self.assertEqual(set(selected["dataset_id"]), {"study_2"})
 
+    def test_canonical_table_allows_dataset_local_recording_ids_to_repeat(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "recordings.csv.gz"
+            rows = [
+                {column: "" for column in (
+                    "dataset_id", "recording_id", "participant_id", "session_id",
+                    "epoch_path", "raw_path", "group", "medication_state",
+                    "age_years", "sex", "updrs", "moca", "mmse",
+                )}
+                for _ in range(2)
+            ]
+            rows[0].update(dataset_id="study_a", recording_id="sub-001")
+            rows[1].update(dataset_id="study_b", recording_id="sub-001")
+            pd.DataFrame(rows).to_csv(path, index=False, compression="gzip")
+            table = read_canonical_table(path)
+            self.assertEqual(len(table), 2)
+
 
 if __name__ == "__main__":
     unittest.main()
