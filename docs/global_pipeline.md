@@ -166,12 +166,14 @@ selected recordings are available.
 The PSD figure shows the subject-level median PSD across available EEG
 electrodes with a pointwise 95% bootstrap confidence interval across
 recordings. This robust summary prevents a small number of high-power
-recordings from dominating the figure. Population topomap panels use
-shared color limits for each feature, and each panel title identifies the
-group, family, band, and metric (including the embedding dimension where
-applicable). Contrast topomaps show `group_b - group_a` on a symmetric scale
-centered at zero; white electrode markers
-indicate Welch-test electrodes surviving the BH-FDR threshold. Clinical
+recordings from dominating the figure. Population topomap panels are arranged
+vertically by feature (one feature per row, groups across columns), use shared
+color limits for each feature, and identify the group, family, band, and metric
+(including the embedding dimension where applicable). Contrast topomaps use
+the same vertical layout and show `group_b - group_a` on a symmetric scale
+centered at zero; white electrode markers identify electrodes whose Welch-test
+p-values survive the BH-FDR threshold, which is stated in the figure title.
+Clinical
 scatter plots use one point per participant and condition, restricted to
 PD-labeled groups, and are created only when the corresponding clinical
 values are available. Their annotations are unadjusted Spearman associations;
@@ -183,7 +185,10 @@ Subject violin plots first average all available electrode rows for each
 participant and group/condition. They therefore show one biological
 observation per participant/condition rather than one observation per
 electrode. Entropy and within-bout entropy violins use the configured primary
-embedding dimension; all other configured metrics are included.
+embedding dimension; all other configured metrics are included. Each violin
+panel annotates pairwise Welch tests on the subject-level electrode averages,
+showing both the raw p-value and the BH-FDR-adjusted q-value. Comparisons are
+called significant only when q < 0.05 (or the configured FDR threshold).
 
 `average_detected_bouts.png` shows the legacy-style subject-balanced average
 around the midpoint of each detected eBOSC bout: baseline-subtracted Hilbert

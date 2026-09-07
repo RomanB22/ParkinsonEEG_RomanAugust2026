@@ -962,19 +962,21 @@ def _topomap(
         feature: _stable_limits(np.concatenate(group_values))
         for feature, group_values in maps.items()
     }
+    # Put one feature per row so that the metric being compared is easy to
+    # follow, especially when a family contains many bands or dimensions.
     fig, axes = plt.subplots(
-        len(groups),
         len(feature_columns),
-        figsize=(3.4 * len(feature_columns), 3.2 * len(groups)),
+        len(groups),
+        figsize=(3.4 * len(groups), 3.2 * len(feature_columns)),
         squeeze=False,
         constrained_layout=True,
     )
     images = {}
     info = mne.create_info(channels, sfreq=100.0, ch_types="eeg")
     info.set_montage(montage, on_missing="ignore", verbose="ERROR")
-    for row_index, group in enumerate(groups):
-        for column_index, feature in enumerate(feature_columns):
-            values = maps[feature][row_index]
+    for row_index, feature in enumerate(feature_columns):
+        for column_index, group in enumerate(groups):
+            values = maps[feature][column_index]
             valid = np.isfinite(values)
             if valid.sum() < 3:
                 axes[row_index, column_index].axis("off")
@@ -993,9 +995,9 @@ def _topomap(
                 f"{group}\n{_feature_label(feature)}",
                 fontsize=8,
             )
-    for column_index, feature in enumerate(feature_columns):
+    for row_index, feature in enumerate(feature_columns):
         if feature in images:
-            fig.colorbar(images[feature], ax=axes[:, column_index].tolist(), shrink=0.75)
+            fig.colorbar(images[feature], ax=axes[row_index, :].tolist(), shrink=0.75)
     fig.suptitle(
         f"{dataset_id}: {domain.replace('_', ' ').title()} topomaps",
         fontsize=13,
@@ -1044,9 +1046,9 @@ def _contrast_topomap(
         & statistics["group_b"].eq(group_b)
     ]
     fig, axes = plt.subplots(
-        1,
         len(feature_columns),
-        figsize=(3.4 * len(feature_columns), 3.5),
+        1,
+        figsize=(4.8, 3.5 * len(feature_columns)),
         squeeze=False,
         constrained_layout=True,
     )
@@ -1058,7 +1060,8 @@ def _contrast_topomap(
         "linewidth": 0,
         "markersize": 4,
     }
-    for column_index, feature in enumerate(feature_columns):
+    significant_count = 0
+    for row_index, feature in enumerate(feature_columns):
         values_a = _feature_map(selected, group_a, feature, channels)
         values_b = _feature_map(selected, group_b, feature, channels)
         differences = values_b - values_a
@@ -1070,12 +1073,12 @@ def _contrast_topomap(
         mask = np.isfinite(p_values) & (p_values <= config.fdr_alpha) & np.isfinite(differences)
         valid = np.isfinite(differences)
         if valid.sum() < 3:
-            axes[0, column_index].axis("off")
+            axes[row_index, 0].axis("off")
             continue
         image, _ = mne.viz.plot_topomap(
             differences,
             info,
-            axes=axes[0, column_index],
+            axes=axes[row_index, 0],
             show=False,
             contours=0,
             names=None,
@@ -1085,13 +1088,16 @@ def _contrast_topomap(
             mask_params=mask_params,
         )
         images[feature] = image
-        axes[0, column_index].set_title(_feature_label(feature), fontsize=8)
-    for column_index, feature in enumerate(feature_columns):
+        significant_count += int(mask.sum())
+        axes[row_index, 0].set_title(_feature_label(feature), fontsize=9)
+    for row_index, feature in enumerate(feature_columns):
         if feature in images:
-            fig.colorbar(images[feature], ax=axes[0, column_index], shrink=0.75)
+            fig.colorbar(images[feature], ax=axes[row_index, 0], shrink=0.75)
     fig.suptitle(
         f"{dataset_id}: {group_b} − {group_a} — "
-        f"{feature_template.rstrip('_').replace('_', ' ').title()} topomaps",
+        f"{feature_template.rstrip('_').replace('_', ' ').title()} topomaps\n"
+        f"white dots = Welch BH-FDR p < {config.fdr_alpha:g} "
+        f"({significant_count} significant electrode-feature maps)",
         fontsize=13,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -1438,9 +1444,34 @@ def _plot_subject_violins(
         constrained_layout=True,
     )
     positions = np.arange(1, len(groups) + 1, dtype=float)
+    pairwise_p: dict[tuple[str, str, str], float] = {}
+    for feature in feature_columns:
+        for left_index, left_group in enumerate(groups[:-1]):
+            left_values = subject.loc[
+                subject["group"].astype(str).eq(left_group), feature
+            ].to_numpy(dtype=float)
+            left_values = left_values[np.isfinite(left_values)]
+            for right_group in groups[left_index + 1:]:
+                right_values = subject.loc[
+                    subject["group"].astype(str).eq(right_group), feature
+                ].to_numpy(dtype=float)
+                right_values = right_values[np.isfinite(right_values)]
+                if left_values.size < 2 or right_values.size < 2:
+                    continue
+                test = ttest_ind(
+                    left_values,
+                    right_values,
+                    equal_var=False,
+                    nan_policy="omit",
+                )
+                if np.isfinite(test.pvalue):
+                    pairwise_p[(feature, left_group, right_group)] = float(test.pvalue)
+    pairwise_q = _bh(np.asarray(list(pairwise_p.values()), dtype=float))
+    pairwise_q = dict(zip(pairwise_p, pairwise_q))
     for feature_index, feature in enumerate(feature_columns):
         axis = axes.flat[feature_index]
         plotted = False
+        significant_pairs: list[str] = []
         for position, group in zip(positions, groups):
             values = subject.loc[
                 subject["group"].astype(str).eq(group), feature
@@ -1479,7 +1510,24 @@ def _plot_subject_violins(
             )
         if plotted:
             axis.set_xticks(positions, groups, rotation=25, ha="right")
-            axis.set_title(_feature_label(feature), fontsize=9)
+            # Correct all pairwise feature comparisons in this dataset/family
+            # together. The raw p-value and adjusted q-value are both shown,
+            # but only q < alpha is called significant.
+            for (tested_feature, left_group, right_group), raw_p in pairwise_p.items():
+                if tested_feature != feature:
+                    continue
+                q_value = pairwise_q[(tested_feature, left_group, right_group)]
+                if q_value < config.fdr_alpha:
+                    significant_pairs.append(
+                        f"{left_group} vs {right_group}: "
+                        f"p={raw_p:.3g}, q={q_value:.3g}"
+                    )
+            title = _feature_label(feature)
+            if significant_pairs:
+                title += "\n* Welch BH-FDR q<" + f"{config.fdr_alpha:g}: " + "; ".join(significant_pairs)
+            else:
+                title += f"\nno Welch BH-FDR q<{config.fdr_alpha:g}"
+            axis.set_title(title, fontsize=8)
             axis.grid(axis="y", alpha=0.2)
             axis.set_ylabel("Subject-average value")
         else:
@@ -1494,7 +1542,8 @@ def _plot_subject_violins(
     ]
     axes.flat[0].legend(handles=handles, frameon=False, fontsize=8)
     fig.suptitle(
-        f"{dataset_id}: subject-level {family.replace('_', ' ')} distributions"
+        f"{dataset_id}: subject-level {family.replace('_', ' ')} distributions\n"
+        "Each point is one participant/condition; annotations show raw Welch p and BH-FDR q"
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=150)
