@@ -23,6 +23,7 @@ import mne
 import numpy as np
 import pandas as pd
 import xarray as xr
+from scipy.signal import hilbert
 from scipy.stats import mannwhitneyu, rankdata, spearmanr, t as student_t, ttest_ind
 from tqdm.auto import tqdm
 
@@ -43,6 +44,7 @@ from analyses.scale_free.metrics import (
     power_thresholds,
     summarize_bouts,
 )
+from analyses.scale_free.typical_bouts import mean_centered_analytic
 
 from .converter import convert_config
 from .schema import CANONICAL_COLUMNS, GlobalConfig, load_global_config, read_canonical_table
@@ -186,6 +188,29 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
     )
     edge_samples = int(round(float(ebosc["edge_padding_seconds"]) * sfreq))
     data_uv = signal.data.astype(np.float64, copy=False) * 1e6
+    band_names = list(config.bands)
+    half_window_samples = int(
+        round(float(ebosc["figure_window_seconds"]) * sfreq)
+    )
+    n_bout_figure_samples = 2 * half_window_samples + 1
+    bout_representations = {
+        "times_seconds": np.arange(
+            -half_window_samples, half_window_samples + 1, dtype=float
+        ) / sfreq,
+        "waveforms": np.full(
+            (len(channels), len(band_names), n_bout_figure_samples), np.nan
+        ),
+        "phase_phasors": np.full(
+            (len(channels), len(band_names), n_bout_figure_samples), np.nan + 0j
+        ),
+        "phase_aligned_shapes": np.full(
+            (len(channels), len(band_names), n_bout_figure_samples), np.nan
+        ),
+        "bout_counts": np.zeros((len(channels), len(band_names)), dtype=np.int64),
+        "baseline_amplitude_uv": np.full(
+            (len(channels), len(band_names)), np.nan
+        ),
+    }
 
     for channel_index in range(len(channels)):
         # Keep filtering boundary-safe while retaining only one channel's
@@ -293,6 +318,26 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
                 }
             bout_state["n_bouts"] = int(bout_state["summary"].get("n_bouts", 0))
             if len(episodes):
+                band_index = band_names.index(band)
+                analytic = hilbert(channel_filtered, axis=-1)
+                amplitude = np.abs(analytic)
+                amplitude_interior = (
+                    amplitude
+                    if edge_samples == 0
+                    else amplitude[:, edge_samples:-edge_samples]
+                )
+                baseline = float(np.median(amplitude_interior))
+                if np.isfinite(baseline) and baseline > 0.0:
+                    waveform, phasor, shape, retained = mean_centered_analytic(
+                        analytic / baseline,
+                        episodes,
+                        half_window_samples=half_window_samples,
+                    )
+                    bout_representations["waveforms"][channel_index, band_index] = waveform
+                    bout_representations["phase_phasors"][channel_index, band_index] = phasor
+                    bout_representations["phase_aligned_shapes"][channel_index, band_index] = shape
+                    bout_representations["bout_counts"][channel_index, band_index] = retained
+                    bout_representations["baseline_amplitude_uv"][channel_index, band_index] = baseline
                 for dx in config.permutation_dimensions:
                     within = bout_state["within"][str(dx)]
                     pooled, pooled_summary, _, _ = analyze_bout_segments(
@@ -403,6 +448,7 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
         # Match the old PSD pipeline: one subject-level curve is the median
         # across that recording's available EEG electrodes.
         "subject_psd": np.median(electrode_psd, axis=0),
+        "bout_representations": bout_representations,
         "pattern_arrays": pattern_arrays,
     }
 
@@ -643,6 +689,25 @@ def _save_subject_cache(
     arrays = dict(info["pattern_arrays"])
     arrays["frequencies"] = np.asarray(info["frequencies"], dtype=np.float64)
     arrays["subject_psd"] = np.asarray(info["subject_psd"], dtype=np.float64)
+    bout_representations = info["bout_representations"]
+    arrays["bout_times_seconds"] = np.asarray(
+        bout_representations["times_seconds"], dtype=np.float64
+    )
+    arrays["bout_waveforms"] = np.asarray(
+        bout_representations["waveforms"], dtype=np.float64
+    )
+    arrays["bout_phase_phasors"] = np.asarray(
+        bout_representations["phase_phasors"], dtype=np.complex128
+    )
+    arrays["bout_phase_aligned_shapes"] = np.asarray(
+        bout_representations["phase_aligned_shapes"], dtype=np.float64
+    )
+    arrays["bout_counts"] = np.asarray(
+        bout_representations["bout_counts"], dtype=np.int64
+    )
+    arrays["bout_baseline_amplitude_uv"] = np.asarray(
+        bout_representations["baseline_amplitude_uv"], dtype=np.float64
+    )
 
     temporary: Path | None = None
     try:
@@ -719,17 +784,36 @@ def _load_subject_cache(
             required = [
                 "frequencies",
                 "subject_psd",
+                "bout_times_seconds",
+                "bout_waveforms",
+                "bout_phase_phasors",
+                "bout_phase_aligned_shapes",
+                "bout_counts",
+                "bout_baseline_amplitude_uv",
                 *[f"permutation_order__D{dx}" for dx in config.permutation_dimensions],
             ]
             if any(key not in bundle for key in required):
                 return None
             frequencies = np.asarray(bundle["frequencies"], dtype=float)
             subject_psd = np.asarray(bundle["subject_psd"], dtype=float)
+            bout_representations = {
+                "times_seconds": np.asarray(bundle["bout_times_seconds"], dtype=float),
+                "waveforms": np.asarray(bundle["bout_waveforms"], dtype=float),
+                "phase_phasors": np.asarray(bundle["bout_phase_phasors"], dtype=complex),
+                "phase_aligned_shapes": np.asarray(
+                    bundle["bout_phase_aligned_shapes"], dtype=float
+                ),
+                "bout_counts": np.asarray(bundle["bout_counts"], dtype=np.int64),
+                "baseline_amplitude_uv": np.asarray(
+                    bundle["bout_baseline_amplitude_uv"], dtype=float
+                ),
+            }
         return features, {
             "channels": list(metadata.get("channels", [])),
             "sfreq": float(metadata["sfreq"]),
             "frequencies": frequencies,
             "subject_psd": subject_psd,
+            "bout_representations": bout_representations,
             "cache_reused": True,
         }
     except (OSError, ValueError, KeyError, json.JSONDecodeError):
@@ -996,6 +1080,152 @@ def _plot_psd_spectra(
     axis.grid(True, alpha=0.25)
     axis.legend()
     fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=150)
+    plt.close(fig)
+
+
+def _plot_average_detected_bouts(
+    spectra: list[dict[str, Any]],
+    dataset_id: str,
+    config: GlobalConfig,
+    output: Path,
+) -> None:
+    """Plot subject-balanced average signals centered on detected eBOSC bouts."""
+    import matplotlib.pyplot as plt
+
+    selected = [item for item in spectra if item["dataset_id"] == dataset_id]
+    if not selected:
+        return
+    all_bands = list(config.bands)
+    first = selected[0].get("bout_representations")
+    if not first:
+        return
+    times = np.asarray(first["times_seconds"], dtype=float)
+    available_band_indices = [
+        band_index
+        for band_index, _ in enumerate(all_bands)
+        if any(
+            np.any(np.asarray(item["bout_representations"]["bout_counts"])[:, band_index] > 0)
+            for item in selected
+            if item.get("bout_representations") is not None
+        )
+    ]
+    if not available_band_indices:
+        return
+    bands = [all_bands[index] for index in available_band_indices]
+    n_bands = len(bands)
+    curves: dict[str, dict[str, list[dict[str, Any]]]] = {}
+    for item in selected:
+        representation = item.get("bout_representations")
+        if representation is None:
+            continue
+        waveforms = np.asarray(representation["waveforms"], dtype=float)
+        phasors = np.asarray(representation["phase_phasors"], dtype=complex)
+        shapes = np.asarray(representation["phase_aligned_shapes"], dtype=float)
+        counts = np.asarray(representation["bout_counts"], dtype=int)
+        baselines = np.asarray(representation["baseline_amplitude_uv"], dtype=float)
+        group = str(item["group"])
+        for band_index in available_band_indices:
+            band = all_bands[band_index]
+            valid = (
+                (counts[:, band_index] > 0)
+                & np.isfinite(baselines[:, band_index])
+                & np.all(np.isfinite(waveforms[:, band_index]), axis=1)
+                & np.all(np.isfinite(phasors[:, band_index]), axis=1)
+                & np.all(np.isfinite(shapes[:, band_index]), axis=1)
+            )
+            if not valid.any():
+                continue
+            envelope = (waveforms[valid, band_index] - 1.0) * baselines[valid, band_index, None]
+            shape = shapes[valid, band_index] * baselines[valid, band_index, None]
+            phase = phasors[valid, band_index]
+            subject_curve = {
+                "envelope": np.mean(envelope, axis=0),
+                "shape": np.mean(shape, axis=0),
+                "phase": np.mean(phase, axis=0),
+                "n_bouts": int(counts[valid, band_index].sum()),
+            }
+            curves.setdefault(group, {}).setdefault(band, []).append(subject_curve)
+
+    groups = sorted(curves)
+    if not groups:
+        return
+    colors = {group: f"C{index}" for index, group in enumerate(groups)}
+    fig, axes = plt.subplots(
+        n_bands,
+        3,
+        figsize=(17, 4.0 * n_bands),
+        squeeze=False,
+        constrained_layout=True,
+    )
+
+    def mean_ci(values: list[np.ndarray]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        array = np.asarray(values, dtype=float)
+        array = array[np.all(np.isfinite(array), axis=1)]
+        if len(array) == 0:
+            missing = np.full(len(times), np.nan)
+            return missing, missing, missing
+        center = np.mean(array, axis=0)
+        if len(array) < 2:
+            return center, center.copy(), center.copy()
+        sem = np.std(array, axis=0, ddof=1) / np.sqrt(len(array))
+        critical = float(student_t.ppf(0.975, len(array) - 1))
+        return center, center - critical * sem, center + critical * sem
+
+    for band_index, band in enumerate(bands):
+        envelope_axis, phase_axis, shape_axis = axes[band_index]
+        phase_r_axis = phase_axis.twinx()
+        for group in groups:
+            entries = curves.get(group, {}).get(band, [])
+            if not entries:
+                continue
+            envelope, envelope_low, envelope_high = mean_ci(
+                [entry["envelope"] for entry in entries]
+            )
+            shape, shape_low, shape_high = mean_ci(
+                [entry["shape"] for entry in entries]
+            )
+            label = f"{group} (n={len(entries)}, bouts={sum(entry['n_bouts'] for entry in entries):,})"
+            color = colors[group]
+            envelope_axis.plot(times, envelope, color=color, linewidth=1.6, label=label)
+            envelope_axis.fill_between(times, envelope_low, envelope_high, color=color, alpha=0.2)
+            shape_axis.plot(times, shape, color=color, linewidth=1.6, label=label)
+            shape_axis.fill_between(times, shape_low, shape_high, color=color, alpha=0.2)
+            phase_vectors = np.asarray([entry["phase"] for entry in entries], dtype=complex)
+            mean_vector = np.mean(phase_vectors, axis=0)
+            phase = np.unwrap(np.angle(mean_vector))
+            phase -= phase[len(phase) // 2]
+            phase_axis.plot(times, phase / np.pi, color=color, linewidth=1.4, label=f"{group} phase")
+            phase_r_axis.plot(
+                times,
+                np.abs(mean_vector),
+                color=color,
+                linewidth=1.0,
+                linestyle=":",
+                alpha=0.65,
+            )
+        display = band.replace("_", " ").title()
+        for axis in (envelope_axis, phase_axis, shape_axis):
+            axis.axvline(0.0, color="0.35", linestyle="--", linewidth=0.8)
+            axis.grid(alpha=0.18)
+            axis.set_xlabel("Time from bout center (s)")
+        envelope_axis.set_title(f"{display} — average bout envelope")
+        envelope_axis.set_ylabel("Hilbert amplitude above baseline (µV)")
+        phase_axis.set_title(f"{display} — relative Hilbert phase")
+        phase_axis.set_ylabel("Circular phase (π radians)")
+        phase_r_axis.set_ylabel("Phase consistency R")
+        phase_r_axis.set_ylim(0.0, 1.05)
+        shape_axis.set_title(f"{display} — phase-aligned average signal")
+        shape_axis.set_ylabel("Band-passed signal (µV)")
+        if envelope_axis.get_legend_handles_labels()[0]:
+            envelope_axis.legend(frameon=False, fontsize=7)
+        if shape_axis.get_legend_handles_labels()[0]:
+            shape_axis.legend(frameon=False, fontsize=7)
+    fig.suptitle(
+        f"{dataset_id}: average signals around detected eBOSC bouts\n"
+        "electrodes averaged within recording; confidence bands are across recordings"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=150)
     plt.close(fig)
@@ -1369,6 +1599,7 @@ def run_global_pipeline(
             "group": record["group"],
             "frequencies": info["frequencies"],
             "subject_psd": info["subject_psd"],
+            "bout_representations": info["bout_representations"],
         })
         diagnostics.append({
             "dataset_id": record["dataset_id"],
@@ -1398,6 +1629,12 @@ def run_global_pipeline(
                 continue
             dataset_figures = output / "figures" / dataset.dataset_id
             _plot_psd_spectra(spectra, dataset.dataset_id, dataset_figures / "psd_mean_ci.png")
+            _plot_average_detected_bouts(
+                spectra,
+                dataset.dataset_id,
+                config,
+                dataset_figures / "average_detected_bouts.png",
+            )
             _topomap(feature_table, config, dataset.dataset_id, "psd", "psd__", output / "figures" / dataset.dataset_id / "psd_topomaps.png")
             _topomap(feature_table, config, dataset.dataset_id, "aperiodic", "aperiodic__", output / "figures" / dataset.dataset_id / "aperiodic_topomaps.png")
             _topomap(feature_table, config, dataset.dataset_id, "entropy", "entropy__", output / "figures" / dataset.dataset_id / "entropy_topomaps.png")

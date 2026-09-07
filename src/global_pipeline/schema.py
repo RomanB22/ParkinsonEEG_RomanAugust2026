@@ -46,6 +46,7 @@ DEFAULT_EBOSC_SETTINGS = {
     "power_percentile": 0.95,
     "minimum_cycles": 3.0,
     "edge_padding_seconds": 0.75,
+    "figure_window_seconds": 0.5,
 }
 
 _SUBJECT_RE = re.compile(r"(sub-[A-Za-z0-9]+)")
@@ -276,6 +277,13 @@ def load_global_config(path: str | Path) -> GlobalConfig:
         raise ValueError("The aperiodic fit range must be 4–50 Hz")
     ebosc = dict(DEFAULT_EBOSC_SETTINGS)
     ebosc.update(raw.get("ebosc", {}))
+    # Accept the pre-eBOSC global names when loading an older configuration.
+    if "ebosc" not in raw or "power_percentile" not in raw["ebosc"]:
+        if "bout_threshold_percentile" in raw:
+            ebosc["power_percentile"] = float(raw["bout_threshold_percentile"]) / 100.0
+    if "ebosc" not in raw or "minimum_cycles" not in raw["ebosc"]:
+        if "bout_minimum_cycles" in raw:
+            ebosc["minimum_cycles"] = float(raw["bout_minimum_cycles"])
     if not 0.0 < float(ebosc["frequency_min_hz"]) < float(ebosc["frequency_max_hz"]):
         raise ValueError("Invalid eBOSC frequency range")
     if float(ebosc["frequency_step_hz"]) <= 0.0 or float(ebosc["wavenumber"]) <= 0.0:
@@ -284,6 +292,8 @@ def load_global_config(path: str | Path) -> GlobalConfig:
         raise ValueError("ebosc.power_percentile must be between zero and one")
     if float(ebosc["minimum_cycles"]) <= 0.0 or float(ebosc["edge_padding_seconds"]) < 0.0:
         raise ValueError("Invalid eBOSC duration or edge-padding setting")
+    if float(ebosc["figure_window_seconds"]) <= 0.0:
+        raise ValueError("ebosc.figure_window_seconds must be positive")
     percentile = float(raw.get("bout_threshold_percentile", 95.0))
     if not 50.0 < percentile < 100.0:
         raise ValueError("bout_threshold_percentile must be between 50 and 100")

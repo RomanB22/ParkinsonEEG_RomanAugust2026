@@ -21,10 +21,9 @@
     "wavenumber": 6.0,
     "power_percentile": 0.95,
     "minimum_cycles": 3.0,
-    "edge_padding_seconds": 0.75
+    "edge_padding_seconds": 0.75,
+    "figure_window_seconds": 0.5
   },
-  "bout_threshold_percentile": 95.0,
-  "bout_minimum_cycles": 3.0,
   "fdr_alpha": 0.05,
   "bands": {
     "delta": [1.0, 4.0],

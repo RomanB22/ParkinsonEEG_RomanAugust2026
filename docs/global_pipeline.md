@@ -106,6 +106,7 @@ statistics/group_statistics.csv.gz
 statistics/clinical_correlations.csv.gz
 figures/<dataset>/*_topomaps.png
 figures/<dataset>/psd_mean_ci.png
+figures/<dataset>/average_detected_bouts.png
 figures/<dataset>/aperiodic_topomaps.png
 figures/<dataset>/*_contrast_*_topomaps.png
 figures/<dataset>/scatter_<moca|mmse|updrs>_<bout|within_bout>.png
@@ -166,6 +167,12 @@ participant and group/condition. They therefore show one biological
 observation per participant/condition rather than one observation per
 electrode. Entropy and within-bout entropy violins use the configured primary
 embedding dimension; all other configured metrics are included.
+
+`average_detected_bouts.png` shows the legacy-style subject-balanced average
+around the midpoint of each detected eBOSC bout: baseline-subtracted Hilbert
+envelope, relative Hilbert phase, and phase-aligned band-passed signal. Bout
+waveforms are averaged across electrodes within each recording, then across
+recordings; shaded intervals are Student-t 95% intervals across recordings.
 
 Entropy-plane figures show H versus complexity (H×C) and H versus Fisher
 information (H×F), separately for every frequency band. They are produced for
