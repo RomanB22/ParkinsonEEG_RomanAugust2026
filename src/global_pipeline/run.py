@@ -43,6 +43,13 @@ def main() -> None:
         action="store_false",
         help="Keep the strict preprocessing gate for incompatible ICA files",
     )
+    parser.add_argument(
+        "--no-skip-unusable-recordings",
+        dest="skip_unusable_recordings",
+        action="store_false",
+        default=True,
+        help="Abort instead of recording and skipping degenerate ICA recordings",
+    )
     args = parser.parse_args()
     config = load_global_config(args.config)
     if args.convert_only and args.analysis_only:
@@ -59,6 +66,7 @@ def main() -> None:
             allow_unreviewed=args.allow_unreviewed,
             no_progress=args.no_progress,
             repair_incompatible_ica=args.repair_incompatible_ica,
+            skip_unusable_recordings=args.skip_unusable_recordings,
         )
     if args.convert_only:
         table = convert_config(config, dataset_ids=args.datasets)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -101,6 +102,80 @@ def participant_metadata(dataset_dir: str | Path, subject_id: str) -> dict[str, 
     return row.iloc[0].to_dict()
 
 
+def _brainvision_header_with_bids_sidecars(set_path: Path) -> tuple[Path, tempfile.TemporaryDirectory[str] | None]:
+    """Return a readable BrainVision header when internal sidecar names drift.
+
+    Some ds008768 headers retain acquisition filenames such as
+    ``LEAD-PD_001_RestEyesOpen.vmrk`` even though the BIDS directory contains
+    correctly named ``*_eeg.vmrk`` and ``*_eeg.eeg`` files.  MNE follows the
+    names inside the header, so create a temporary corrected header instead
+    of modifying the downloaded dataset.
+    """
+    header_text = set_path.read_text(encoding="utf-8", errors="replace")
+    references: dict[str, Path | None] = {}
+    for key in ("DataFile", "MarkerFile"):
+        match = re.search(rf"(?m)^{key}=(.+?)\s*$", header_text)
+        if not match:
+            references[key] = None
+            continue
+        reference = Path(match.group(1).strip())
+        references[key] = reference if reference.is_absolute() else set_path.parent / reference
+    if all(path is not None and path.is_file() for path in references.values()):
+        return set_path, None
+
+    fallback = {
+        "DataFile": set_path.with_suffix(".eeg").resolve(),
+        "MarkerFile": set_path.with_suffix(".vmrk").resolve(),
+    }
+    missing_fallbacks = [key for key, path in fallback.items() if not path.is_file()]
+    if missing_fallbacks:
+        missing = ", ".join(str(fallback[key]) for key in missing_fallbacks)
+        raise FileNotFoundError(
+            f"{set_path}: BrainVision header references missing sidecars and "
+            f"BIDS fallback sidecars are also missing: {missing}"
+        )
+
+    temporary = tempfile.TemporaryDirectory(prefix="brainvision-header-")
+    corrected_path = Path(temporary.name) / set_path.name
+    corrected_text = header_text
+    for key, path in fallback.items():
+        corrected_text = re.sub(
+            rf"(?m)^{key}=.*?$",
+            f"{key}={path}",
+            corrected_text,
+        )
+    corrected_path.write_text(corrected_text, encoding="utf-8")
+    return corrected_path, temporary
+
+
+def _apply_bids_channel_types(raw: mne.io.BaseRaw, channels_path: Path) -> None:
+    """Restore channel types from BIDS when a vendor header is ambiguous."""
+    if not channels_path.is_file():
+        return
+    channels = pd.read_csv(channels_path, sep="\t", dtype=str).fillna("")
+    if "name" not in channels or "type" not in channels:
+        return
+    type_map = {
+        "EEG": "eeg",
+        "EOG": "eog",
+        "ECG": "ecg",
+        "EMG": "emg",
+        "GSR": "gsr",
+        "RESP": "resp",
+        "TRIG": "stim",
+        "STIM": "stim",
+        "AUDIO": "misc",
+        "MISC": "misc",
+    }
+    channel_types = {
+        str(row["name"]): type_map.get(str(row["type"]).strip().upper(), "misc")
+        for _, row in channels.iterrows()
+        if str(row["name"]) in raw.ch_names
+    }
+    if channel_types:
+        raw.set_channel_types(channel_types, verbose="ERROR")
+
+
 def load_subject(set_path: str | Path, auxiliary_names: list[str] | None = None) -> tuple[mne.io.BaseRaw, dict[str, Any]]:
     """Load one recording and return EEG plus provenance metadata.
 
@@ -118,11 +193,17 @@ def load_subject(set_path: str | Path, auxiliary_names: list[str] | None = None)
     elif set_path.suffix.lower() == ".bdf":
         raw = mne.io.read_raw_bdf(set_path, preload=True, verbose="ERROR")
     elif set_path.suffix.lower() == ".vhdr":
-        raw = mne.io.read_raw_brainvision(set_path, preload=True, verbose="ERROR")
+        corrected_header, temporary_header = _brainvision_header_with_bids_sidecars(set_path)
+        try:
+            raw = mne.io.read_raw_brainvision(corrected_header, preload=True, verbose="ERROR")
+        finally:
+            if temporary_header is not None:
+                temporary_header.cleanup()
     elif set_path.suffix.lower() == ".edf":
         raw = mne.io.read_raw_edf(set_path, preload=True, verbose="ERROR")
     else:
         raise ValueError(f"Unsupported EEG source format: {set_path.suffix}")
+    _apply_bids_channel_types(raw, paths["channels_tsv"])
 
     # BIDS permits ``n/a`` for unknown line frequency. Keep MNE's line_freq
     # metadata numeric so BrainVision datasets with an unavailable value can

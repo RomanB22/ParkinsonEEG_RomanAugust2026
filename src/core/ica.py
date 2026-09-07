@@ -32,6 +32,40 @@ ICLABEL_DISPLAY_NAMES = {
 ICLABEL_ARTIFACT_CLASSES = ICLABEL_CLASSES[1:6]
 
 
+class UnusableICADataError(RuntimeError):
+    """Raised when a recording has too little valid data for meaningful ICA."""
+
+
+def _unannotated_sample_count(raw) -> int:
+    """Count samples not rejected by MNE's bad/edge annotation policy."""
+    intervals = []
+    sfreq = float(raw.info["sfreq"])
+    for onset, duration, description in zip(
+        raw.annotations.onset,
+        raw.annotations.duration,
+        raw.annotations.description,
+    ):
+        if not str(description).lower().startswith(("bad", "edge")):
+            continue
+        start = max(0, int(np.floor(float(onset) * sfreq)))
+        stop = min(raw.n_times, int(np.ceil((float(onset) + float(duration)) * sfreq)))
+        if stop > start:
+            intervals.append((start, stop))
+    if not intervals:
+        return int(raw.n_times)
+    intervals.sort()
+    rejected = 0
+    current_start, current_stop = intervals[0]
+    for start, stop in intervals[1:]:
+        if start <= current_stop:
+            current_stop = max(current_stop, stop)
+        else:
+            rejected += current_stop - current_start
+            current_start, current_stop = start, stop
+    rejected += current_stop - current_start
+    return max(0, int(raw.n_times) - rejected)
+
+
 def make_ica_copy(raw, config: dict[str, Any], no_downsampling: bool = False):
     copy = raw.copy()
     copy.filter(
@@ -51,6 +85,14 @@ def make_ica_copy(raw, config: dict[str, Any], no_downsampling: bool = False):
 
 def fit_ica(raw, config: dict[str, Any], no_downsampling: bool = False):
     raw_for_ica = make_ica_copy(raw, config, no_downsampling=no_downsampling)
+    valid_samples = _unannotated_sample_count(raw_for_ica)
+    minimum_samples = max(2, int(round(float(raw_for_ica.info["sfreq"]) * 2.0)))
+    if valid_samples < minimum_samples:
+        raise UnusableICADataError(
+            "ICA input is degenerate after rejecting annotated samples; "
+            f"only {valid_samples} valid sample(s) remain, below the "
+            f"{minimum_samples}-sample minimum"
+        )
     ica = mne.preprocessing.ICA(
         n_components=config["n_components"],
         method=str(config["method"]),
@@ -58,12 +100,23 @@ def fit_ica(raw, config: dict[str, Any], no_downsampling: bool = False):
         random_state=int(config["random_state"]),
         max_iter=int(config["max_iter"]),
     )
-    ica.fit(
-        raw_for_ica,
-        picks="eeg",
-        reject_by_annotation=True,
-        verbose="ERROR",
-    )
+    try:
+        ica.fit(
+            raw_for_ica,
+            picks="eeg",
+            reject_by_annotation=True,
+            verbose="ERROR",
+        )
+    except RuntimeError as error:
+        # MNE emits this when artifact annotations leave only one effective
+        # sample or a degenerate rank. Such a recording cannot support ICA;
+        # the batch runner can record and skip it when requested.
+        if "One PCA component captures most of the explained variance" in str(error):
+            raise UnusableICADataError(
+                "ICA input is degenerate after rejecting annotated samples; "
+                "the recording has insufficient valid signal for ICA"
+            ) from error
+        raise
     return ica, raw_for_ica
 
 

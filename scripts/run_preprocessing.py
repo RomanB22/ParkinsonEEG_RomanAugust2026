@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import multiprocessing
 import os
@@ -28,6 +29,7 @@ from core.dataset import (
     subject_id_from_path,
 )
 from core.metadata import expected_channels_from_dataset, update_preprocessing_qc
+from core.ica import UnusableICADataError
 from core.preprocessing import process_subject
 
 
@@ -210,6 +212,11 @@ def main() -> None:
         help="Recompute only saved ICA decompositions with incompatible provenance",
     )
     parser.add_argument(
+        "--skip-unusable-recordings",
+        action="store_true",
+        help="Record and skip recordings with degenerate ICA input instead of aborting the batch",
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=int(os.environ.get("PARKINSON_EEG_PREPROCESSING_WORKERS", "1")),
@@ -353,6 +360,7 @@ def main() -> None:
             os.environ[variable] = "1"
 
     rows = []
+    failures = []
     progress = tqdm(
         total=len(recordings),
         desc="ICA cleaning" if not args.review_only else "ICA review",
@@ -377,6 +385,20 @@ def main() -> None:
         progress.set_postfix_str(subject_id, refresh=False)
         progress.update()
 
+    def record_unusable(recording_path: Path, error: Exception) -> None:
+        failures.append(
+            {
+                "recording_id": recording_id_from_path(recording_path),
+                "source_path": str(recording_path),
+                "error_type": type(error).__name__,
+                "error": str(error),
+            }
+        )
+        tqdm.write(
+            f"Skipping unusable recording {recording_id_from_path(recording_path)}: {error}"
+        )
+        progress.update()
+
     common_kwargs = {
         "review_only": args.review_only,
         "require_review": not args.allow_unreviewed,
@@ -392,15 +414,21 @@ def main() -> None:
     try:
         if worker_count == 1:
             for set_path in recordings:
-                result = _process_one(
-                    set_path,
-                    config,
-                    expected,
-                    config_path=args.config,
-                    reuse_existing_ica=reusable_ica[recording_id_from_path(set_path)],
-                    **common_kwargs,
-                )
-                finish_result(result)
+                try:
+                    result = _process_one(
+                        set_path,
+                        config,
+                        expected,
+                        config_path=args.config,
+                        reuse_existing_ica=reusable_ica[recording_id_from_path(set_path)],
+                        **common_kwargs,
+                    )
+                except UnusableICADataError as error:
+                    if not args.skip_unusable_recordings:
+                        raise
+                    record_unusable(set_path, error)
+                else:
+                    finish_result(result)
         else:
             # Workers never edit the shared config. The parent records each
             # completed proposal atomically in finish_result().
@@ -415,15 +443,21 @@ def main() -> None:
                     f"continuing serially ({error})."
                 )
                 for set_path in recordings:
-                    result = _process_one(
-                        set_path,
-                        config,
-                        expected,
-                        config_path=args.config,
-                        reuse_existing_ica=reusable_ica[recording_id_from_path(set_path)],
-                        **common_kwargs,
-                    )
-                    finish_result(result)
+                    try:
+                        result = _process_one(
+                            set_path,
+                            config,
+                            expected,
+                            config_path=args.config,
+                            reuse_existing_ica=reusable_ica[recording_id_from_path(set_path)],
+                            **common_kwargs,
+                        )
+                    except UnusableICADataError as error:
+                        if not args.skip_unusable_recordings:
+                            raise
+                        record_unusable(set_path, error)
+                    else:
+                        finish_result(result)
             else:
                 parallel_active = True
                 with executor:
@@ -438,12 +472,21 @@ def main() -> None:
                                 recording_id_from_path(set_path)
                             ],
                             **common_kwargs,
-                        ): recording_id_from_path(set_path)
+                        ): set_path
                         for set_path in recordings
                     }
                     for future in as_completed(futures):
                         try:
                             finish_result(future.result())
+                        except UnusableICADataError as error:
+                            if not args.skip_unusable_recordings:
+                                for pending in futures:
+                                    pending.cancel()
+                                raise
+                            record_unusable(
+                                futures[future],
+                                error,
+                            )
                         except Exception:
                             for pending in futures:
                                 pending.cancel()
@@ -452,6 +495,14 @@ def main() -> None:
         progress.close()
     if rows:
         print(f"Completed {len(rows)} recording(s)")
+    if failures:
+        report_path = Path(config["project"]["output_dir"]) / "qc" / "preprocessing_failures.csv"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        with report_path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=["recording_id", "source_path", "error_type", "error"])
+            writer.writeheader()
+            writer.writerows(failures)
+        print(f"Skipped {len(failures)} unusable recording(s); report={report_path}")
 
 
 if __name__ == "__main__":

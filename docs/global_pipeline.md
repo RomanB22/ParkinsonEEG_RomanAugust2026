@@ -72,6 +72,13 @@ ICA/QC, and four-second epoching using the existing repository contract. Manual
 ICA review remains the default; `--skip-manual-ica-review` is an explicit
 unattended option.
 
+The global runner records and skips recordings with degenerate ICA input, such
+as a recording whose artifact annotations leave fewer than two seconds of
+usable signal. These exclusions are written to each preprocessing output's
+`qc/preprocessing_failures.csv`; all valid recordings continue through the
+pipeline. Standalone preprocessing remains fail-fast unless
+`--skip-unusable-recordings` is supplied.
+
 The pipeline performs Welch PSD and relative band power, electrode-wise group
 statistics with Welch/Mann–Whitney tests and BH-FDR, PSD and entropy topomaps,
 the four requested entropy quantities (H, C, F, and weighted entropy),

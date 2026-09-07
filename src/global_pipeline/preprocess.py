@@ -19,6 +19,7 @@ def run_preprocessing(
     allow_unreviewed: bool = False,
     no_progress: bool = False,
     repair_incompatible_ica: bool = False,
+    skip_unusable_recordings: bool = True,
 ) -> None:
     """Execute one standard preprocessing command per selected dataset."""
     if workers < 1:
@@ -65,6 +66,8 @@ def run_preprocessing(
             command.append("--overwrite")
         elif repair_incompatible_ica:
             command.append("--repair-incompatible-ica")
+        if skip_unusable_recordings:
+            command.append("--skip-unusable-recordings")
         if skip_manual_ica_review:
             command.append("--skip-manual-ica-review")
         elif allow_unreviewed:
