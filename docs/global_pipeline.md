@@ -122,15 +122,19 @@ metrics/aperiodic_subject_qc.csv.gz
 statistics/group_statistics.csv.gz
 statistics/clinical_correlations.csv.gz
 figures/<dataset>/*_topomaps.png
-figures/<dataset>/psd_mean_ci.png
-figures/<dataset>/average_detected_bouts.png
-figures/<dataset>/aperiodic_topomaps.png
+figures/<dataset>/psd_broadband_mean_ci.png
+figures/<dataset>/average_detected_bouts_<band>.png
+figures/<dataset>/aperiodic_topomaps_broadband.png
 figures/<dataset>/*_contrast_*_topomaps.png
-figures/<dataset>/scatter_<moca|mmse|updrs>_<bout|within_bout>.png
-figures/<dataset>/subject_violins_<psd|aperiodic|entropy|bout|within_bout>.png
-figures/<dataset>/entropy_hx[cf]_planes.png
-figures/<dataset>/within_bout_entropy_hx[cf]_planes.png
+figures/<dataset>/scatter_<moca|mmse|updrs>_<bout|within_bout>_<band>.png
+figures/<dataset>/subject_violins_<family>_<band|broadband>.png
+figures/<dataset>/entropy_hx[cf]_planes_<band>.png
+figures/<dataset>/within_bout_entropy_hx[cf]_planes_<band>.png
 ```
+
+Band-specific figures are written separately for every configured band. The
+aperiodic and full-spectrum PSD summaries are broadband figures; the remaining
+families use one figure per band.
 
 The analysis unit is one complete cleaned recording at a time. All accepted
 four-second epochs for that subject/session/condition are loaded together and
@@ -190,7 +194,7 @@ panel annotates pairwise Welch tests on the subject-level electrode averages,
 showing both the raw p-value and the BH-FDR-adjusted q-value. Comparisons are
 called significant only when q < 0.05 (or the configured FDR threshold).
 
-`average_detected_bouts.png` shows the legacy-style subject-balanced average
+`average_detected_bouts_<band>.png` shows the legacy-style subject-balanced average
 around the midpoint of each detected eBOSC bout: baseline-subtracted Hilbert
 envelope, relative Hilbert phase, and phase-aligned band-passed signal. Bout
 waveforms are averaged across electrodes within each recording, then across

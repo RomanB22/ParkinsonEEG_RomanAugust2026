@@ -929,10 +929,14 @@ def _topomap(
     domain: str,
     feature_template: str,
     output: Path,
+    band: str | None = None,
 ) -> None:
     import matplotlib.pyplot as plt
 
     feature_columns = [column for column in table if column.startswith(feature_template)]
+    if band is not None:
+        band_prefix = f"{feature_template}{band}__"
+        feature_columns = [column for column in feature_columns if column.startswith(band_prefix)]
     if feature_template in {"entropy__", "within_bout__"}:
         feature_columns = [
             column for column in feature_columns
@@ -1016,6 +1020,7 @@ def _contrast_topomap(
     group_a: str,
     group_b: str,
     output: Path,
+    band: str | None = None,
 ) -> None:
     """Plot group_b - group_a using one symmetric scale per feature.
 
@@ -1026,6 +1031,9 @@ def _contrast_topomap(
 
     selected = table.loc[table["dataset_id"].eq(dataset_id)].copy()
     feature_columns = [column for column in selected if column.startswith(feature_template)]
+    if band is not None:
+        band_prefix = f"{feature_template}{band}__"
+        feature_columns = [column for column in feature_columns if column.startswith(band_prefix)]
     if feature_template in {"entropy__", "within_bout__"}:
         feature_columns = [
             column for column in feature_columns
@@ -1171,6 +1179,7 @@ def _plot_average_detected_bouts(
     dataset_id: str,
     config: GlobalConfig,
     output: Path,
+    band: str | None = None,
 ) -> None:
     """Plot subject-balanced average signals centered on detected eBOSC bouts."""
     import matplotlib.pyplot as plt
@@ -1179,6 +1188,8 @@ def _plot_average_detected_bouts(
     if not selected:
         return
     all_bands = list(config.bands)
+    if band is not None:
+        all_bands = [value for value in all_bands if value == band]
     first = selected[0].get("bout_representations")
     if not first:
         return
@@ -1319,12 +1330,16 @@ def _plot_clinical_scatter(
     family: str,
     config: GlobalConfig,
     output: Path,
+    band: str | None = None,
 ) -> None:
     """Plot subject-level PD features against one available clinical score."""
     import matplotlib.pyplot as plt
 
     prefix = f"{family}__"
     feature_columns = [column for column in table if column.startswith(prefix)]
+    if band is not None:
+        band_prefix = f"{prefix}{band}__"
+        feature_columns = [column for column in feature_columns if column.startswith(band_prefix)]
     if family in {"within_bout", "entropy"}:
         feature_columns = [
             column for column in feature_columns
@@ -1396,6 +1411,7 @@ def _plot_subject_violins(
     family: str,
     config: GlobalConfig,
     output: Path,
+    band: str | None = None,
 ) -> None:
     """Compare electrode-averaged feature values at the subject level.
 
@@ -1408,6 +1424,9 @@ def _plot_subject_violins(
 
     prefix = f"{family}__"
     feature_columns = [column for column in table if column.startswith(prefix)]
+    if band is not None:
+        band_prefix = f"{prefix}{band}__"
+        feature_columns = [column for column in feature_columns if column.startswith(band_prefix)]
     if family in {"entropy", "within_bout"}:
         feature_columns = [
             column for column in feature_columns
@@ -1557,6 +1576,7 @@ def _plot_entropy_plane(
     vertical_metric: str,
     config: GlobalConfig,
     output: Path,
+    band: str | None = None,
 ) -> None:
     """Plot subject-level HxC or HxF planes for each frequency band.
 
@@ -1576,6 +1596,8 @@ def _plot_entropy_plane(
             if "__" in column.removeprefix(metric_prefix)
         }
     )
+    if band is not None:
+        bands = [value for value in bands if value == band]
     if not bands:
         return
     selected = table.loc[table["dataset_id"].eq(dataset_id)].copy()
@@ -1666,81 +1688,114 @@ def _plot_dataset_results(
 ) -> None:
     """Render every figure for one finished dataset."""
     dataset_figures = output / "figures" / dataset_id
-    _plot_psd_spectra(spectra, dataset_id, dataset_figures / "psd_mean_ci.png")
-    _plot_average_detected_bouts(
-        spectra,
-        dataset_id,
-        config,
-        dataset_figures / "average_detected_bouts.png",
+    _plot_psd_spectra(spectra, dataset_id, dataset_figures / "psd_broadband_mean_ci.png")
+    for band in config.bands:
+        suffix = _safe_filename(band)
+        _plot_average_detected_bouts(
+            spectra,
+            dataset_id,
+            config,
+            dataset_figures / f"average_detected_bouts_{suffix}.png",
+            band=band,
+        )
+    topomap_specs = (
+        ("psd", "psd__", config.bands, "psd_topomaps"),
+        ("aperiodic", "aperiodic__", ("broadband",), "aperiodic_topomaps"),
+        ("entropy", "entropy__", config.bands, "entropy_topomaps"),
+        ("within_bout", "within_bout__", config.bands, "within_bout_entropy_topomaps"),
     )
-    _topomap(feature_table, config, dataset_id, "psd", "psd__", dataset_figures / "psd_topomaps.png")
-    _topomap(feature_table, config, dataset_id, "aperiodic", "aperiodic__", dataset_figures / "aperiodic_topomaps.png")
-    _topomap(feature_table, config, dataset_id, "entropy", "entropy__", dataset_figures / "entropy_topomaps.png")
-    _topomap(feature_table, config, dataset_id, "within_bout", "within_bout__", dataset_figures / "within_bout_entropy_topomaps.png")
+    for domain, template, bands, filename_prefix in topomap_specs:
+        for band in bands:
+            suffix = _safe_filename(band)
+            _topomap(
+                feature_table,
+                config,
+                dataset_id,
+                domain,
+                template,
+                dataset_figures / f"{filename_prefix}_{suffix}.png",
+                band=band,
+            )
     selected_groups = sorted(feature_table["group"].dropna().unique())
     for group_a, group_b in combinations(selected_groups, 2):
         pair_name = f"{_safe_filename(group_b)}_minus_{_safe_filename(group_a)}"
-        for template, filename in (
-            ("psd__", f"psd_contrast_{pair_name}_topomaps.png"),
-            ("aperiodic__", f"aperiodic_contrast_{pair_name}_topomaps.png"),
-            ("entropy__", f"entropy_contrast_{pair_name}_topomaps.png"),
-            ("within_bout__", f"within_bout_entropy_contrast_{pair_name}_topomaps.png"),
+        for template, bands, filename_prefix in (
+            ("psd__", config.bands, "psd_contrast"),
+            ("aperiodic__", ("broadband",), "aperiodic_contrast"),
+            ("entropy__", config.bands, "entropy_contrast"),
+            ("within_bout__", config.bands, "within_bout_entropy_contrast"),
         ):
-            _contrast_topomap(
-                feature_table,
-                statistics,
-                config,
-                dataset_id,
-                template,
-                group_a,
-                group_b,
-                dataset_figures / filename,
-            )
+            for band in bands:
+                suffix = _safe_filename(band)
+                _contrast_topomap(
+                    feature_table,
+                    statistics,
+                    config,
+                    dataset_id,
+                    template,
+                    group_a,
+                    group_b,
+                    dataset_figures / f"{filename_prefix}_{pair_name}_{suffix}_topomaps.png",
+                    band=band,
+                )
     for outcome in ("moca", "mmse", "updrs"):
-        _plot_clinical_scatter(
-            feature_table,
-            dataset_id,
-            outcome,
-            "bout",
-            config,
-            dataset_figures / f"scatter_{outcome}_bout.png",
-        )
-        _plot_clinical_scatter(
-            feature_table,
-            dataset_id,
-            outcome,
-            "within_bout",
-            config,
-            dataset_figures / f"scatter_{outcome}_within_bout.png",
-        )
-    for family in ("psd", "aperiodic", "entropy", "bout", "within_bout"):
+        for family in ("bout", "within_bout"):
+            filename_family = "within_bout" if family == "within_bout" else family
+            for band in config.bands:
+                suffix = _safe_filename(band)
+                _plot_clinical_scatter(
+                    feature_table,
+                    dataset_id,
+                    outcome,
+                    family,
+                    config,
+                    dataset_figures / f"scatter_{outcome}_{filename_family}_{suffix}.png",
+                    band=band,
+                )
+    for family in ("psd", "entropy", "bout", "within_bout"):
+        for band in config.bands:
+            suffix = _safe_filename(band)
+            _plot_subject_violins(
+                feature_table,
+                dataset_id,
+                family,
+                config,
+                dataset_figures / f"subject_violins_{family}_{suffix}.png",
+                band=band,
+            )
+    for family in ("aperiodic",):
         _plot_subject_violins(
             feature_table,
             dataset_id,
             family,
             config,
-            dataset_figures / f"subject_violins_{family}.png",
+            dataset_figures / "subject_violins_aperiodic_broadband.png",
+            band="broadband",
         )
     for family, filename_prefix in (
         ("entropy", "entropy"),
         ("within_bout", "within_bout_entropy"),
     ):
-        _plot_entropy_plane(
-            feature_table,
-            dataset_id,
-            family,
-            "complexity",
-            config,
-            dataset_figures / f"{filename_prefix}_hxc_planes.png",
-        )
-        _plot_entropy_plane(
-            feature_table,
-            dataset_id,
-            family,
-            "fisher_information",
-            config,
-            dataset_figures / f"{filename_prefix}_hxf_planes.png",
-        )
+        for band in config.bands:
+            suffix = _safe_filename(band)
+            _plot_entropy_plane(
+                feature_table,
+                dataset_id,
+                family,
+                "complexity",
+                config,
+                dataset_figures / f"{filename_prefix}_hxc_planes_{suffix}.png",
+                band=band,
+            )
+            _plot_entropy_plane(
+                feature_table,
+                dataset_id,
+                family,
+                "fisher_information",
+                config,
+                dataset_figures / f"{filename_prefix}_hxf_planes_{suffix}.png",
+                band=band,
+            )
 
 
 def _write_qc_tables(
