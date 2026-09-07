@@ -74,6 +74,22 @@ This selector does not enable disabled datasets; first set their `enabled`
 field to `true` and provide valid paths. An unknown or disabled ID fails before
 EEG processing starts.
 
+To audit whether cohorts are comparable before pooling EEG results, run:
+
+```bash
+PYTHONPATH=src python scripts/compare_dataset_composition.py
+```
+
+The script writes participant-level composition tables, missingness and
+clinical summaries, chi-square/Kruskal-Wallis/Mann-Whitney tests with BH-FDR
+correction, and figures under `outputs/global/composition/`. Numeric metadata
+not represented by the canonical schema are included when available, such as
+MMSE, NAART, disease duration, LEDD, UPDRS part III, CTT, and education.
+Significant composition differences do not automatically prohibit pooling;
+they indicate that pooled EEG models should include dataset, age, sex, and
+relevant clinical covariates, or that dataset-stratified/meta-analytic results
+should be emphasized.
+
 If cleaned epochs do not exist yet, add `preprocessing_config` to the dataset
 entry. The normal command will run it automatically; the explicit equivalent
 is:
