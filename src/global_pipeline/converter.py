@@ -48,6 +48,24 @@ def _metadata_index(metadata: pd.DataFrame) -> dict[str, dict[str, Any]]:
     return result
 
 
+def _session_metadata_index(dataset: DatasetConfig) -> dict[tuple[str, str], dict[str, Any]]:
+    """Read optional per-participant session tables keyed by BIDS identity."""
+    if not dataset.session_metadata_glob:
+        return {}
+    result: dict[tuple[str, str], dict[str, Any]] = {}
+    for path in sorted(dataset.root.glob(dataset.session_metadata_glob)):
+        separator = "\t" if path.suffix.lower() in {".tsv", ".txt"} else ","
+        metadata = pd.read_csv(path, sep=separator, dtype=str)
+        if "session_id" not in metadata:
+            continue
+        participant_id = subject_from_path(path)
+        for row in metadata.to_dict(orient="records"):
+            session_id = str(row.get("session_id", "")).strip()
+            if session_id:
+                result[(participant_id, session_id)] = row
+    return result
+
+
 def _value(row: dict[str, Any], columns: dict[str, str], canonical: str) -> Any:
     source = columns.get(canonical)
     if source and source in row:
@@ -85,13 +103,15 @@ def convert_dataset(dataset: DatasetConfig) -> list[CanonicalRecording]:
             f"{dataset.epochs_dir / dataset.epoch_glob}"
         )
     metadata = _metadata_index(_read_metadata(dataset))
+    session_metadata = _session_metadata_index(dataset)
     raw_paths = _raw_lookup(dataset)
     records: list[CanonicalRecording] = []
     for epoch_path in epoch_paths:
         participant_id = subject_from_path(epoch_path)
         session_id = session_from_path(epoch_path)
         recording_id = recording_from_path(epoch_path)
-        row = metadata.get(recording_id, metadata.get(participant_id, {}))
+        row = dict(metadata.get(recording_id, metadata.get(participant_id, {})))
+        row.update(session_metadata.get((participant_id, session_id or ""), {}))
         group = normalize_group(_value(row, dataset.columns, "group"), participant_id)
         # Some medication-state datasets keep diagnosis in participants.tsv
         # and encode ON/OFF only in the BIDS session entity.

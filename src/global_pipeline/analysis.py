@@ -2051,6 +2051,15 @@ def _run_global_pipeline_parallel(
             info: dict[str, Any],
             cache_reused: bool,
         ) -> None:
+            # Canonical metadata can be updated without invalidating the
+            # signal-derived subject cache (for example, when session-level
+            # clinical tables are added). Refresh it on cached and fresh
+            # results alike before aggregation and plotting.
+            features = features.copy()
+            for column in CANONICAL_COLUMNS:
+                if column in {"epoch_path", "raw_path"} or column not in features:
+                    continue
+                features[column] = record.get(column, "")
             feature_parts.append(features)
             dataset_spectra.append(
                 {

@@ -131,6 +131,7 @@ class DatasetConfig:
     dataset_id: str
     root: Path
     metadata: Path | None
+    session_metadata_glob: str | None
     epochs_dir: Path
     epoch_glob: str
     task: str = "Rest"
@@ -163,6 +164,11 @@ class DatasetConfig:
             dataset_id=dataset_id,
             root=resolve(value.get("root", ".")),
             metadata=metadata,
+            session_metadata_glob=(
+                str(value["session_metadata_glob"])
+                if value.get("session_metadata_glob")
+                else None
+            ),
             epochs_dir=epochs_dir,
             epoch_glob=str(value.get("epoch_glob", "sub-*_task-rest_desc-cleaned_epo.fif")),
             task=str(value.get("task", "Rest")),

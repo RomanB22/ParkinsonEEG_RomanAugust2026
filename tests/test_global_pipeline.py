@@ -60,6 +60,58 @@ class GlobalPipelineInputTests(unittest.TestCase):
             canonical = read_canonical_table(config.output_root / "canonical" / "recordings.csv.gz")
             self.assertEqual(set(canonical.columns), set(result.columns))
 
+    def test_converter_merges_session_metadata_by_participant_and_session(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            epochs = root / "epochs"
+            epochs.mkdir()
+            for session in ("ses-01", "ses-02"):
+                (epochs / f"sub-pd01_{session}_task-rest_desc-cleaned_epo.fif").touch()
+            (root / "sub-pd01").mkdir()
+            pd.DataFrame(
+                [
+                    {"participant_id": "sub-pd01", "diagnosis": "PD", "age": "71", "sex": "F"},
+                ]
+            ).to_csv(root / "participants.tsv", sep="\t", index=False)
+            pd.DataFrame(
+                [
+                    {"session_id": "ses-01", "moca": "28", "updrs_part_iii": "15"},
+                    {"session_id": "ses-02", "moca": "25", "updrs_part_iii": "21"},
+                ]
+            ).to_csv(root / "sub-pd01" / "sub-pd01_sessions.tsv", sep="\t", index=False)
+            config_path = root / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "output_root": "out",
+                        "bands": {"alpha": [8, 13]},
+                        "datasets": [
+                            {
+                                "id": "study",
+                                "root": str(root),
+                                "metadata": str(root / "participants.tsv"),
+                                "session_metadata_glob": "sub-*/sub-*_sessions.tsv",
+                                "epochs_dir": str(epochs),
+                                "epoch_glob": "*.fif",
+                                "columns": {
+                                    "group": "diagnosis",
+                                    "age_years": "age",
+                                    "sex": "sex",
+                                    "moca": "moca",
+                                    "updrs": "updrs_part_iii",
+                                },
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            result = convert_config(load_global_config(config_path))
+            result = result.sort_values("session_id")
+            self.assertEqual(result["moca"].tolist(), [28.0, 25.0])
+            self.assertEqual(result["updrs"].tolist(), [15.0, 21.0])
+
     def test_four_dataset_configuration_is_supported_without_hard_coded_names(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

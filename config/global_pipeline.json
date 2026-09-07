@@ -109,6 +109,7 @@
       "enabled": true,
       "root": "ds008768-1.0.0",
       "metadata": "ds008768-1.0.0/participants.tsv",
+      "session_metadata_glob": "sub-*/sub-*_sessions.tsv",
       "epochs_dir": "processed_ds008768/epochs",
       "epoch_glob": "sub-*_task-rest_desc-cleaned_epo.fif",
       "task": "rest",
@@ -116,7 +117,9 @@
       "columns": {
         "group": "group",
         "age_years": "age",
-        "sex": "sex"
+        "sex": "sex",
+        "updrs": "updrs_part_iii",
+        "moca": "moca"
       }
     }
   ]
