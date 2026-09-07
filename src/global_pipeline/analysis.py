@@ -15,6 +15,7 @@ import itertools
 import math
 import re
 import tempfile
+import textwrap
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import combinations
 from pathlib import Path
@@ -1522,9 +1523,8 @@ def _plot_subject_violins(
     fig, axes = plt.subplots(
         nrows,
         ncols,
-        figsize=(4.0 * ncols, 3.3 * nrows),
+        figsize=(5.2 * ncols, 4.8 * nrows),
         squeeze=False,
-        constrained_layout=True,
     )
     positions = np.arange(1, len(groups) + 1, dtype=float)
     pairwise_p: dict[tuple[str, str, str], float] = {}
@@ -1605,14 +1605,30 @@ def _plot_subject_violins(
                         f"{left_group} vs {right_group}: "
                         f"p={raw_p:.3g}, q={q_value:.3g}"
                     )
+            metric = feature.rsplit("__", 1)[-1]
             title = _feature_label(feature)
             if significant_pairs:
                 title += "\n* Welch BH-FDR q<" + f"{config.fdr_alpha:g}: " + "; ".join(significant_pairs)
             else:
                 title += f"\nno Welch BH-FDR q<{config.fdr_alpha:g}"
-            axis.set_title(title, fontsize=8)
+            axis.set_title(
+                "\n".join(
+                    textwrap.fill(line, width=42, break_long_words=False)
+                    for line in title.splitlines()
+                ),
+                fontsize=9,
+                pad=10,
+            )
             axis.grid(axis="y", alpha=0.2)
-            axis.set_ylabel("Subject-average value")
+            if metric == "aperiodic_knee":
+                # The knee parameter is strictly positive and naturally spans
+                # several orders of magnitude. A log axis keeps a single
+                # extreme subject from flattening the rest of the distribution
+                # while preserving the original values and inferential tests.
+                axis.set_yscale("log")
+                axis.set_ylabel("Subject-average value (log scale)")
+            else:
+                axis.set_ylabel("Subject-average value")
         else:
             axis.axis("off")
     for axis in axes.flat[len(feature_columns):]:
@@ -1623,13 +1639,23 @@ def _plot_subject_violins(
         )
         for group in groups
     ]
-    axes.flat[0].legend(handles=handles, frameon=False, fontsize=8)
+    fig.legend(
+        handles=handles,
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.015),
+        ncol=min(len(groups), 4),
+        frameon=False,
+        fontsize=9,
+    )
     fig.suptitle(
         f"{dataset_id}: subject-level {family.replace('_', ' ')} distributions\n"
-        "Each point is one participant/condition; annotations show raw Welch p and BH-FDR q"
+        "Each point is one participant/condition; annotations show raw Welch p and BH-FDR q",
+        fontsize=14,
+        y=0.985,
     )
+    fig.tight_layout(rect=(0.02, 0.12, 0.98, 0.88), pad=1.4, h_pad=2.0, w_pad=2.0)
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, dpi=150)
+    fig.savefig(output, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
