@@ -89,6 +89,47 @@ def _new_entropy_state(dx: int) -> dict[str, Any]:
     }
 
 
+def _assess_aperiodic_fit(
+    metrics: dict[str, Any],
+    curves: dict[str, np.ndarray],
+    qc: dict[str, Any],
+) -> dict[str, Any]:
+    """Evaluate one selected specparam fit using the legacy QC thresholds."""
+    reasons: list[str] = []
+    try:
+        observed = np.asarray(curves["observed_psd_uv2_hz"], dtype=float)
+        modeled = np.asarray(curves["modeled_psd_uv2_hz"], dtype=float)
+        residual = np.log10(observed) - np.log10(modeled)
+        residual_bias = float(np.mean(residual))
+        residual_sd = float(np.std(residual))
+        residual_max = float(np.max(np.abs(residual)))
+    except (KeyError, TypeError, ValueError, FloatingPointError):
+        residual_bias = residual_sd = residual_max = np.nan
+        reasons.append("invalid_residual_spectrum")
+    exponent = float(metrics.get("aperiodic_exponent", np.nan))
+    r_squared = float(metrics.get("specparam_r_squared", np.nan))
+    error_mae = float(metrics.get("specparam_error_mae", np.nan))
+    exponent_low, exponent_high = (float(value) for value in qc["exponent_range"])
+    if not np.isfinite(r_squared) or r_squared < float(qc["minimum_r_squared"]):
+        reasons.append("r_squared_below_minimum")
+    if not np.isfinite(error_mae) or error_mae > float(qc["maximum_error_mae_log10"]):
+        reasons.append("mae_above_maximum")
+    if not np.isfinite(exponent) or not exponent_low <= exponent <= exponent_high:
+        reasons.append("exponent_outside_range")
+    if not np.isfinite(residual_max) or residual_max > float(qc["maximum_absolute_residual_log10"]):
+        reasons.append("residual_above_maximum")
+    return {
+        "pass": not reasons,
+        "reasons": "pass" if not reasons else ";".join(reasons),
+        "residual_bias_log10": residual_bias,
+        "residual_sd_log10": residual_sd,
+        "residual_max_abs_log10": residual_max,
+        "raw_exponent": exponent,
+        "raw_r_squared": r_squared,
+        "raw_error_mae_log10": error_mae,
+    }
+
+
 def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd.DataFrame, dict[str, Any]]:
     path = Path(record["epoch_path"])
     # One recording is loaded at a time. Epochs remain a separate dimension
@@ -135,6 +176,7 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
     }
     aperiodic_by_channel: list[dict[str, float]] = []
     aperiodic_curves: list[dict[str, np.ndarray] | None] = []
+    aperiodic_qc: list[dict[str, Any]] = []
     for channel_index in range(len(channels)):
         try:
             aperiodic, _, curves = fit_specparam_spectrum(
@@ -143,9 +185,22 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
                 aperiodic_bands,
                 config.aperiodic_settings,
             )
-        except Exception:
+            qc_result = _assess_aperiodic_fit(
+                aperiodic, curves, config.aperiodic_qc_settings
+            )
+        except Exception as error:
             aperiodic = {}
             curves = None
+            qc_result = {
+                "pass": False,
+                "reasons": f"fit_failed:{type(error).__name__}",
+                "residual_bias_log10": np.nan,
+                "residual_sd_log10": np.nan,
+                "residual_max_abs_log10": np.nan,
+                "raw_exponent": np.nan,
+                "raw_r_squared": np.nan,
+                "raw_error_mae_log10": np.nan,
+            }
         numeric_values: dict[str, float] = {}
         for metric, value in aperiodic.items():
             if isinstance(value, str):
@@ -154,8 +209,12 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
                 numeric_values[metric] = float(value)
             except (TypeError, ValueError):
                 continue
-        aperiodic_by_channel.append(numeric_values)
-        aperiodic_curves.append(curves)
+        # A failed QC fit remains available through the diagnostic columns,
+        # but its exponent/aperiodic metrics and curves are not inferential
+        # inputs and cannot trigger eBOSC detection.
+        aperiodic_by_channel.append(numeric_values if qc_result["pass"] else {})
+        aperiodic_curves.append(curves if qc_result["pass"] else None)
+        aperiodic_qc.append(qc_result)
 
     entropy: dict[str, list[dict[str, Any]]] = {
         band: [
@@ -364,6 +423,19 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
         row = {**metadata, "electrode": electrode, "sampling_frequency_hz": sfreq, "n_epochs": n_epochs}
         for metric, value in aperiodic_by_channel[channel_index].items():
             row[f"aperiodic__broadband__{metric}"] = value
+        qc_result = aperiodic_qc[channel_index]
+        row.update(
+            {
+                "aperiodic_qc_pass": int(qc_result["pass"]),
+                "aperiodic_qc_reasons": str(qc_result["reasons"]),
+                "aperiodic_qc_residual_bias_log10": qc_result["residual_bias_log10"],
+                "aperiodic_qc_residual_sd_log10": qc_result["residual_sd_log10"],
+                "aperiodic_qc_residual_max_abs_log10": qc_result["residual_max_abs_log10"],
+                "aperiodic_qc_raw_exponent": qc_result["raw_exponent"],
+                "aperiodic_qc_raw_r_squared": qc_result["raw_r_squared"],
+                "aperiodic_qc_raw_error_mae_log10": qc_result["raw_error_mae_log10"],
+            }
+        )
         for band, (low, high) in config.bands.items():
             band_mask = (frequencies >= low) & (frequencies <= high)
             band_power = float(np.trapezoid(electrode_psd[channel_index, band_mask], frequencies[band_mask]))
@@ -651,7 +723,7 @@ def _feature_label(feature: str) -> str:
 def _analysis_signature(config: GlobalConfig) -> str:
     """Return the analysis contract used to validate resumable subject files."""
     contract = {
-        "schema": 4,
+        "schema": 5,
         "bands": config.bands,
         "permutation_dimensions": config.permutation_dimensions,
         "embedding_dimension": config.embedding_dimension,
@@ -659,6 +731,7 @@ def _analysis_signature(config: GlobalConfig) -> str:
         "bout_threshold_percentile": config.bout_threshold_percentile,
         "bout_minimum_cycles": config.bout_minimum_cycles,
         "aperiodic_settings": config.aperiodic_settings,
+        "aperiodic_qc_settings": config.aperiodic_qc_settings,
         "ebosc_settings": config.ebosc_settings,
     }
     return json.dumps(contract, sort_keys=True, separators=(",", ":"))
@@ -724,7 +797,7 @@ def _save_subject_cache(
 
     _write_table_atomic(features, paths["features"])
     metadata = {
-        "schema_version": 4,
+        "schema_version": 5,
         "analysis_signature": _analysis_signature(config),
         "dataset_id": record["dataset_id"],
         "recording_id": record["recording_id"],
@@ -737,6 +810,7 @@ def _save_subject_cache(
         "sfreq": float(info["sfreq"]),
         "permutation_dimensions": list(config.permutation_dimensions),
         "aperiodic_analysis": config.aperiodic_settings,
+        "aperiodic_qc": config.aperiodic_qc_settings,
         "ebosc_analysis": config.ebosc_settings,
         "pattern_file": paths["patterns"].name,
         "feature_file": paths["features"].name,
@@ -769,7 +843,7 @@ def _load_subject_cache(
         epoch_path = Path(record["epoch_path"])
         epoch_stat = epoch_path.stat()
         if (
-            metadata.get("schema_version") != 4
+            metadata.get("schema_version") != 5
             or metadata.get("analysis_signature") != _analysis_signature(config)
             or metadata.get("epoch_path") != str(epoch_path.resolve())
             or metadata.get("epoch_size") != int(epoch_stat.st_size)
@@ -1612,6 +1686,42 @@ def run_global_pipeline(
         raise RuntimeError("No recordings with accepted epochs were available for analysis")
     feature_table = pd.concat(recording_tables, ignore_index=True)
     _write_table(feature_table, output / "metrics" / "recording_features.csv.gz")
+    qc_columns = [
+        "dataset_id",
+        "recording_id",
+        "participant_id",
+        "group",
+        "electrode",
+        "aperiodic_qc_pass",
+        "aperiodic_qc_reasons",
+        "aperiodic_qc_residual_bias_log10",
+        "aperiodic_qc_residual_sd_log10",
+        "aperiodic_qc_residual_max_abs_log10",
+        "aperiodic_qc_raw_exponent",
+        "aperiodic_qc_raw_r_squared",
+        "aperiodic_qc_raw_error_mae_log10",
+    ]
+    _write_table(
+        feature_table[qc_columns],
+        output / "metrics" / "aperiodic_fit_qc.csv.gz",
+    )
+    subject_qc = (
+        feature_table.groupby(
+            ["dataset_id", "participant_id", "group"], dropna=False
+        )["aperiodic_qc_pass"]
+        .agg(n_electrodes="size", n_qc_pass_electrodes="sum")
+        .reset_index()
+    )
+    subject_qc["qc_pass_fraction"] = (
+        subject_qc["n_qc_pass_electrodes"] / subject_qc["n_electrodes"]
+    )
+    subject_qc["subject_qc_pass"] = subject_qc["qc_pass_fraction"].ge(
+        config.aperiodic_qc_settings["minimum_subject_qc_fraction"]
+    )
+    _write_table(
+        subject_qc,
+        output / "metrics" / "aperiodic_subject_qc.csv.gz",
+    )
     if analysis_exclusions:
         _write_table(
             pd.DataFrame.from_records(analysis_exclusions),

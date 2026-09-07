@@ -38,6 +38,14 @@ DEFAULT_APERIODIC_SETTINGS = {
     "peak_threshold": 2.0,
 }
 
+DEFAULT_APERIODIC_QC_SETTINGS = {
+    "minimum_r_squared": 0.9,
+    "maximum_error_mae_log10": 0.15,
+    "maximum_absolute_residual_log10": 0.75,
+    "exponent_range": [0.0, 3.0],
+    "minimum_subject_qc_fraction": 0.8,
+}
+
 DEFAULT_EBOSC_SETTINGS = {
     "frequency_min_hz": 4.0,
     "frequency_max_hz": 50.0,
@@ -216,6 +224,9 @@ class GlobalConfig:
     aperiodic_settings: dict[str, Any] = field(
         default_factory=lambda: dict(DEFAULT_APERIODIC_SETTINGS)
     )
+    aperiodic_qc_settings: dict[str, Any] = field(
+        default_factory=lambda: dict(DEFAULT_APERIODIC_QC_SETTINGS)
+    )
     ebosc_settings: dict[str, Any] = field(
         default_factory=lambda: dict(DEFAULT_EBOSC_SETTINGS)
     )
@@ -275,6 +286,19 @@ def load_global_config(path: str | Path) -> GlobalConfig:
         raise ValueError("aperiodic.model_selection_criterion must be 'bic'")
     if [float(value) for value in defaults["frequency_range_hz"]] != [4.0, 50.0]:
         raise ValueError("The aperiodic fit range must be 4–50 Hz")
+    aperiodic_qc = dict(DEFAULT_APERIODIC_QC_SETTINGS)
+    aperiodic_qc.update(raw.get("aperiodic_fit_qc", {}))
+    exponent_range = [float(value) for value in aperiodic_qc["exponent_range"]]
+    if not 0.0 <= float(aperiodic_qc["minimum_r_squared"]) <= 1.0:
+        raise ValueError("aperiodic_fit_qc.minimum_r_squared must be in [0, 1]")
+    if float(aperiodic_qc["maximum_error_mae_log10"]) <= 0.0:
+        raise ValueError("aperiodic_fit_qc.maximum_error_mae_log10 must be positive")
+    if float(aperiodic_qc["maximum_absolute_residual_log10"]) <= 0.0:
+        raise ValueError("aperiodic_fit_qc.maximum_absolute_residual_log10 must be positive")
+    if len(exponent_range) != 2 or exponent_range[0] >= exponent_range[1]:
+        raise ValueError("aperiodic_fit_qc.exponent_range must increase")
+    if not 0.0 < float(aperiodic_qc["minimum_subject_qc_fraction"]) <= 1.0:
+        raise ValueError("aperiodic_fit_qc.minimum_subject_qc_fraction must be in (0, 1]")
     ebosc = dict(DEFAULT_EBOSC_SETTINGS)
     ebosc.update(raw.get("ebosc", {}))
     # Accept the pre-eBOSC global names when loading an older configuration.
@@ -309,6 +333,7 @@ def load_global_config(path: str | Path) -> GlobalConfig:
         embedding_dimension=dx,
         permutation_dimensions=dimensions,
         aperiodic_settings=defaults,
+        aperiodic_qc_settings=aperiodic_qc,
         ebosc_settings=ebosc,
         delay_samples=tau,
         bout_threshold_percentile=percentile,

@@ -102,6 +102,8 @@ canonical/<dataset>/recordings.csv.gz
 metrics/recording_features.csv.gz
 metrics/subject_features.csv.gz
 metrics/analysis_exclusions.csv.gz
+metrics/aperiodic_fit_qc.csv.gz
+metrics/aperiodic_subject_qc.csv.gz
 statistics/group_statistics.csv.gz
 statistics/clinical_correlations.csv.gz
 figures/<dataset>/*_topomaps.png
@@ -173,6 +175,13 @@ around the midpoint of each detected eBOSC bout: baseline-subtracted Hilbert
 envelope, relative Hilbert phase, and phase-aligned band-passed signal. Bout
 waveforms are averaged across electrodes within each recording, then across
 recordings; shaded intervals are Student-t 95% intervals across recordings.
+
+Aperiodic QC uses the configured minimum R², maximum log10 MAE, maximum
+absolute log10 residual, and exponent range. Failed QC fits are retained in
+the QC tables with their reasons and raw diagnostics, but their aperiodic
+features are set to missing and they do not contribute to eBOSC detection,
+aperiodic statistics, topomaps, or violin plots. The subject QC table reports
+the fraction of passing electrodes using the configured 80% threshold.
 
 Entropy-plane figures show H versus complexity (H×C) and H versus Fisher
 information (H×F), separately for every frequency band. They are produced for
