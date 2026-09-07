@@ -1082,7 +1082,6 @@ def _contrast_topomap(
         1,
         figsize=(4.8, 3.5 * len(feature_columns)),
         squeeze=False,
-        constrained_layout=True,
     )
     images = {}
     mask_params = {
@@ -1125,15 +1124,23 @@ def _contrast_topomap(
     for row_index, feature in enumerate(feature_columns):
         if feature in images:
             fig.colorbar(images[feature], ax=axes[row_index, 0], shrink=0.75)
-    fig.suptitle(
+    title = (
         f"{dataset_id}: {group_b} − {group_a} — "
         f"{feature_template.rstrip('_').replace('_', ' ').title()} topomaps\n"
         f"white dots = Welch BH-FDR p < {config.fdr_alpha:g} "
-        f"({significant_count} significant electrode-feature maps)",
-        fontsize=13,
+        f"({significant_count} significant electrode-feature maps)"
     )
+    fig.suptitle(
+        "\n".join(
+            textwrap.fill(line, width=62, break_long_words=False)
+            for line in title.splitlines()
+        ),
+        fontsize=13,
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0.03, 0.02, 0.97, 0.985), pad=1.2, h_pad=2.0, w_pad=1.0)
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, dpi=150)
+    fig.savefig(output, dpi=150, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
@@ -1653,7 +1660,7 @@ def _plot_subject_violins(
         fontsize=14,
         y=0.985,
     )
-    fig.tight_layout(rect=(0.02, 0.12, 0.98, 0.88), pad=1.4, h_pad=2.0, w_pad=2.0)
+    fig.tight_layout(rect=(0.02, 0.12, 0.98, 0.97), pad=1.4, h_pad=2.0, w_pad=2.0)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
