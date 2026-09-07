@@ -142,7 +142,7 @@ figures/<dataset>/psd_broadband_mean_ci.png
 figures/<dataset>/average_detected_bouts_<band>.png
 figures/<dataset>/aperiodic_topomaps_broadband.png
 figures/<dataset>/*_contrast_*_topomaps.png
-figures/<dataset>/scatter_<moca|mmse|updrs>_<bout|within_bout>_<band>.png
+figures/<dataset>/scatter_<available_outcome>_<bout|within_bout>_<band>.png
 figures/<dataset>/subject_violins_<family>_<band|broadband>.png
 figures/<dataset>/entropy_hx[cf]_planes_<band>.png
 figures/<dataset>/within_bout_entropy_hx[cf]_planes_<band>.png
@@ -193,20 +193,21 @@ invalidates that subject only. Aggregation, FDR statistics, clinical
 correlations, and plotting then run from the compact subject results after all
 selected recordings are available.
 
-The PSD figure shows the subject-level median PSD across available EEG
+The broadband PSD figure shows the subject-level median non-normalized PSD across available EEG
 electrodes with a pointwise 95% bootstrap confidence interval across
-recordings. This robust summary prevents a small number of high-power
-recordings from dominating the figure. Population topomap panels are arranged
+recordings. PSD topomaps and subject violin plots use relative band power only.
+This robust summary prevents a small number of high-power recordings from
+dominating the figure. Population topomap panels are arranged
 vertically by feature (one feature per row, groups across columns), use shared
-color limits for each feature, and identify the group, family, band, and metric
+viridis color limits for each feature, and identify the group, family, band, and metric
 (including the embedding dimension where applicable). Contrast topomaps use
 the same vertical layout and show `group_b - group_a` on a symmetric scale
 centered at zero; white electrode markers identify electrodes whose Welch-test
 p-values survive the BH-FDR threshold, which is stated in the figure title.
 Clinical
 scatter plots use one point per participant and condition, restricted to
-PD-labeled groups, and are created only when the corresponding clinical
-values are available. Their annotations are unadjusted Spearman associations;
+PD-labeled groups, and are created for every available canonical or numeric
+dataset-specific clinical outcome. Their annotations are unadjusted Spearman associations;
 the age/sex-adjusted and unadjusted results remain in
 `statistics/clinical_correlations.csv.gz`, with FDR applied separately by
 dataset, outcome, feature family, and method.

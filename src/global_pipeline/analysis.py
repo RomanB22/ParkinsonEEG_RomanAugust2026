@@ -731,6 +731,8 @@ APERIODIC_PLOT_METRICS = {
 
 def _plot_feature_columns(feature_columns: list[str], feature_template: str) -> list[str]:
     """Exclude aperiodic fit diagnostics from inferential feature plots."""
+    if feature_template == "psd__":
+        return [column for column in feature_columns if column.endswith("__relative_power")]
     if feature_template != "aperiodic__":
         return feature_columns
     return [
@@ -1011,6 +1013,7 @@ def _topomap(
                 show=False,
                 contours=0,
                 names=None,
+                cmap="viridis",
                 vlim=limits[feature],
             )
             images.setdefault(feature, image)
@@ -1110,7 +1113,7 @@ def _contrast_topomap(
             show=False,
             contours=0,
             names=None,
-            cmap="RdBu_r",
+            cmap="viridis",
             vlim=_stable_limits(differences, symmetric=True),
             mask=mask,
             mask_params=mask_params,
@@ -1345,6 +1348,41 @@ def _plot_average_detected_bouts(
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=150)
     plt.close(fig)
+
+
+def _augment_clinical_metadata(table: pd.DataFrame, dataset_config: Any) -> pd.DataFrame:
+    """Add numeric dataset-specific clinical outcomes to recording rows."""
+    metadata_path = getattr(dataset_config, "metadata", None)
+    if metadata_path is None or not Path(metadata_path).exists():
+        return table
+    separator = "\t" if Path(metadata_path).suffix.lower() in {".tsv", ".txt"} else ","
+    metadata = pd.read_csv(metadata_path, sep=separator, dtype=str)
+    metadata.columns = [str(column).lstrip("\ufeff") for column in metadata.columns]
+    id_column = next(
+        (column for column in ("participant_id", "subject_id", "recording_id", "ID", "id") if column in metadata),
+        None,
+    )
+    if id_column is None:
+        return table
+    participant = metadata[id_column].astype(str).str.strip()
+    participant = participant.where(participant.str.startswith("sub-"), "sub-" + participant)
+    extra = pd.DataFrame({"participant_id": participant})
+    canonical_names = {
+        "age", "age_years", "sex", "gender", "group", "diagnosis", "condition",
+        "status", "moca", "mmse", "updrs", "updrs_total",
+    }
+    for column in metadata.columns:
+        if column == id_column or column.lower() in canonical_names:
+            continue
+        values = pd.to_numeric(metadata[column], errors="coerce")
+        if values.notna().sum() < 3:
+            continue
+        outcome = f"clinical__{_safe_filename(column).lower()}"
+        extra[outcome] = values
+    if len(extra.columns) == 1:
+        return table
+    extra = extra.groupby("participant_id", dropna=False).first().reset_index()
+    return table.merge(extra, on="participant_id", how="left")
 
 
 def _plot_clinical_scatter(
@@ -1764,7 +1802,15 @@ def _plot_dataset_results(
                     dataset_figures / f"{filename_prefix}_{pair_name}_{suffix}_topomaps.png",
                     band=band,
                 )
-    for outcome in ("moca", "mmse", "updrs"):
+    outcomes = [
+        outcome for outcome in ("moca", "mmse", "updrs")
+        if outcome in feature_table
+    ]
+    outcomes.extend(
+        column for column in feature_table.columns
+        if column.startswith("clinical__") and column not in outcomes
+    )
+    for outcome in outcomes:
         for family in ("bout", "within_bout"):
             filename_family = "within_bout" if family == "within_bout" else family
             for band in config.bands:
@@ -1775,7 +1821,7 @@ def _plot_dataset_results(
                     outcome,
                     family,
                     config,
-                    dataset_figures / f"scatter_{outcome}_{filename_family}_{suffix}.png",
+                    dataset_figures / f"scatter_{_safe_filename(outcome)}_{filename_family}_{suffix}.png",
                     band=band,
                 )
     for family in ("psd", "entropy", "bout", "within_bout"):
@@ -2026,6 +2072,7 @@ def _run_global_pipeline_parallel(
         if not feature_parts:
             continue
         dataset_table = pd.concat(feature_parts, ignore_index=True)
+        dataset_table = _augment_clinical_metadata(dataset_table, dataset_config)
         all_feature_tables.append(dataset_table)
         dataset_stats = group_statistics(dataset_table, dataset_config)
         dataset_correlations = clinical_correlations(dataset_table, dataset_config)
