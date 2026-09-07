@@ -88,6 +88,9 @@ metrics/subject_features.csv.gz
 statistics/group_statistics.csv.gz
 statistics/clinical_correlations.csv.gz
 figures/<dataset>/*_topomaps.png
+figures/<dataset>/psd_mean_ci.png
+figures/<dataset>/*_contrast_*_topomaps.png
+figures/<dataset>/scatter_<moca|mmse|updrs>_<bout|within_bout>.png
 ```
 
 Memory is bounded by `block_epochs` (default 16). Epochs are opened with
@@ -97,3 +100,14 @@ on the xarray block data; xarray retains epoch/channel/time labels without
 materializing a full study cube. Raw samples and bout waveforms are not
 written to feature tables. Canonical tables use compressed CSV and do not
 require a Parquet engine.
+
+The PSD figure shows recording-level mean PSD across EEG electrodes with a
+95% confidence interval across recordings. Population topomap panels use
+shared color limits for each feature. Contrast topomaps show `group_b -
+group_a` on a symmetric scale centered at zero; white electrode markers
+indicate Welch-test electrodes surviving the BH-FDR threshold. Clinical
+scatter plots use one point per participant and condition, restricted to
+PD-labeled groups, and are created only when the corresponding clinical
+values are available. Their annotations are unadjusted Spearman associations;
+the age/sex-adjusted results remain in
+`statistics/clinical_correlations.csv.gz`.

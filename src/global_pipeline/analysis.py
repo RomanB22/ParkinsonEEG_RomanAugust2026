@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -274,7 +275,15 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
                 for metric in ENTROPY_METRICS:
                     row[f"within_bout__{band}__{metric}"] = np.nan
         rows.append(row)
-    return pd.DataFrame.from_records(rows), {"channels": channels, "sfreq": sfreq, "frequencies": frequencies}
+    return pd.DataFrame.from_records(rows), {
+        "channels": channels,
+        "sfreq": sfreq,
+        "frequencies": frequencies,
+        # Keep only the channel-averaged spectrum for plotting.  The full
+        # channel x frequency PSD remains local to this recording, preserving
+        # the block-wise memory policy.
+        "mean_psd": np.mean(mean_psd, axis=0),
+    }
 
 
 def _pooled_block_probabilities(data: np.ndarray, dx: int, tau: int) -> tuple[np.ndarray, int, int]:
@@ -416,7 +425,45 @@ def clinical_correlations(table: pd.DataFrame, config: GlobalConfig) -> pd.DataF
     return result
 
 
-def _topomap(table: pd.DataFrame, config: GlobalConfig, dataset_id: str, domain: str, feature_template: str, output: Path) -> None:
+def _safe_filename(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("_")
+
+
+def _feature_map(
+    selected: pd.DataFrame,
+    group: str,
+    feature: str,
+    channels: list[str],
+) -> np.ndarray:
+    values = selected.loc[selected["group"].eq(group)].groupby("electrode")[feature].mean()
+    return np.asarray([values.get(channel, np.nan) for channel in channels], dtype=float)
+
+
+def _stable_limits(values: np.ndarray, *, symmetric: bool = False) -> tuple[float, float]:
+    finite = np.asarray(values, dtype=float)
+    finite = finite[np.isfinite(finite)]
+    if finite.size == 0:
+        return (-1.0, 1.0)
+    if symmetric:
+        bound = float(np.max(np.abs(finite)))
+        bound = max(bound, 1e-12)
+        return (-bound, bound)
+    low, high = float(np.min(finite)), float(np.max(finite))
+    if np.isclose(low, high):
+        padding = max(abs(low) * 0.05, 1e-12)
+        low -= padding
+        high += padding
+    return low, high
+
+
+def _topomap(
+    table: pd.DataFrame,
+    config: GlobalConfig,
+    dataset_id: str,
+    domain: str,
+    feature_template: str,
+    output: Path,
+) -> None:
     import matplotlib.pyplot as plt
 
     selected = table.loc[table["dataset_id"].eq(dataset_id)].copy()
@@ -431,19 +478,246 @@ def _topomap(table: pd.DataFrame, config: GlobalConfig, dataset_id: str, domain:
     channels = [channel for channel in selected["electrode"].drop_duplicates() if channel in positions]
     if not channels:
         return
-    fig, axes = plt.subplots(len(groups), len(feature_columns), figsize=(3.2 * len(feature_columns), 3.0 * len(groups)), squeeze=False)
+    maps: dict[str, list[np.ndarray]] = {
+        feature: [_feature_map(selected, group, feature, channels) for group in groups]
+        for feature in feature_columns
+    }
+    limits = {
+        feature: _stable_limits(np.concatenate(group_values))
+        for feature, group_values in maps.items()
+    }
+    fig, axes = plt.subplots(
+        len(groups),
+        len(feature_columns),
+        figsize=(3.4 * len(feature_columns), 3.2 * len(groups)),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    images = {}
+    info = mne.create_info(channels, sfreq=100.0, ch_types="eeg")
+    info.set_montage(montage, on_missing="ignore", verbose="ERROR")
     for row_index, group in enumerate(groups):
         for column_index, feature in enumerate(feature_columns):
-            values = selected.loc[selected["group"].eq(group)].groupby("electrode")[feature].mean()
-            values = np.asarray([values.get(channel, np.nan) for channel in channels], dtype=float)
+            values = maps[feature][row_index]
             valid = np.isfinite(values)
             if valid.sum() < 3:
                 axes[row_index, column_index].axis("off")
                 continue
-            info = mne.create_info(channels, sfreq=100.0, ch_types="eeg")
-            info.set_montage(montage, on_missing="ignore", verbose="ERROR")
-            mne.viz.plot_topomap(values, info, axes=axes[row_index, column_index], show=False, contours=0, names=None)
+            image, _ = mne.viz.plot_topomap(
+                values,
+                info,
+                axes=axes[row_index, column_index],
+                show=False,
+                contours=0,
+                names=None,
+                vlim=limits[feature],
+            )
+            images.setdefault(feature, image)
             axes[row_index, column_index].set_title(f"{group}: {feature.split('__')[-1]}")
+    for column_index, feature in enumerate(feature_columns):
+        if feature in images:
+            fig.colorbar(images[feature], ax=axes[:, column_index].tolist(), shrink=0.75)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=150)
+    plt.close(fig)
+
+
+def _contrast_topomap(
+    table: pd.DataFrame,
+    statistics: pd.DataFrame,
+    config: GlobalConfig,
+    dataset_id: str,
+    feature_template: str,
+    group_a: str,
+    group_b: str,
+    output: Path,
+) -> None:
+    """Plot group_b - group_a using one symmetric scale per feature.
+
+    White electrode markers indicate electrodes passing the configured
+    Benjamini-Hochberg FDR threshold for the Welch test.
+    """
+    import matplotlib.pyplot as plt
+
+    selected = table.loc[table["dataset_id"].eq(dataset_id)].copy()
+    feature_columns = [column for column in selected if column.startswith(feature_template)]
+    if selected.empty or not feature_columns:
+        return
+    montage = mne.channels.make_standard_montage("standard_1005")
+    positions = montage.get_positions()["ch_pos"]
+    channels = [channel for channel in selected["electrode"].drop_duplicates() if channel in positions]
+    if not channels:
+        return
+    info = mne.create_info(channels, sfreq=100.0, ch_types="eeg")
+    info.set_montage(montage, on_missing="ignore", verbose="ERROR")
+    pair_stats = statistics.loc[
+        statistics["dataset_id"].eq(dataset_id)
+        & statistics["group_a"].eq(group_a)
+        & statistics["group_b"].eq(group_b)
+    ]
+    fig, axes = plt.subplots(
+        1,
+        len(feature_columns),
+        figsize=(3.4 * len(feature_columns), 3.5),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    images = {}
+    mask_params = {
+        "marker": "o",
+        "markerfacecolor": "white",
+        "markeredgecolor": "black",
+        "linewidth": 0,
+        "markersize": 4,
+    }
+    for column_index, feature in enumerate(feature_columns):
+        values_a = _feature_map(selected, group_a, feature, channels)
+        values_b = _feature_map(selected, group_b, feature, channels)
+        differences = values_b - values_a
+        feature_stats = pair_stats.loc[pair_stats["feature"].eq(feature)].set_index("electrode")
+        p_values = np.asarray(
+            [feature_stats.get("welch_p_fdr_bh", pd.Series(dtype=float)).get(channel, np.nan) for channel in channels],
+            dtype=float,
+        )
+        mask = np.isfinite(p_values) & (p_values <= config.fdr_alpha) & np.isfinite(differences)
+        valid = np.isfinite(differences)
+        if valid.sum() < 3:
+            axes[0, column_index].axis("off")
+            continue
+        image, _ = mne.viz.plot_topomap(
+            differences,
+            info,
+            axes=axes[0, column_index],
+            show=False,
+            contours=0,
+            names=None,
+            cmap="RdBu_r",
+            vlim=_stable_limits(differences, symmetric=True),
+            mask=mask,
+            mask_params=mask_params,
+        )
+        images[feature] = image
+        axes[0, column_index].set_title(feature.split("__")[-1])
+    for column_index, feature in enumerate(feature_columns):
+        if feature in images:
+            fig.colorbar(images[feature], ax=axes[0, column_index], shrink=0.75)
+    fig.suptitle(f"{dataset_id}: {group_b} - {group_a} ({feature_template.rstrip('_')})")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=150)
+    plt.close(fig)
+
+
+def _plot_psd_spectra(
+    spectra: list[dict[str, Any]],
+    dataset_id: str,
+    output: Path,
+) -> None:
+    """Plot recording-level mean PSD with a 95% CI for each population."""
+    import matplotlib.pyplot as plt
+
+    selected = [item for item in spectra if item["dataset_id"] == dataset_id]
+    if not selected:
+        return
+    reference = np.asarray(selected[0]["frequencies"], dtype=float)
+    groups = sorted({str(item["group"]) for item in selected})
+    fig, axis = plt.subplots(figsize=(9, 5.5))
+    for group in groups:
+        group_items = [item for item in selected if str(item["group"]) == group]
+        curves = []
+        for item in group_items:
+            frequency = np.asarray(item["frequencies"], dtype=float)
+            curve = np.asarray(item["mean_psd"], dtype=float)
+            if not np.array_equal(frequency, reference):
+                curve = np.interp(reference, frequency, curve, left=np.nan, right=np.nan)
+            curves.append(curve)
+        values = np.asarray(curves, dtype=float)
+        mean = np.nanmean(values, axis=0)
+        n = np.sum(np.isfinite(values), axis=0)
+        standard_deviation = np.nanstd(values, axis=0, ddof=1)
+        standard_error = standard_deviation / np.sqrt(np.maximum(n, 1))
+        interval = np.where(n > 1, 1.96 * standard_error, 0.0)
+        line = axis.plot(reference, mean, linewidth=1.8, label=f"{group} (n={len(group_items)})")[0]
+        axis.fill_between(
+            reference,
+            np.maximum(mean - interval, np.finfo(float).tiny),
+            mean + interval,
+            color=line.get_color(),
+            alpha=0.2,
+        )
+    axis.set_xlabel("Frequency (Hz)")
+    axis.set_ylabel("Mean PSD across EEG electrodes")
+    axis.set_title(f"{dataset_id}: mean PSD ± 95% CI")
+    axis.set_xlim(left=0.0)
+    axis.set_yscale("log")
+    axis.grid(True, alpha=0.25)
+    axis.legend()
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=150)
+    plt.close(fig)
+
+
+def _plot_clinical_scatter(
+    table: pd.DataFrame,
+    dataset_id: str,
+    outcome: str,
+    family: str,
+    output: Path,
+) -> None:
+    """Plot subject-level PD features against one available clinical score."""
+    import matplotlib.pyplot as plt
+
+    prefix = f"{family}__"
+    feature_columns = [column for column in table if column.startswith(prefix)]
+    if not feature_columns or outcome not in table:
+        return
+    selected = table.loc[table["dataset_id"].eq(dataset_id)].copy()
+    selected = selected.loc[selected["group"].astype(str).str.lower().str.startswith("pd")]
+    subject = (
+        selected.groupby(["participant_id", "group"], dropna=False)[feature_columns + [outcome]]
+        .mean(numeric_only=True)
+        .reset_index()
+    )
+    usable = [feature for feature in feature_columns if subject[feature].notna().sum() >= 2]
+    if subject[outcome].notna().sum() < 2 or not usable:
+        return
+    ncols = min(4, len(usable))
+    nrows = int(math.ceil(len(usable) / ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.0 * ncols, 3.3 * nrows), squeeze=False)
+    colors = {group: f"C{index}" for index, group in enumerate(sorted(subject["group"].dropna().unique()))}
+    for index, feature in enumerate(usable):
+        axis = axes.flat[index]
+        points = subject[["group", outcome, feature]].dropna()
+        for group, group_points in points.groupby("group", sort=False):
+            axis.scatter(
+                group_points[outcome],
+                group_points[feature],
+                s=28,
+                alpha=0.8,
+                color=colors.get(group, "C0"),
+                label=str(group),
+            )
+        if len(points) >= 2 and points[outcome].nunique() > 1:
+            slope, intercept = np.polyfit(points[outcome].to_numpy(float), points[feature].to_numpy(float), 1)
+            x_values = np.linspace(points[outcome].min(), points[outcome].max(), 50)
+            axis.plot(x_values, intercept + slope * x_values, color="black", linewidth=1.0)
+        if len(points) >= 3 and points[outcome].nunique() > 1 and points[feature].nunique() > 1:
+            rho, p_value = spearmanr(points[outcome], points[feature])
+            annotation = f"rho={rho:.2f}, p={p_value:.3g}"
+        else:
+            annotation = f"n={len(points)}"
+        axis.text(0.03, 0.97, annotation, transform=axis.transAxes, va="top", fontsize=8)
+        short_name = feature.removeprefix(prefix).replace("__", " / ")
+        axis.set_title(short_name)
+        axis.set_xlabel(outcome.upper())
+        axis.set_ylabel(family.replace("_", " "))
+        axis.grid(True, alpha=0.2)
+    for axis in axes.flat[len(usable):]:
+        axis.axis("off")
+    handles, labels = axes.flat[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="upper right")
+    fig.suptitle(f"{dataset_id}: PD {family.replace('_', ' ')} vs {outcome.upper()}")
     fig.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=150)
@@ -477,9 +751,18 @@ def run_global_pipeline(
             canonical = canonical.loc[canonical["dataset_id"].isin(requested_ids)].copy()
     recording_tables: list[pd.DataFrame] = []
     diagnostics: list[dict[str, Any]] = []
+    spectra: list[dict[str, Any]] = []
     for record in canonical.to_dict(orient="records"):
         features, info = _analyze_recording(record, config)
         recording_tables.append(features)
+        spectra.append({
+            "dataset_id": record["dataset_id"],
+            "participant_id": record["participant_id"],
+            "recording_id": record["recording_id"],
+            "group": record["group"],
+            "frequencies": info["frequencies"],
+            "mean_psd": info["mean_psd"],
+        })
         diagnostics.append({"recording_id": record["recording_id"], "n_channels": len(info["channels"]), "sampling_frequency_hz": info["sfreq"]})
     feature_table = pd.concat(recording_tables, ignore_index=True)
     _write_table(feature_table, output / "metrics" / "recording_features.csv.gz")
@@ -493,9 +776,59 @@ def run_global_pipeline(
         for dataset in config.enabled_datasets:
             if dataset.dataset_id not in requested_ids:
                 continue
+            dataset_figures = output / "figures" / dataset.dataset_id
+            _plot_psd_spectra(spectra, dataset.dataset_id, dataset_figures / "psd_mean_ci.png")
             _topomap(feature_table, config, dataset.dataset_id, "psd", "psd__", output / "figures" / dataset.dataset_id / "psd_topomaps.png")
             _topomap(feature_table, config, dataset.dataset_id, "entropy", "entropy__", output / "figures" / dataset.dataset_id / "entropy_topomaps.png")
             _topomap(feature_table, config, dataset.dataset_id, "within_bout", "within_bout__", output / "figures" / dataset.dataset_id / "within_bout_entropy_topomaps.png")
+            selected_groups = sorted(feature_table.loc[feature_table["dataset_id"].eq(dataset.dataset_id), "group"].dropna().unique())
+            for group_a, group_b in combinations(selected_groups, 2):
+                pair_name = f"{_safe_filename(group_b)}_minus_{_safe_filename(group_a)}"
+                _contrast_topomap(
+                    feature_table,
+                    stats,
+                    config,
+                    dataset.dataset_id,
+                    "psd__",
+                    group_a,
+                    group_b,
+                    dataset_figures / f"psd_contrast_{pair_name}_topomaps.png",
+                )
+                _contrast_topomap(
+                    feature_table,
+                    stats,
+                    config,
+                    dataset.dataset_id,
+                    "entropy__",
+                    group_a,
+                    group_b,
+                    dataset_figures / f"entropy_contrast_{pair_name}_topomaps.png",
+                )
+                _contrast_topomap(
+                    feature_table,
+                    stats,
+                    config,
+                    dataset.dataset_id,
+                    "within_bout__",
+                    group_a,
+                    group_b,
+                    dataset_figures / f"within_bout_entropy_contrast_{pair_name}_topomaps.png",
+                )
+            for outcome in ("moca", "mmse", "updrs"):
+                _plot_clinical_scatter(
+                    feature_table,
+                    dataset.dataset_id,
+                    outcome,
+                    "bout",
+                    dataset_figures / f"scatter_{outcome}_bout.png",
+                )
+                _plot_clinical_scatter(
+                    feature_table,
+                    dataset.dataset_id,
+                    outcome,
+                    "within_bout",
+                    dataset_figures / f"scatter_{outcome}_within_bout.png",
+                )
     manifest = {
         "schema_version": 1,
         "status": "complete",
