@@ -721,6 +721,24 @@ def _feature_label(feature: str) -> str:
     return f"{family.replace('_', ' ').title()} — {band.title()} — {metric}"
 
 
+APERIODIC_PLOT_METRICS = {
+    "aperiodic_offset",
+    "aperiodic_knee",
+    "aperiodic_knee_frequency_hz",
+    "aperiodic_exponent",
+}
+
+
+def _plot_feature_columns(feature_columns: list[str], feature_template: str) -> list[str]:
+    """Exclude aperiodic fit diagnostics from inferential feature plots."""
+    if feature_template != "aperiodic__":
+        return feature_columns
+    return [
+        column for column in feature_columns
+        if column.rsplit("__", 1)[-1] in APERIODIC_PLOT_METRICS
+    ]
+
+
 def _analysis_signature(config: GlobalConfig) -> str:
     """Return the analysis contract used to validate resumable subject files."""
     contract = {
@@ -942,6 +960,7 @@ def _topomap(
             column for column in feature_columns
             if column.endswith(f"__D{config.embedding_dimension}")
         ]
+    feature_columns = _plot_feature_columns(feature_columns, feature_template)
     if not feature_columns:
         return
     selected_columns = list(dict.fromkeys(
@@ -1039,6 +1058,7 @@ def _contrast_topomap(
             column for column in feature_columns
             if column.endswith(f"__D{config.embedding_dimension}")
         ]
+    feature_columns = _plot_feature_columns(feature_columns, feature_template)
     if selected.empty or not feature_columns:
         return
     montage = mne.channels.make_standard_montage("standard_1005")
@@ -1188,15 +1208,19 @@ def _plot_average_detected_bouts(
     if not selected:
         return
     all_bands = list(config.bands)
-    if band is not None:
-        all_bands = [value for value in all_bands if value == band]
+    selected_band_indices = [
+        index for index, value in enumerate(all_bands)
+        if band is None or value == band
+    ]
+    if not selected_band_indices:
+        return
     first = selected[0].get("bout_representations")
     if not first:
         return
     times = np.asarray(first["times_seconds"], dtype=float)
     available_band_indices = [
         band_index
-        for band_index, _ in enumerate(all_bands)
+        for band_index in selected_band_indices
         if any(
             np.any(np.asarray(item["bout_representations"]["bout_counts"])[:, band_index] > 0)
             for item in selected
@@ -1345,6 +1369,7 @@ def _plot_clinical_scatter(
             column for column in feature_columns
             if column.endswith(f"__D{config.embedding_dimension}")
         ]
+    feature_columns = _plot_feature_columns(feature_columns, prefix)
     if not feature_columns or outcome not in table:
         return
     selected_columns = list(dict.fromkeys(
@@ -1432,6 +1457,7 @@ def _plot_subject_violins(
             column for column in feature_columns
             if column.endswith(f"__D{config.embedding_dimension}")
         ]
+    feature_columns = _plot_feature_columns(feature_columns, prefix)
     if not feature_columns:
         return
 

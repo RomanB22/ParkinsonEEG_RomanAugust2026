@@ -136,6 +136,12 @@ Band-specific figures are written separately for every configured band. The
 aperiodic and full-spectrum PSD summaries are broadband figures; the remaining
 families use one figure per band.
 
+Aperiodic topomaps and violins include only the interpretable offset, knee,
+knee-frequency, and exponent quantities; fit diagnostics remain in the QC
+tables rather than being plotted as duplicate-looking maps. Bout-waveform
+selection preserves the original configured band indices for each per-band
+figure.
+
 The analysis unit is one complete cleaned recording at a time. All accepted
 four-second epochs for that subject/session/condition are loaded together and
 released before the next recording is opened. Recordings are never
