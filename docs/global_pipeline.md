@@ -151,6 +151,10 @@ full-signal ordinal patterns, and eBOSC bout detection preserve epoch
 boundaries; ordinal counts are pooled across epochs without creating windows
 across rejected-data gaps. `block_epochs` is retained as a compatibility
 setting but is no longer an analysis boundary.
+Dataset entries may contain an `analysis` override. The ds007526 dataset uses
+a 4–40 Hz aperiodic/eBOSC range and a 30–40 Hz gamma band to avoid the 50 Hz
+power-line region; other datasets retain the global 4–50 Hz and 30–50 Hz
+settings.
 Raw samples and bout waveforms are not written to feature tables. Canonical
 tables use compressed CSV and do not require a Parquet engine.
 

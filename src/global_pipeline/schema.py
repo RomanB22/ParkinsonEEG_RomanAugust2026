@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -140,6 +140,7 @@ class DatasetConfig:
     auxiliary_names: tuple[str, ...] = ()
     enabled: bool = True
     columns: dict[str, str] = field(default_factory=dict)
+    analysis: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def from_dict(cls, value: dict[str, Any], base_dir: Path) -> "DatasetConfig":
@@ -175,6 +176,7 @@ class DatasetConfig:
             auxiliary_names=tuple(str(item) for item in value.get("auxiliary_names", [])),
             enabled=bool(value.get("enabled", True)),
             columns={str(key): str(item) for key, item in value.get("columns", {}).items()},
+            analysis=dict(value.get("analysis", {})),
         )
 
 
@@ -240,6 +242,39 @@ class GlobalConfig:
     def enabled_datasets(self) -> tuple[DatasetConfig, ...]:
         return tuple(dataset for dataset in self.datasets if dataset.enabled)
 
+    def for_dataset(self, dataset_id: str) -> "GlobalConfig":
+        """Return analysis settings with the selected dataset's overrides."""
+        dataset = next(
+            (item for item in self.datasets if item.dataset_id == dataset_id), None
+        )
+        if dataset is None or not dataset.analysis:
+            return self
+        overrides = dataset.analysis
+        bands = dict(self.bands)
+        if "bands" in overrides:
+            bands.update({
+                str(name): (float(bounds[0]), float(bounds[1]))
+                for name, bounds in overrides["bands"].items()
+            })
+        aperiodic = dict(self.aperiodic_settings)
+        aperiodic.update(overrides.get("aperiodic", {}))
+        ebosc = dict(self.ebosc_settings)
+        ebosc.update(overrides.get("ebosc", {}))
+        fit_low, fit_high = (float(value) for value in aperiodic["frequency_range_hz"])
+        if not 0.0 < fit_low < fit_high:
+            raise ValueError(f"Invalid aperiodic fit range for dataset {dataset_id!r}")
+        for name, (low, high) in bands.items():
+            if not 0.0 < float(low) < float(high):
+                raise ValueError(f"Invalid band {name!r} for dataset {dataset_id!r}")
+        if not 0.0 < float(ebosc["frequency_min_hz"]) < float(ebosc["frequency_max_hz"]):
+            raise ValueError(f"Invalid eBOSC frequency range for dataset {dataset_id!r}")
+        return replace(
+            self,
+            bands=bands,
+            aperiodic_settings=aperiodic,
+            ebosc_settings=ebosc,
+        )
+
 
 def load_global_config(path: str | Path) -> GlobalConfig:
     config_path = Path(path).resolve()
@@ -284,8 +319,9 @@ def load_global_config(path: str | Path) -> GlobalConfig:
         raise ValueError("aperiodic.aperiodic_modes must be ['fixed', 'knee']")
     if defaults["model_selection_criterion"] != "bic":
         raise ValueError("aperiodic.model_selection_criterion must be 'bic'")
-    if [float(value) for value in defaults["frequency_range_hz"]] != [4.0, 50.0]:
-        raise ValueError("The aperiodic fit range must be 4–50 Hz")
+    fit_range = [float(value) for value in defaults["frequency_range_hz"]]
+    if len(fit_range) != 2 or not 0.0 < fit_range[0] < fit_range[1]:
+        raise ValueError("aperiodic.frequency_range_hz must be an increasing positive range")
     aperiodic_qc = dict(DEFAULT_APERIODIC_QC_SETTINGS)
     aperiodic_qc.update(raw.get("aperiodic_fit_qc", {}))
     exponent_range = [float(value) for value in aperiodic_qc["exponent_range"]]

@@ -18,7 +18,7 @@
     "minimum_r_squared": 0.9,
     "maximum_error_mae_log10": 0.15,
     "maximum_absolute_residual_log10": 0.75,
-    "exponent_range": [0.0, 3.0],
+    "exponent_range": [0.0, 6.0],
     "minimum_subject_qc_fraction": 0.8
   },
   "ebosc": {
@@ -85,6 +85,17 @@
       "preprocessing_config": "config/preprocessing.yaml",
       "notch_frequency_hz": 50.0,
       "auxiliary_names": ["EOG1", "EOG2", "EOG3", "EOG4", "VREF"],
+      "analysis": {
+        "aperiodic": {
+          "frequency_range_hz": [4.0, 40.0]
+        },
+        "ebosc": {
+          "frequency_max_hz": 40.0
+        },
+        "bands": {
+          "gamma": [30.0, 40.0]
+        }
+      },
       "columns": {
         "group": "group",
         "age_years": "age",

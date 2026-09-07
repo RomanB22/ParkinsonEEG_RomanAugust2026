@@ -1921,6 +1921,7 @@ def _run_global_pipeline_parallel(
     all_exclusions: list[dict[str, Any]] = []
 
     for dataset_id in dataset_order:
+        dataset_config = config.for_dataset(dataset_id)
         dataset_records = canonical.loc[
             canonical["dataset_id"].eq(dataset_id)
         ].to_dict(orient="records")
@@ -1966,7 +1967,7 @@ def _run_global_pipeline_parallel(
 
         pending: dict[Any, dict[str, Any]] = {}
         for record in dataset_records:
-            cached = None if overwrite else _load_subject_cache(output, record, config)
+            cached = None if overwrite else _load_subject_cache(output, record, dataset_config)
             if cached is not None:
                 features, info = cached
                 accept_result(record, features, info, True)
@@ -1992,8 +1993,8 @@ def _run_global_pipeline_parallel(
         if analysis_workers == 1:
             for record in pending.values():
                 try:
-                    features, info = _analyze_recording(record, config)
-                    _save_subject_cache(output, record, features, info, config)
+                    features, info = _analyze_recording(record, dataset_config)
+                    _save_subject_cache(output, record, features, info, dataset_config)
                     accept_result(record, features, info, False)
                 except Exception as error:
                     handle_failure(record, error)
@@ -2003,14 +2004,14 @@ def _run_global_pipeline_parallel(
         else:
             with ProcessPoolExecutor(max_workers=analysis_workers) as executor:
                 futures = {
-                    executor.submit(_analyze_recording_worker, record, config): record
+                    executor.submit(_analyze_recording_worker, record, dataset_config): record
                     for record in pending.values()
                 }
                 for future in as_completed(futures):
                     record = futures.pop(future)
                     try:
                         _, features, info = future.result()
-                        _save_subject_cache(output, record, features, info, config)
+                        _save_subject_cache(output, record, features, info, dataset_config)
                         accept_result(record, features, info, False)
                     except Exception as error:
                         handle_failure(record, error)
@@ -2026,12 +2027,12 @@ def _run_global_pipeline_parallel(
             continue
         dataset_table = pd.concat(feature_parts, ignore_index=True)
         all_feature_tables.append(dataset_table)
-        dataset_stats = group_statistics(dataset_table, config)
-        dataset_correlations = clinical_correlations(dataset_table, config)
+        dataset_stats = group_statistics(dataset_table, dataset_config)
+        dataset_correlations = clinical_correlations(dataset_table, dataset_config)
         dataset_metrics = output / "metrics" / dataset_id
         dataset_statistics = output / "statistics" / dataset_id
         _write_table(dataset_table, dataset_metrics / "recording_features.csv.gz")
-        _write_qc_tables(dataset_table, dataset_metrics, config)
+        _write_qc_tables(dataset_table, dataset_metrics, dataset_config)
         _write_table(
             dataset_table.groupby(
                 ["dataset_id", "participant_id", "group"], dropna=False
@@ -2054,7 +2055,7 @@ def _run_global_pipeline_parallel(
                 dataset_stats,
                 dataset_spectra,
                 dataset_id,
-                config,
+                dataset_config,
                 output,
             )
 
