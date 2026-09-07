@@ -27,6 +27,12 @@ def main() -> None:
         help="Explicit compatibility flag; preprocessing is the default",
     )
     parser.add_argument("--preprocessing-workers", type=int, default=1)
+    parser.add_argument(
+        "--analysis-workers",
+        type=int,
+        default=1,
+        help="Number of parallel recording-level analysis workers",
+    )
     review = parser.add_mutually_exclusive_group()
     review.add_argument("--skip-manual-ica-review", action="store_true")
     review.add_argument("--allow-unreviewed", action="store_true")
@@ -82,6 +88,7 @@ def main() -> None:
         overwrite=args.overwrite,
         dataset_ids=args.datasets,
         show_progress=not args.no_progress,
+        analysis_workers=args.analysis_workers,
     )
     print(
         f"Global pipeline complete: {manifest['n_datasets']} datasets, "

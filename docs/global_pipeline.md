@@ -32,9 +32,24 @@ bash run_global_pipeline.sh --analysis-only
 ```
 
 During analysis, a progress bar reports completed recordings across all
-selected datasets. It also indicates whether the current subject result was
+selected datasets. Datasets are processed sequentially from the fewest to the
+largest number of recordings. Within each dataset, recordings can be analyzed
+in parallel with one complete recording per worker; the parent process writes
+the caches. As soon as a dataset finishes, its metrics, statistics, and all
+figures are written. It also indicates whether the current subject result was
 reused from the resumable intermediate cache. Use `--no-progress` in batch
 logs or non-interactive jobs to disable it.
+
+For example, use eight analysis workers:
+
+```bash
+bash run_global_pipeline.sh --analysis-only --analysis-workers 8
+```
+
+Dataset-specific intermediate tables are written under
+`outputs/global/metrics/<dataset>/` and
+`outputs/global/statistics/<dataset>/`; combined tables remain directly under
+`metrics/` and `statistics/`.
 
 When resuming after a preprocessing configuration change, the global runner
 automatically recomputes only recordings whose saved ICA provenance is stale:

@@ -15,6 +15,7 @@ import itertools
 import math
 import re
 import tempfile
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -1598,94 +1599,107 @@ def _plot_entropy_plane(
     plt.close(fig)
 
 
-def run_global_pipeline(
-    config_path: str | Path,
-    *,
-    skip_figures: bool = False,
-    overwrite: bool = False,
-    dataset_ids: list[str] | tuple[str, ...] | None = None,
-    show_progress: bool = True,
-) -> dict[str, Any]:
-    config = load_global_config(config_path)
-    output = config.output_root
-    output.mkdir(parents=True, exist_ok=True)
-    canonical_path = output / "canonical" / "recordings.csv.gz"
-    requested_ids = tuple(dataset.dataset_id for dataset in config.enabled_datasets) if dataset_ids is None else tuple(dataset_ids)
-    available_ids = {dataset.dataset_id for dataset in config.enabled_datasets}
-    unknown = sorted(set(requested_ids) - available_ids)
-    if unknown:
-        raise ValueError(f"Unknown or disabled dataset(s): {unknown}; enabled choices: {sorted(available_ids)}")
-    if overwrite or not canonical_path.exists():
-        canonical = convert_config(config, dataset_ids=requested_ids)
-    else:
-        canonical = read_canonical_table(canonical_path)
-        cached_ids = tuple(sorted(canonical["dataset_id"].dropna().unique()))
-        if set(cached_ids) != set(requested_ids):
-            canonical = convert_config(config, dataset_ids=requested_ids)
-        else:
-            canonical = canonical.loc[canonical["dataset_id"].isin(requested_ids)].copy()
-    recording_tables: list[pd.DataFrame] = []
-    diagnostics: list[dict[str, Any]] = []
-    spectra: list[dict[str, Any]] = []
-    analysis_exclusions: list[dict[str, Any]] = []
-    records = canonical.to_dict(orient="records")
-    progress = tqdm(
-        records,
-        desc="Global analysis",
-        unit="recording",
-        disable=not show_progress,
-        dynamic_ncols=True,
+def _analyze_recording_worker(
+    record: dict[str, Any], config: GlobalConfig
+) -> tuple[dict[str, Any], pd.DataFrame, dict[str, Any]]:
+    """Process one complete recording in one analysis worker."""
+    features, info = _analyze_recording(record, config)
+    return record, features, info
+
+
+def _plot_dataset_results(
+    feature_table: pd.DataFrame,
+    statistics: pd.DataFrame,
+    spectra: list[dict[str, Any]],
+    dataset_id: str,
+    config: GlobalConfig,
+    output: Path,
+) -> None:
+    """Render every figure for one finished dataset."""
+    dataset_figures = output / "figures" / dataset_id
+    _plot_psd_spectra(spectra, dataset_id, dataset_figures / "psd_mean_ci.png")
+    _plot_average_detected_bouts(
+        spectra,
+        dataset_id,
+        config,
+        dataset_figures / "average_detected_bouts.png",
     )
-    for record in progress:
-        try:
-            cached = None if overwrite else _load_subject_cache(output, record, config)
-            if cached is None:
-                features, info = _analyze_recording(record, config)
-                _save_subject_cache(output, record, features, info, config)
-                cache_reused = False
-            else:
-                features, info = cached
-                cache_reused = True
-            if show_progress:
-                progress.set_postfix(
-                    dataset=record["dataset_id"],
-                    recording=record["recording_id"],
-                    cached="yes" if cache_reused else "no",
-                )
-        except ValueError as error:
-            if "no accepted epochs" not in str(error):
-                raise
-            analysis_exclusions.append(
-                {
-                    "dataset_id": record["dataset_id"],
-                    "recording_id": record["recording_id"],
-                    "participant_id": record["participant_id"],
-                    "epoch_path": record["epoch_path"],
-                    "reason": str(error),
-                }
+    _topomap(feature_table, config, dataset_id, "psd", "psd__", dataset_figures / "psd_topomaps.png")
+    _topomap(feature_table, config, dataset_id, "aperiodic", "aperiodic__", dataset_figures / "aperiodic_topomaps.png")
+    _topomap(feature_table, config, dataset_id, "entropy", "entropy__", dataset_figures / "entropy_topomaps.png")
+    _topomap(feature_table, config, dataset_id, "within_bout", "within_bout__", dataset_figures / "within_bout_entropy_topomaps.png")
+    selected_groups = sorted(feature_table["group"].dropna().unique())
+    for group_a, group_b in combinations(selected_groups, 2):
+        pair_name = f"{_safe_filename(group_b)}_minus_{_safe_filename(group_a)}"
+        for template, filename in (
+            ("psd__", f"psd_contrast_{pair_name}_topomaps.png"),
+            ("aperiodic__", f"aperiodic_contrast_{pair_name}_topomaps.png"),
+            ("entropy__", f"entropy_contrast_{pair_name}_topomaps.png"),
+            ("within_bout__", f"within_bout_entropy_contrast_{pair_name}_topomaps.png"),
+        ):
+            _contrast_topomap(
+                feature_table,
+                statistics,
+                config,
+                dataset_id,
+                template,
+                group_a,
+                group_b,
+                dataset_figures / filename,
             )
-            continue
-        recording_tables.append(features)
-        spectra.append({
-            "dataset_id": record["dataset_id"],
-            "participant_id": record["participant_id"],
-            "recording_id": record["recording_id"],
-            "group": record["group"],
-            "frequencies": info["frequencies"],
-            "subject_psd": info["subject_psd"],
-            "bout_representations": info["bout_representations"],
-        })
-        diagnostics.append({
-            "dataset_id": record["dataset_id"],
-            "recording_id": record["recording_id"],
-            "n_channels": len(info["channels"]),
-            "sampling_frequency_hz": info["sfreq"],
-            "subject_cache_reused": cache_reused,
-        })
-    if not recording_tables:
-        raise RuntimeError("No recordings with accepted epochs were available for analysis")
-    feature_table = pd.concat(recording_tables, ignore_index=True)
-    _write_table(feature_table, output / "metrics" / "recording_features.csv.gz")
+    for outcome in ("moca", "mmse", "updrs"):
+        _plot_clinical_scatter(
+            feature_table,
+            dataset_id,
+            outcome,
+            "bout",
+            config,
+            dataset_figures / f"scatter_{outcome}_bout.png",
+        )
+        _plot_clinical_scatter(
+            feature_table,
+            dataset_id,
+            outcome,
+            "within_bout",
+            config,
+            dataset_figures / f"scatter_{outcome}_within_bout.png",
+        )
+    for family in ("psd", "aperiodic", "entropy", "bout", "within_bout"):
+        _plot_subject_violins(
+            feature_table,
+            dataset_id,
+            family,
+            config,
+            dataset_figures / f"subject_violins_{family}.png",
+        )
+    for family, filename_prefix in (
+        ("entropy", "entropy"),
+        ("within_bout", "within_bout_entropy"),
+    ):
+        _plot_entropy_plane(
+            feature_table,
+            dataset_id,
+            family,
+            "complexity",
+            config,
+            dataset_figures / f"{filename_prefix}_hxc_planes.png",
+        )
+        _plot_entropy_plane(
+            feature_table,
+            dataset_id,
+            family,
+            "fisher_information",
+            config,
+            dataset_figures / f"{filename_prefix}_hxf_planes.png",
+        )
+
+
+def _write_qc_tables(
+    feature_table: pd.DataFrame,
+    metrics_dir: Path,
+    config: GlobalConfig,
+) -> None:
+    """Write electrode- and participant-level aperiodic QC summaries."""
     qc_columns = [
         "dataset_id",
         "recording_id",
@@ -1703,7 +1717,7 @@ def run_global_pipeline(
     ]
     _write_table(
         feature_table[qc_columns],
-        output / "metrics" / "aperiodic_fit_qc.csv.gz",
+        metrics_dir / "aperiodic_fit_qc.csv.gz",
     )
     subject_qc = (
         feature_table.groupby(
@@ -1720,140 +1734,264 @@ def run_global_pipeline(
     )
     _write_table(
         subject_qc,
-        output / "metrics" / "aperiodic_subject_qc.csv.gz",
+        metrics_dir / "aperiodic_subject_qc.csv.gz",
     )
-    if analysis_exclusions:
+
+
+def _run_global_pipeline_parallel(
+    config_path: str | Path,
+    *,
+    skip_figures: bool,
+    overwrite: bool,
+    dataset_ids: list[str] | tuple[str, ...] | None,
+    show_progress: bool,
+    analysis_workers: int,
+) -> dict[str, Any]:
+    config = load_global_config(config_path)
+    if analysis_workers < 1:
+        raise ValueError("analysis_workers must be positive")
+    output = config.output_root
+    output.mkdir(parents=True, exist_ok=True)
+    canonical_path = output / "canonical" / "recordings.csv.gz"
+    requested_ids = (
+        tuple(dataset.dataset_id for dataset in config.enabled_datasets)
+        if dataset_ids is None
+        else tuple(dataset_ids)
+    )
+    available_ids = {dataset.dataset_id for dataset in config.enabled_datasets}
+    unknown = sorted(set(requested_ids) - available_ids)
+    if unknown:
+        raise ValueError(
+            f"Unknown or disabled dataset(s): {unknown}; enabled choices: "
+            f"{sorted(available_ids)}"
+        )
+    if overwrite or not canonical_path.exists():
+        canonical = convert_config(config, dataset_ids=requested_ids)
+    else:
+        canonical = read_canonical_table(canonical_path)
+        cached_ids = tuple(sorted(canonical["dataset_id"].dropna().unique()))
+        if set(cached_ids) != set(requested_ids):
+            canonical = convert_config(config, dataset_ids=requested_ids)
+        else:
+            canonical = canonical.loc[
+                canonical["dataset_id"].isin(requested_ids)
+            ].copy()
+
+    requested_order = {dataset_id: index for index, dataset_id in enumerate(requested_ids)}
+    dataset_order = sorted(
+        requested_ids,
+        key=lambda dataset_id: (
+            int(canonical["dataset_id"].eq(dataset_id).sum()),
+            requested_order[dataset_id],
+        ),
+    )
+    all_feature_tables: list[pd.DataFrame] = []
+    all_spectra: list[dict[str, Any]] = []
+    all_diagnostics: list[dict[str, Any]] = []
+    all_exclusions: list[dict[str, Any]] = []
+
+    for dataset_id in dataset_order:
+        dataset_records = canonical.loc[
+            canonical["dataset_id"].eq(dataset_id)
+        ].to_dict(orient="records")
+        feature_parts: list[pd.DataFrame] = []
+        dataset_spectra: list[dict[str, Any]] = []
+        dataset_diagnostics: list[dict[str, Any]] = []
+        dataset_exclusions: list[dict[str, Any]] = []
+        progress = tqdm(
+            total=len(dataset_records),
+            desc=f"Analyze {dataset_id}",
+            unit="recording",
+            disable=not show_progress,
+            dynamic_ncols=True,
+        )
+
+        def accept_result(
+            record: dict[str, Any],
+            features: pd.DataFrame,
+            info: dict[str, Any],
+            cache_reused: bool,
+        ) -> None:
+            feature_parts.append(features)
+            dataset_spectra.append(
+                {
+                    "dataset_id": record["dataset_id"],
+                    "participant_id": record["participant_id"],
+                    "recording_id": record["recording_id"],
+                    "group": record["group"],
+                    "frequencies": info["frequencies"],
+                    "subject_psd": info["subject_psd"],
+                    "bout_representations": info["bout_representations"],
+                }
+            )
+            dataset_diagnostics.append(
+                {
+                    "dataset_id": record["dataset_id"],
+                    "recording_id": record["recording_id"],
+                    "n_channels": len(info["channels"]),
+                    "sampling_frequency_hz": info["sfreq"],
+                    "subject_cache_reused": cache_reused,
+                }
+            )
+
+        pending: dict[Any, dict[str, Any]] = {}
+        for record in dataset_records:
+            cached = None if overwrite else _load_subject_cache(output, record, config)
+            if cached is not None:
+                features, info = cached
+                accept_result(record, features, info, True)
+                progress.update(1)
+                if show_progress:
+                    progress.set_postfix(recording=record["recording_id"], cached="yes")
+            else:
+                pending[record["recording_id"]] = record
+
+        def handle_failure(record: dict[str, Any], error: Exception) -> None:
+            if not isinstance(error, ValueError) or "no accepted epochs" not in str(error):
+                raise error
+            dataset_exclusions.append(
+                {
+                    "dataset_id": record["dataset_id"],
+                    "recording_id": record["recording_id"],
+                    "participant_id": record["participant_id"],
+                    "epoch_path": record["epoch_path"],
+                    "reason": str(error),
+                }
+            )
+
+        if analysis_workers == 1:
+            for record in pending.values():
+                try:
+                    features, info = _analyze_recording(record, config)
+                    _save_subject_cache(output, record, features, info, config)
+                    accept_result(record, features, info, False)
+                except Exception as error:
+                    handle_failure(record, error)
+                progress.update(1)
+                if show_progress:
+                    progress.set_postfix(recording=record["recording_id"], cached="no")
+        else:
+            with ProcessPoolExecutor(max_workers=analysis_workers) as executor:
+                futures = {
+                    executor.submit(_analyze_recording_worker, record, config): record
+                    for record in pending.values()
+                }
+                for future in as_completed(futures):
+                    record = futures.pop(future)
+                    try:
+                        _, features, info = future.result()
+                        _save_subject_cache(output, record, features, info, config)
+                        accept_result(record, features, info, False)
+                    except Exception as error:
+                        handle_failure(record, error)
+                    progress.update(1)
+                    if show_progress:
+                        progress.set_postfix(recording=record["recording_id"], cached="no")
+        progress.close()
+
+        all_exclusions.extend(dataset_exclusions)
+        all_diagnostics.extend(dataset_diagnostics)
+        all_spectra.extend(dataset_spectra)
+        if not feature_parts:
+            continue
+        dataset_table = pd.concat(feature_parts, ignore_index=True)
+        all_feature_tables.append(dataset_table)
+        dataset_stats = group_statistics(dataset_table, config)
+        dataset_correlations = clinical_correlations(dataset_table, config)
+        dataset_metrics = output / "metrics" / dataset_id
+        dataset_statistics = output / "statistics" / dataset_id
+        _write_table(dataset_table, dataset_metrics / "recording_features.csv.gz")
+        _write_qc_tables(dataset_table, dataset_metrics, config)
         _write_table(
-            pd.DataFrame.from_records(analysis_exclusions),
+            dataset_table.groupby(
+                ["dataset_id", "participant_id", "group"], dropna=False
+            ).mean(numeric_only=True).reset_index(),
+            dataset_metrics / "subject_features.csv.gz",
+        )
+        if dataset_exclusions:
+            _write_table(
+                pd.DataFrame.from_records(dataset_exclusions),
+                dataset_metrics / "analysis_exclusions.csv.gz",
+            )
+        _write_table(dataset_stats, dataset_statistics / "group_statistics.csv.gz")
+        _write_table(
+            dataset_correlations,
+            dataset_statistics / "clinical_correlations.csv.gz",
+        )
+        if not skip_figures:
+            _plot_dataset_results(
+                dataset_table,
+                dataset_stats,
+                dataset_spectra,
+                dataset_id,
+                config,
+                output,
+            )
+
+    if not all_feature_tables:
+        raise RuntimeError("No recordings with accepted epochs were available for analysis")
+    feature_table = pd.concat(all_feature_tables, ignore_index=True)
+    _write_table(feature_table, output / "metrics" / "recording_features.csv.gz")
+    _write_qc_tables(feature_table, output / "metrics", config)
+    _write_table(
+        feature_table.groupby(
+            ["dataset_id", "participant_id", "group"], dropna=False
+        ).mean(numeric_only=True).reset_index(),
+        output / "metrics" / "subject_features.csv.gz",
+    )
+    if all_exclusions:
+        _write_table(
+            pd.DataFrame.from_records(all_exclusions),
             output / "metrics" / "analysis_exclusions.csv.gz",
         )
-    subject_features = feature_table.groupby(["dataset_id", "participant_id", "group"], dropna=False).mean(numeric_only=True).reset_index()
-    _write_table(subject_features, output / "metrics" / "subject_features.csv.gz")
     stats = group_statistics(feature_table, config)
     correlations = clinical_correlations(feature_table, config)
     _write_table(stats, output / "statistics" / "group_statistics.csv.gz")
     _write_table(correlations, output / "statistics" / "clinical_correlations.csv.gz")
-    if not skip_figures:
-        for dataset in config.enabled_datasets:
-            if dataset.dataset_id not in requested_ids:
-                continue
-            dataset_figures = output / "figures" / dataset.dataset_id
-            _plot_psd_spectra(spectra, dataset.dataset_id, dataset_figures / "psd_mean_ci.png")
-            _plot_average_detected_bouts(
-                spectra,
-                dataset.dataset_id,
-                config,
-                dataset_figures / "average_detected_bouts.png",
-            )
-            _topomap(feature_table, config, dataset.dataset_id, "psd", "psd__", output / "figures" / dataset.dataset_id / "psd_topomaps.png")
-            _topomap(feature_table, config, dataset.dataset_id, "aperiodic", "aperiodic__", output / "figures" / dataset.dataset_id / "aperiodic_topomaps.png")
-            _topomap(feature_table, config, dataset.dataset_id, "entropy", "entropy__", output / "figures" / dataset.dataset_id / "entropy_topomaps.png")
-            _topomap(feature_table, config, dataset.dataset_id, "within_bout", "within_bout__", output / "figures" / dataset.dataset_id / "within_bout_entropy_topomaps.png")
-            selected_groups = sorted(feature_table.loc[feature_table["dataset_id"].eq(dataset.dataset_id), "group"].dropna().unique())
-            for group_a, group_b in combinations(selected_groups, 2):
-                pair_name = f"{_safe_filename(group_b)}_minus_{_safe_filename(group_a)}"
-                _contrast_topomap(
-                    feature_table,
-                    stats,
-                    config,
-                    dataset.dataset_id,
-                    "psd__",
-                    group_a,
-                    group_b,
-                    dataset_figures / f"psd_contrast_{pair_name}_topomaps.png",
-                )
-                _contrast_topomap(
-                    feature_table,
-                    stats,
-                    config,
-                    dataset.dataset_id,
-                    "aperiodic__",
-                    group_a,
-                    group_b,
-                    dataset_figures / f"aperiodic_contrast_{pair_name}_topomaps.png",
-                )
-                _contrast_topomap(
-                    feature_table,
-                    stats,
-                    config,
-                    dataset.dataset_id,
-                    "entropy__",
-                    group_a,
-                    group_b,
-                    dataset_figures / f"entropy_contrast_{pair_name}_topomaps.png",
-                )
-                _contrast_topomap(
-                    feature_table,
-                    stats,
-                    config,
-                    dataset.dataset_id,
-                    "within_bout__",
-                    group_a,
-                    group_b,
-                    dataset_figures / f"within_bout_entropy_contrast_{pair_name}_topomaps.png",
-                )
-            for outcome in ("moca", "mmse", "updrs"):
-                _plot_clinical_scatter(
-                    feature_table,
-                    dataset.dataset_id,
-                    outcome,
-                    "bout",
-                    config,
-                    dataset_figures / f"scatter_{outcome}_bout.png",
-                )
-                _plot_clinical_scatter(
-                    feature_table,
-                    dataset.dataset_id,
-                    outcome,
-                    "within_bout",
-                    config,
-                    dataset_figures / f"scatter_{outcome}_within_bout.png",
-                )
-            for family in ("psd", "aperiodic", "entropy", "bout", "within_bout"):
-                _plot_subject_violins(
-                    feature_table,
-                    dataset.dataset_id,
-                    family,
-                    config,
-                    dataset_figures / f"subject_violins_{family}.png",
-                )
-            for family, filename_prefix in (
-                ("entropy", "entropy"),
-                ("within_bout", "within_bout_entropy"),
-            ):
-                _plot_entropy_plane(
-                    feature_table,
-                    dataset.dataset_id,
-                    family,
-                    "complexity",
-                    config,
-                    dataset_figures / f"{filename_prefix}_hxc_planes.png",
-                )
-                _plot_entropy_plane(
-                    feature_table,
-                    dataset.dataset_id,
-                    family,
-                    "fisher_information",
-                    config,
-                    dataset_figures / f"{filename_prefix}_hxf_planes.png",
-                )
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "status": "complete",
         "output_root": str(output),
+        "dataset_order": dataset_order,
+        "dataset_sizes": {
+            dataset_id: int(canonical["dataset_id"].eq(dataset_id).sum())
+            for dataset_id in dataset_order
+        },
+        "analysis_workers": int(analysis_workers),
         "n_datasets": int(canonical["dataset_id"].nunique()),
         "n_recordings": int(len(canonical)),
-        "n_analyzed_recordings": int(len(recording_tables)),
-        "n_excluded_recordings": int(len(analysis_exclusions)),
+        "n_analyzed_recordings": int(
+            sum(table["recording_id"].nunique() for table in all_feature_tables)
+        ),
+        "n_excluded_recordings": int(len(all_exclusions)),
         "n_subjects": int(canonical["participant_id"].nunique()),
         "groups": canonical["group"].value_counts().to_dict(),
-        "analysis_exclusions": analysis_exclusions,
+        "analysis_exclusions": all_exclusions,
         "entropy_metrics": list(ENTROPY_METRICS),
-        "memory_policy": "One cleaned recording is loaded and analyzed at a time; raw samples are released after the subject cache is saved",
+        "memory_policy": "One cleaned recording per worker; parent writes caches and releases completed worker results after aggregation",
         "subject_cache": str(output / "intermediate" / "subjects"),
         "permutation_dimensions": list(config.permutation_dimensions),
         "analysis_signature": _analysis_signature(config),
-        "diagnostics": diagnostics,
+        "diagnostics": all_diagnostics,
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return manifest
+
+
+def run_global_pipeline(
+    config_path: str | Path,
+    *,
+    skip_figures: bool = False,
+    overwrite: bool = False,
+    dataset_ids: list[str] | tuple[str, ...] | None = None,
+    show_progress: bool = True,
+    analysis_workers: int = 1,
+) -> dict[str, Any]:
+    return _run_global_pipeline_parallel(
+        config_path,
+        skip_figures=skip_figures,
+        overwrite=overwrite,
+        dataset_ids=dataset_ids,
+        show_progress=show_progress,
+        analysis_workers=analysis_workers,
+    )
