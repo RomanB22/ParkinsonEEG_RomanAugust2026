@@ -91,6 +91,8 @@ figures/<dataset>/*_topomaps.png
 figures/<dataset>/psd_mean_ci.png
 figures/<dataset>/*_contrast_*_topomaps.png
 figures/<dataset>/scatter_<moca|mmse|updrs>_<bout|within_bout>.png
+figures/<dataset>/entropy_hx[cf]_planes.png
+figures/<dataset>/within_bout_entropy_hx[cf]_planes.png
 ```
 
 Memory is bounded by `block_epochs` (default 16). Epochs are opened with
@@ -111,3 +113,8 @@ PD-labeled groups, and are created only when the corresponding clinical
 values are available. Their annotations are unadjusted Spearman associations;
 the age/sex-adjusted results remain in
 `statistics/clinical_correlations.csv.gz`.
+
+Entropy-plane figures show H versus complexity (H×C) and H versus Fisher
+information (H×F), separately for every frequency band. They are produced for
+both full-signal entropy and within-bout entropy, with one electrode-averaged
+point per participant and condition.

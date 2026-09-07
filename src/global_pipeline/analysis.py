@@ -724,6 +724,103 @@ def _plot_clinical_scatter(
     plt.close(fig)
 
 
+def _plot_entropy_plane(
+    table: pd.DataFrame,
+    dataset_id: str,
+    family: str,
+    vertical_metric: str,
+    output: Path,
+) -> None:
+    """Plot subject-level HxC or HxF planes for each frequency band.
+
+    Electrode values are averaged within participant and condition before
+    plotting, so the points represent biological observations rather than
+    treating electrodes as independent participants.
+    """
+    import matplotlib.pyplot as plt
+
+    prefix = f"{family}__"
+    metric_prefix = f"{prefix}"
+    entropy_columns = [column for column in table if column.startswith(metric_prefix)]
+    bands = sorted(
+        {
+            column.removeprefix(metric_prefix).split("__", 1)[0]
+            for column in entropy_columns
+            if "__" in column.removeprefix(metric_prefix)
+        }
+    )
+    if not bands:
+        return
+    selected = table.loc[table["dataset_id"].eq(dataset_id)].copy()
+    if selected.empty:
+        return
+    subject_columns = ["participant_id", "group"]
+    metric_columns = []
+    for band in bands:
+        metric_columns.extend(
+            [
+                f"{family}__{band}__entropy",
+                f"{family}__{band}__{vertical_metric}",
+            ]
+        )
+    metric_columns = [column for column in metric_columns if column in selected]
+    subject = (
+        selected.groupby(subject_columns, dropna=False)[metric_columns]
+        .mean(numeric_only=True)
+        .reset_index()
+    )
+    groups = sorted(str(value) for value in subject["group"].dropna().unique())
+    if not groups:
+        return
+    colors = {group: f"C{index}" for index, group in enumerate(groups)}
+    fig, axes = plt.subplots(
+        1,
+        len(bands),
+        figsize=(4.4 * len(bands), 4.0),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    plotted = False
+    for column_index, band in enumerate(bands):
+        axis = axes[0, column_index]
+        horizontal = f"{family}__{band}__entropy"
+        vertical = f"{family}__{band}__{vertical_metric}"
+        if horizontal not in subject or vertical not in subject:
+            axis.axis("off")
+            continue
+        for group in groups:
+            points = subject.loc[
+                subject["group"].astype(str).eq(group),
+                [horizontal, vertical],
+            ].dropna()
+            if points.empty:
+                continue
+            plotted = True
+            axis.scatter(
+                points[horizontal],
+                points[vertical],
+                s=34,
+                alpha=0.8,
+                color=colors[group],
+                label=f"{group} (n={len(points)})",
+            )
+        axis.set_title(band)
+        axis.set_xlabel("Entropy H")
+        axis.set_ylabel("Complexity C" if vertical_metric == "complexity" else "Fisher information F")
+        axis.grid(True, alpha=0.2)
+    if not plotted:
+        plt.close(fig)
+        return
+    handles, labels = axes[0, 0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="upper right")
+    plane_name = "H×C" if vertical_metric == "complexity" else "H×F"
+    fig.suptitle(f"{dataset_id}: {family.replace('_', ' ')} {plane_name} planes")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=150)
+    plt.close(fig)
+
+
 def run_global_pipeline(
     config_path: str | Path,
     *,
@@ -828,6 +925,24 @@ def run_global_pipeline(
                     outcome,
                     "within_bout",
                     dataset_figures / f"scatter_{outcome}_within_bout.png",
+                )
+            for family, filename_prefix in (
+                ("entropy", "entropy"),
+                ("within_bout", "within_bout_entropy"),
+            ):
+                _plot_entropy_plane(
+                    feature_table,
+                    dataset.dataset_id,
+                    family,
+                    "complexity",
+                    dataset_figures / f"{filename_prefix}_hxc_planes.png",
+                )
+                _plot_entropy_plane(
+                    feature_table,
+                    dataset.dataset_id,
+                    family,
+                    "fisher_information",
+                    dataset_figures / f"{filename_prefix}_hxf_planes.png",
                 )
     manifest = {
         "schema_version": 1,
