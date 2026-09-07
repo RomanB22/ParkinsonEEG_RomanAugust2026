@@ -1019,18 +1019,25 @@ def _topomap(
             )
             images.setdefault(feature, image)
             axes[row_index, column_index].set_title(
-                f"{group}\n{_feature_label(feature)}",
+                str(group),
                 fontsize=8,
             )
     for row_index, feature in enumerate(feature_columns):
         if feature in images:
             fig.colorbar(images[feature], ax=axes[row_index, :].tolist(), shrink=0.75)
+    analysis_label = domain.replace("_", " ").title()
+    band_label = "Broadband" if band is None else band.replace("_", " ").title()
+    dimension_suffix = (
+        f" (D={config.embedding_dimension})"
+        if feature_template in {"entropy__", "within_bout__"}
+        else ""
+    )
     fig.suptitle(
-        f"{dataset_id}: {domain.replace('_', ' ').title()} topomaps",
+        f"{dataset_id}: {analysis_label} — {band_label} topomaps{dimension_suffix}",
         fontsize=13,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output, dpi=150)
+    fig.savefig(output, dpi=150, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
 
 
@@ -1613,7 +1620,8 @@ def _plot_subject_violins(
                         f"p={raw_p:.3g}, q={q_value:.3g}"
                     )
             metric = feature.rsplit("__", 1)[-1]
-            title = _feature_label(feature)
+            metric_label = " / ".join(feature.split("__")[2:]).replace("_", " ")
+            title = metric_label
             if significant_pairs:
                 title += "\n* Welch BH-FDR q<" + f"{config.fdr_alpha:g}: " + "; ".join(significant_pairs)
             else:
@@ -1654,13 +1662,21 @@ def _plot_subject_violins(
         frameon=False,
         fontsize=9,
     )
+    family_label = family.replace("_", " ").title()
+    band_label = "Broadband" if band is None else band.replace("_", " ").title()
+    dimension_suffix = (
+        f" (D={config.embedding_dimension})"
+        if family in {"entropy", "within_bout"}
+        else ""
+    )
     fig.suptitle(
-        f"{dataset_id}: subject-level {family.replace('_', ' ')} distributions\n"
+        f"{dataset_id}: subject-level {family_label} — {band_label} distributions"
+        f"{dimension_suffix}\n"
         "Each point is one participant/condition; annotations show raw Welch p and BH-FDR q",
         fontsize=14,
         y=0.985,
     )
-    fig.tight_layout(rect=(0.02, 0.12, 0.98, 0.97), pad=1.4, h_pad=2.0, w_pad=2.0)
+    fig.tight_layout(rect=(0.02, 0.12, 0.98, 0.995), pad=1.4, h_pad=2.0, w_pad=2.0)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
