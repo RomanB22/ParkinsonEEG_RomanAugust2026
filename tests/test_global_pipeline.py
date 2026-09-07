@@ -82,6 +82,7 @@ class GlobalPipelineInputTests(unittest.TestCase):
             )
             config = load_global_config(path)
             self.assertEqual(len(config.enabled_datasets), 4)
+            self.assertEqual(config.permutation_dimensions, (3, 4, 5, 6, 7))
             result = convert_config(config)
             self.assertEqual(result["dataset_id"].nunique(), 4)
             selected = convert_config(config, dataset_ids=["study_2"])

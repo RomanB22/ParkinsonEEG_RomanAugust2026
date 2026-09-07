@@ -79,8 +79,10 @@ usable signal. These exclusions are written to each preprocessing output's
 pipeline. Standalone preprocessing remains fail-fast unless
 `--skip-unusable-recordings` is supplied.
 
-The pipeline performs Welch PSD and relative band power, electrode-wise group
-statistics with Welch/Mann–Whitney tests and BH-FDR, PSD and entropy topomaps,
+The pipeline performs concatenated-signal Welch PSD and relative band power,
+4–50 Hz aperiodic spectral fitting with fixed and knee models selected by BIC,
+electrode-wise group statistics with Welch/Mann–Whitney tests and BH-FDR, PSD,
+aperiodic, and entropy topomaps,
 the four requested entropy quantities (H, C, F, and weighted entropy),
 Hilbert-amplitude oscillatory bouts, within-bout H/C/F/weighted entropy, and
 PD-only age/sex-adjusted partial Spearman correlations with UPDRS, MOCA, and
@@ -97,19 +99,42 @@ statistics/group_statistics.csv.gz
 statistics/clinical_correlations.csv.gz
 figures/<dataset>/*_topomaps.png
 figures/<dataset>/psd_mean_ci.png
+figures/<dataset>/aperiodic_topomaps.png
 figures/<dataset>/*_contrast_*_topomaps.png
 figures/<dataset>/scatter_<moca|mmse|updrs>_<bout|within_bout>.png
 figures/<dataset>/entropy_hx[cf]_planes.png
 figures/<dataset>/within_bout_entropy_hx[cf]_planes.png
 ```
 
-Memory is bounded by `block_epochs` (default 16). Epochs are opened with
-`preload=False`, read into labeled xarray blocks, downcast to float32, and
-discarded after feature accumulation. Vectorized NumPy/SciPy kernels operate
-on the xarray block data; xarray retains epoch/channel/time labels without
-materializing a full study cube. Raw samples and bout waveforms are not
-written to feature tables. Canonical tables use compressed CSV and do not
-require a Parquet engine.
+The analysis unit is one complete cleaned recording at a time. All accepted
+four-second epochs for that subject/session/condition are loaded together and
+concatenated in temporal/file order within that recording, then released
+before the next recording is opened. Recordings are never concatenated across
+subjects or medication conditions. PSD uses the established 4-second Hann
+Welch windows with no overlap; ordinal patterns, band filtering, and bout
+detection use the same concatenated recording signal. `block_epochs` is
+retained as a compatibility setting but is no longer an analysis boundary.
+Raw samples and bout waveforms are not written to feature tables. Canonical
+tables use compressed CSV and do not require a Parquet engine.
+
+After every recording, resumable intermediate files are written under
+`outputs/global/intermediate/subjects/<dataset>/`:
+
+```text
+<recording>_features.csv.gz
+<recording>_permutation_patterns.npz
+<recording>_metadata.json
+```
+
+The compressed NPZ stores the lexicographic permutation order and exact pooled
+pattern-count vectors for full-signal and within-bout analyses, for every
+configured embedding dimension (D=3, 4, 5, 6, and 7 by default), together with
+the weighted-entropy accumulators and PSD spectrum. It does not store the raw
+symbol sequence. On a rerun, a matching complete subject cache is reused; a
+changed signal file or analysis configuration automatically invalidates that
+subject only. Aggregation, FDR statistics, clinical correlations, and plotting
+then run from the compact subject results after all selected recordings are
+available.
 
 The PSD figure shows recording-level mean PSD across EEG electrodes with a
 95% confidence interval across recordings. Population topomap panels use
@@ -125,4 +150,6 @@ the age/sex-adjusted results remain in
 Entropy-plane figures show H versus complexity (H×C) and H versus Fisher
 information (H×F), separately for every frequency band. They are produced for
 both full-signal entropy and within-bout entropy, with one electrode-averaged
-point per participant and condition.
+point per participant and condition, using the configured primary dimension
+(D=6 by default). The saved feature table and clinical/statistical tables
+contain all configured dimensions D=3–7.

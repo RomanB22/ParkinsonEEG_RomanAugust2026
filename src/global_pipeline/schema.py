@@ -27,6 +27,17 @@ CANONICAL_COLUMNS = (
     "mmse",
 )
 
+DEFAULT_APERIODIC_SETTINGS = {
+    "aperiodic_mode": "best_bic",
+    "aperiodic_modes": ["fixed", "knee"],
+    "model_selection_criterion": "bic",
+    "frequency_range_hz": [4.0, 50.0],
+    "peak_width_limits_hz": [1.0, 12.0],
+    "max_n_peaks": 8,
+    "min_peak_height": 0.0,
+    "peak_threshold": 2.0,
+}
+
 _SUBJECT_RE = re.compile(r"(sub-[A-Za-z0-9]+)")
 _SESSION_RE = re.compile(r"(ses-[A-Za-z0-9]+)")
 
@@ -190,6 +201,10 @@ class GlobalConfig:
     bands: dict[str, tuple[float, float]]
     block_epochs: int = 16
     embedding_dimension: int = 6
+    permutation_dimensions: tuple[int, ...] = (3, 4, 5, 6, 7)
+    aperiodic_settings: dict[str, Any] = field(
+        default_factory=lambda: dict(DEFAULT_APERIODIC_SETTINGS)
+    )
     delay_samples: int = 1
     bout_threshold_percentile: float = 95.0
     bout_minimum_cycles: float = 3.0
@@ -229,9 +244,23 @@ def load_global_config(path: str | Path) -> GlobalConfig:
         raise ValueError("global dataset ids must be unique")
     block_epochs = int(raw.get("block_epochs", 16))
     dx = int(raw.get("embedding_dimension", 6))
+    dimensions = tuple(int(value) for value in raw.get("permutation_dimensions", (3, 4, 5, 6, 7)))
     tau = int(raw.get("delay_samples", 1))
     if block_epochs < 1 or not 2 <= dx <= 7 or tau < 1:
         raise ValueError("block_epochs must be positive, dx must be 2..7, and delay >= 1")
+    if not dimensions or any(not 2 <= dimension <= 7 for dimension in dimensions):
+        raise ValueError("permutation_dimensions must contain values from 2 through 7")
+    if len(set(dimensions)) != len(dimensions):
+        raise ValueError("permutation_dimensions must not contain duplicates")
+    aperiodic = dict(raw.get("aperiodic", {}))
+    defaults = dict(DEFAULT_APERIODIC_SETTINGS)
+    defaults.update(aperiodic)
+    if defaults["aperiodic_modes"] != ["fixed", "knee"]:
+        raise ValueError("aperiodic.aperiodic_modes must be ['fixed', 'knee']")
+    if defaults["model_selection_criterion"] != "bic":
+        raise ValueError("aperiodic.model_selection_criterion must be 'bic'")
+    if [float(value) for value in defaults["frequency_range_hz"]] != [4.0, 50.0]:
+        raise ValueError("The aperiodic fit range must be 4–50 Hz")
     percentile = float(raw.get("bout_threshold_percentile", 95.0))
     if not 50.0 < percentile < 100.0:
         raise ValueError("bout_threshold_percentile must be between 50 and 100")
@@ -245,6 +274,8 @@ def load_global_config(path: str | Path) -> GlobalConfig:
         bands=bands,
         block_epochs=block_epochs,
         embedding_dimension=dx,
+        permutation_dimensions=dimensions,
+        aperiodic_settings=defaults,
         delay_samples=tau,
         bout_threshold_percentile=percentile,
         bout_minimum_cycles=float(raw.get("bout_minimum_cycles", 3.0)),

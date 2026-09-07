@@ -1,16 +1,19 @@
-"""Streaming PSD, entropy, bout, and clinical analyses for canonical datasets.
+"""Subject-level PSD, entropy, bout, and clinical analyses.
 
-The analysis unit is one recording.  Epochs are never concatenated in memory:
-MNE reads a small block, features are accumulated, and the block is released
-before the next one is loaded.  The saved tables are feature-sized, not
-sample-sized, and are gzip-compressed.
+The analysis unit is one cleaned recording (a subject/session/condition when a
+dataset has sessions).  All accepted epochs for that unit are loaded together,
+concatenated in recording order, analyzed, and immediately reduced to compact
+feature tables and permutation-pattern sufficient statistics.  Raw samples
+and ordinal symbol sequences are never written to the intermediate state.
 """
 
 from __future__ import annotations
 
 import json
+import itertools
 import math
 import re
+import tempfile
 from itertools import combinations
 from pathlib import Path
 from typing import Any
@@ -19,15 +22,18 @@ import mne
 import numpy as np
 import pandas as pd
 import xarray as xr
-from scipy.signal import hilbert, welch
+from scipy.signal import hilbert
 from scipy.stats import mannwhitneyu, pearsonr, rankdata, spearmanr, ttest_ind
 
 from analyses.bouts.metrics import ordinal_counts, shannon_metrics_from_counts
 from analyses.ordinal.metrics import (
     filter_epoch_data,
     metrics_from_probabilities,
+    ordinal_probabilities,
     weighted_permutation_entropy_epoch_data,
 )
+from analyses.psd.metrics import compute_subject_electrode_psd
+from analyses.scale_free.metrics import fit_specparam_spectrum
 
 from .converter import convert_config
 from .schema import CANONICAL_COLUMNS, GlobalConfig, load_global_config, read_canonical_table
@@ -46,29 +52,20 @@ def _write_table(table: pd.DataFrame, path: Path) -> None:
     table.to_csv(path, index=False, compression="gzip", float_format="%.10g")
 
 
-def _epoch_data(
-    epochs: mne.BaseEpochs,
-    start: int,
-    stop: int,
-    picks: list[int],
-    channel_names: list[str],
-) -> xr.DataArray:
-    """Read one block and downcast it immediately to reduce peak memory."""
+def _write_table_atomic(table: pd.DataFrame, path: Path) -> None:
+    """Write one subject result so an interrupted run leaves no partial CSV."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
     try:
-        data = epochs.get_data(picks=picks, item=slice(start, stop), copy=True)
-    except TypeError:  # Compatibility with older MNE releases.
-        data = epochs[start:stop].get_data(picks=picks, copy=True)
-    values = np.asarray(data, dtype=np.float32)
-    return xr.DataArray(
-        values,
-        dims=("epoch", "channel", "time"),
-        coords={
-            "epoch": np.arange(start, stop, dtype=np.int64),
-            "channel": channel_names,
-            "time": np.arange(values.shape[-1], dtype=np.int64) / float(epochs.info["sfreq"]),
-        },
-        name="eeg",
-    )
+        with tempfile.NamedTemporaryFile(
+            mode="wb", suffix=path.suffix, prefix=f".{path.stem}.", dir=path.parent, delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+        table.to_csv(temporary, index=False, compression="gzip", float_format="%.10g")
+        temporary.replace(path)
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
 
 
 def _runs(mask: np.ndarray, minimum_samples: int) -> list[tuple[int, int]]:
@@ -85,7 +82,7 @@ def _new_entropy_state(dx: int) -> dict[str, Any]:
     return {
         "counts": np.zeros(math.factorial(dx), dtype=np.int64),
         "weighted_sum": 0.0,
-        "n_blocks": 0,
+        "n_epochs": 0,
         "n_patterns": 0,
         "n_ties": 0,
     }
@@ -93,24 +90,58 @@ def _new_entropy_state(dx: int) -> dict[str, Any]:
 
 def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd.DataFrame, dict[str, Any]]:
     path = Path(record["epoch_path"])
-    epochs = mne.read_epochs(path, preload=False, verbose="ERROR")
+    # The requested analysis unit is the complete cleaned recording.  This
+    # deliberately preloads all accepted epochs for one subject/condition;
+    # no epoch block is analyzed independently or discarded before the
+    # subject-level accumulators are complete.
+    epochs = mne.read_epochs(path, preload=True, verbose="ERROR")
     eeg_picks = list(mne.pick_types(epochs.info, eeg=True, exclude=[]))
     if not eeg_picks:
         raise ValueError(f"{path}: no EEG channels found")
     channels = [epochs.ch_names[index] for index in eeg_picks]
     sfreq = float(epochs.info["sfreq"])
     n_epochs = len(epochs)
-    # ``epochs.times`` is metadata and does not trigger a preload of the full
-    # recording, which is important for long studies.
     n_samples = int(len(epochs.times))
     if n_epochs < 1:
         raise ValueError(f"{path}: no accepted epochs")
 
-    psd_sum: np.ndarray | None = None
-    psd_count = 0
-    frequencies: np.ndarray | None = None
+    data = np.asarray(epochs.get_data(picks=eeg_picks, copy=True), dtype=np.float32)
+    signal = xr.DataArray(
+        data,
+        dims=("epoch", "channel", "time"),
+        coords={
+            "epoch": np.arange(n_epochs, dtype=np.int64),
+            "channel": channels,
+            "time": np.arange(n_samples, dtype=np.int64) / sfreq,
+        },
+        name="eeg_subject",
+    )
+    # The accepted epochs are concatenated in temporal/file order.  Every
+    # analysis below uses this complete recording-level signal.  In
+    # particular, ordinal windows and Hilbert bouts are allowed to span the
+    # former epoch boundaries, as requested by the global analysis contract.
+    concatenated = xr.DataArray(
+        signal.data.transpose(1, 0, 2).reshape(len(channels), -1),
+        dims=("channel", "sample"),
+        coords={
+            "channel": channels,
+            "sample": np.arange(n_epochs * n_samples, dtype=np.int64) / sfreq,
+        },
+        name="eeg_subject_concatenated",
+    )
+
+    frequencies, mean_psd = compute_subject_electrode_psd(
+        signal.data,
+        sfreq,
+        fmin=min(low for low, _ in config.bands.values()),
+        fmax=max(high for _, high in config.bands.values()),
+    )
+    mean_psd = np.asarray(mean_psd, dtype=np.float64)
     entropy: dict[str, list[dict[str, Any]]] = {
-        band: [_new_entropy_state(config.embedding_dimension) for _ in channels]
+        band: [
+            {str(dx): _new_entropy_state(dx) for dx in config.permutation_dimensions}
+            for _ in channels
+        ]
         for band in config.bands
     }
     bouts: dict[str, list[dict[str, Any]]] = {
@@ -122,105 +153,102 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
                 "duration_sq_sum": 0.0,
                 "amplitude_sum": 0.0,
                 "cycle_sum": 0.0,
-                "within": _new_entropy_state(config.embedding_dimension),
+                "within": {
+                    str(dx): _new_entropy_state(dx)
+                    for dx in config.permutation_dimensions
+                },
             }
             for _ in channels
         ]
         for band in config.bands
     }
 
-    for start in range(0, n_epochs, config.block_epochs):
-        stop = min(start + config.block_epochs, n_epochs)
-        block = _epoch_data(epochs, start, stop, eeg_picks, channels)
-        block_n = block.sizes["epoch"]
-        current_frequencies, block_psd = welch(
-            block.data,
-            fs=sfreq,
-            window="hann",
-            nperseg=min(block.sizes["time"], max(8, int(round(2.0 * sfreq)))),
-            axis=-1,
-            detrend="constant",
+    for band, (low, high) in config.bands.items():
+        filtered = filter_epoch_data(
+            concatenated.data[None, ...].astype(np.float64, copy=False),
+            sfreq=sfreq,
+            low_hz=low,
+            high_hz=high,
+            order=4,
+        )[0]
+        center = max((low + high) / 2.0, 0.1)
+        minimum_samples = max(
+            max(config.permutation_dimensions) + 1,
+            int(math.ceil(config.bout_minimum_cycles * sfreq / center)),
         )
-        if frequencies is None:
-            frequencies = np.asarray(current_frequencies, dtype=float)
-            psd_sum = np.zeros((len(channels), len(frequencies)), dtype=np.float64)
-        elif not np.allclose(frequencies, current_frequencies):
-            raise RuntimeError(f"{path}: PSD frequency grid changed between blocks")
-        psd_da = xr.DataArray(
-            np.asarray(block_psd, dtype=np.float32),
-            dims=("epoch", "channel", "frequency"),
-            coords={
-                "epoch": block.coords["epoch"],
-                "channel": channels,
-                "frequency": frequencies,
-            },
-            name="welch_psd",
-        )
-        psd_sum += psd_da.sum(dim="epoch").astype(np.float64).data
-        psd_count += block_n
-
-        for band, (low, high) in config.bands.items():
-            filtered = filter_epoch_data(
-                block.data.astype(np.float64, copy=False),
-                sfreq=sfreq,
-                low_hz=low,
-                high_hz=high,
-                order=4,
-            )
-            center = max((low + high) / 2.0, 0.1)
-            minimum_samples = max(
-                config.embedding_dimension + 1,
-                int(math.ceil(config.bout_minimum_cycles * sfreq / center)),
-            )
-            for channel_index in range(len(channels)):
-                state = entropy[band][channel_index]
-                probabilities, n_patterns, n_ties = _pooled_block_probabilities(
-                    filtered[:, channel_index, :], config.embedding_dimension, config.delay_samples
+        for channel_index in range(len(channels)):
+            for dx in config.permutation_dimensions:
+                state = entropy[band][channel_index][str(dx)]
+                probabilities, n_patterns, n_ties = ordinal_probabilities(
+                    filtered[channel_index][None, :],
+                    dx=dx,
+                    tau=config.delay_samples,
                 )
                 state["counts"] += np.rint(probabilities * n_patterns).astype(np.int64)
                 state["n_patterns"] += n_patterns
                 state["n_ties"] += n_ties
                 state["weighted_sum"] += weighted_permutation_entropy_epoch_data(
-                    filtered[:, channel_index, :],
-                    dx=config.embedding_dimension,
-                    tau=config.delay_samples,
-                ) * block_n
-                state["n_blocks"] += block_n
+                    filtered[channel_index][None, :], dx=dx, tau=config.delay_samples
+                )
+                state["n_epochs"] += 1
 
-                bout_state = bouts[band][channel_index]
-                for epoch_index in range(block_n):
-                    signal = filtered[epoch_index, channel_index]
-                    amplitude = np.abs(hilbert(signal))
-                    threshold = np.percentile(amplitude, config.bout_threshold_percentile)
-                    for bout_start, bout_stop in _runs(amplitude >= threshold, minimum_samples):
-                        segment = signal[bout_start:bout_stop]
-                        duration = (bout_stop - bout_start) / sfreq
-                        bout_state["n_bouts"] += 1
-                        bout_state["n_bout_samples"] += bout_stop - bout_start
-                        bout_state["duration_sum"] += duration
-                        bout_state["duration_sq_sum"] += duration * duration
-                        bout_state["amplitude_sum"] += float(np.mean(amplitude[bout_start:bout_stop]))
-                        bout_state["cycle_sum"] += duration * center
-                        counts, ties = ordinal_counts(
-                            segment,
-                            dx=config.embedding_dimension,
-                            tau=config.delay_samples,
-                        )
-                        bout_state["within"]["counts"] += counts
-                        bout_state["within"]["n_patterns"] += int(counts.sum())
-                        bout_state["within"]["n_ties"] += ties
-                        if int(counts.sum()):
-                            bout_state["within"]["weighted_sum"] += float(
-                                weighted_permutation_entropy_epoch_data(
-                                    segment[None, :],
-                                    dx=config.embedding_dimension,
-                                    tau=config.delay_samples,
-                                )
-                            ) * int(counts.sum())
+            bout_state = bouts[band][channel_index]
+            epoch_signal = filtered[channel_index]
+            amplitude = np.abs(hilbert(epoch_signal))
+            threshold = np.percentile(amplitude, config.bout_threshold_percentile)
+            for bout_start, bout_stop in _runs(amplitude >= threshold, minimum_samples):
+                segment = epoch_signal[bout_start:bout_stop]
+                duration = (bout_stop - bout_start) / sfreq
+                bout_state["n_bouts"] += 1
+                bout_state["n_bout_samples"] += bout_stop - bout_start
+                bout_state["duration_sum"] += duration
+                bout_state["duration_sq_sum"] += duration * duration
+                bout_state["amplitude_sum"] += float(np.mean(amplitude[bout_start:bout_stop]))
+                bout_state["cycle_sum"] += duration * center
+                for dx in config.permutation_dimensions:
+                    within = bout_state["within"][str(dx)]
+                    counts, ties = ordinal_counts(
+                        segment, dx=dx, tau=config.delay_samples
+                    )
+                    within["counts"] += counts
+                    within["n_patterns"] += int(counts.sum())
+                    within["n_ties"] += ties
+                    if int(counts.sum()):
+                        within["weighted_sum"] += float(
+                            weighted_permutation_entropy_epoch_data(
+                                segment[None, :], dx=dx, tau=config.delay_samples
+                            )
+                        ) * int(counts.sum())
 
-    if psd_sum is None or frequencies is None or psd_count == 0:
-        raise RuntimeError(f"{path}: no PSD features were calculated")
-    mean_psd = psd_sum / psd_count
+    fit_low, fit_high = (
+        float(value) for value in config.aperiodic_settings["frequency_range_hz"]
+    )
+    aperiodic_bands = {
+        band: (max(float(low), fit_low), min(float(high), fit_high))
+        for band, (low, high) in config.bands.items()
+        if max(float(low), fit_low) < min(float(high), fit_high)
+    }
+    aperiodic_by_channel: list[dict[str, float]] = []
+    for channel_index in range(len(channels)):
+        try:
+            aperiodic, _, _ = fit_specparam_spectrum(
+                frequencies,
+                mean_psd[channel_index],
+                aperiodic_bands,
+                config.aperiodic_settings,
+            )
+        except Exception:
+            aperiodic = {}
+        numeric_values: dict[str, float] = {}
+        for metric, value in aperiodic.items():
+            if isinstance(value, str):
+                continue
+            try:
+                numeric_values[metric] = float(value)
+            except (TypeError, ValueError):
+                continue
+        aperiodic_by_channel.append(numeric_values)
+
     rows: list[dict[str, Any]] = []
     duration_minutes = n_epochs * n_samples / sfreq / 60.0
     metadata = {key: record.get(key, "") for key in CANONICAL_COLUMNS if key not in {"epoch_path", "raw_path"}}
@@ -230,26 +258,30 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
         )
         total_power = float(np.trapezoid(mean_psd[channel_index, total_mask], frequencies[total_mask]))
         row = {**metadata, "electrode": electrode, "sampling_frequency_hz": sfreq, "n_epochs": n_epochs}
+        for metric, value in aperiodic_by_channel[channel_index].items():
+            row[f"aperiodic__broadband__{metric}"] = value
         for band, (low, high) in config.bands.items():
             band_mask = (frequencies >= low) & (frequencies <= high)
             band_power = float(np.trapezoid(mean_psd[channel_index, band_mask], frequencies[band_mask]))
             row[f"psd__{band}__absolute_power"] = band_power
             row[f"psd__{band}__relative_power"] = band_power / total_power if total_power > 0 else np.nan
-            state = entropy[band][channel_index]
-            if state["n_patterns"]:
-                values = metrics_from_probabilities(
-                    state["counts"] / state["n_patterns"], dx=config.embedding_dimension
-                )
-                for metric in ENTROPY_METRICS:
-                    value = (
-                        state["weighted_sum"] / state["n_blocks"]
-                        if metric == "weighted_permutation_entropy"
-                        else values[metric]
+            for dx in config.permutation_dimensions:
+                state = entropy[band][channel_index][str(dx)]
+                suffix = f"__D{dx}"
+                if state["n_patterns"]:
+                    values = metrics_from_probabilities(
+                        state["counts"] / state["n_patterns"], dx=dx
                     )
-                    row[f"entropy__{band}__{metric}"] = value
-            else:
-                for metric in ENTROPY_METRICS:
-                    row[f"entropy__{band}__{metric}"] = np.nan
+                    for metric in ENTROPY_METRICS:
+                        value = (
+                            state["weighted_sum"] / state["n_epochs"]
+                            if metric == "weighted_permutation_entropy"
+                            else values[metric]
+                        )
+                        row[f"entropy__{band}__{metric}{suffix}"] = value
+                else:
+                    for metric in ENTROPY_METRICS:
+                        row[f"entropy__{band}__{metric}{suffix}"] = np.nan
             bout_state = bouts[band][channel_index]
             count = bout_state["n_bouts"]
             row[f"bout__{band}__n_bouts"] = count
@@ -260,50 +292,59 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
             row[f"bout__{band}__duration_mean_s"] = bout_state["duration_sum"] / count if count else np.nan
             row[f"bout__{band}__amplitude_mean"] = bout_state["amplitude_sum"] / count if count else np.nan
             row[f"bout__{band}__cycles_mean"] = bout_state["cycle_sum"] / count if count else np.nan
-            within = bout_state["within"]
-            if within["n_patterns"]:
-                values = shannon_metrics_from_counts(
-                    within["counts"], dx=config.embedding_dimension
-                )
-                for metric in ENTROPY_METRICS:
-                    row[f"within_bout__{band}__{metric}"] = (
-                        within["weighted_sum"] / within["n_patterns"]
-                        if metric == "weighted_permutation_entropy"
-                        else values[metric]
-                    )
-            else:
-                for metric in ENTROPY_METRICS:
-                    row[f"within_bout__{band}__{metric}"] = np.nan
+            for dx in config.permutation_dimensions:
+                within = bout_state["within"][str(dx)]
+                suffix = f"__D{dx}"
+                if within["n_patterns"]:
+                    values = shannon_metrics_from_counts(within["counts"], dx=dx)
+                    for metric in ENTROPY_METRICS:
+                        row[f"within_bout__{band}__{metric}{suffix}"] = (
+                            within["weighted_sum"] / within["n_patterns"]
+                            if metric == "weighted_permutation_entropy"
+                            else values[metric]
+                        )
+                else:
+                    for metric in ENTROPY_METRICS:
+                        row[f"within_bout__{band}__{metric}{suffix}"] = np.nan
         rows.append(row)
+    pattern_arrays: dict[str, np.ndarray] = {}
+    for dx in config.permutation_dimensions:
+        pattern_arrays[f"permutation_order__D{dx}"] = np.asarray(
+            list(itertools.permutations(range(dx))), dtype=np.int8
+        )
+        for band in config.bands:
+            for channel_index, channel in enumerate(channels):
+                safe_channel = f"ch{channel_index:03d}_{_safe_filename(channel)}"
+                full_state = entropy[band][channel_index][str(dx)]
+                within_state = bouts[band][channel_index]["within"][str(dx)]
+                pattern_arrays[
+                    f"full__{band}__{safe_channel}__D{dx}__counts"
+                ] = full_state["counts"].astype(np.uint64, copy=False)
+                pattern_arrays[
+                    f"full__{band}__{safe_channel}__D{dx}__weighted_sum"
+                ] = np.asarray([full_state["weighted_sum"]], dtype=np.float64)
+                pattern_arrays[
+                    f"full__{band}__{safe_channel}__D{dx}__n_patterns"
+                ] = np.asarray([full_state["n_patterns"]], dtype=np.uint64)
+                pattern_arrays[
+                    f"within__{band}__{safe_channel}__D{dx}__counts"
+                ] = within_state["counts"].astype(np.uint64, copy=False)
+                pattern_arrays[
+                    f"within__{band}__{safe_channel}__D{dx}__weighted_sum"
+                ] = np.asarray([within_state["weighted_sum"]], dtype=np.float64)
+                pattern_arrays[
+                    f"within__{band}__{safe_channel}__D{dx}__n_patterns"
+                ] = np.asarray([within_state["n_patterns"]], dtype=np.uint64)
     return pd.DataFrame.from_records(rows), {
         "channels": channels,
         "sfreq": sfreq,
-        "frequencies": frequencies,
+        "frequencies": np.asarray(frequencies, dtype=float),
         # Keep only the channel-averaged spectrum for plotting.  The full
-        # channel x frequency PSD remains local to this recording, preserving
-        # the block-wise memory policy.
+        # channel x frequency PSD remains local to this recording; it is not
+        # retained in the subject feature table or global aggregation state.
         "mean_psd": np.mean(mean_psd, axis=0),
+        "pattern_arrays": pattern_arrays,
     }
-
-
-def _pooled_block_probabilities(data: np.ndarray, dx: int, tau: int) -> tuple[np.ndarray, int, int]:
-    counts = None
-    patterns = 0
-    ties = 0
-    from analyses.ordinal.metrics import ordinal_probabilities
-
-    for epoch in np.asarray(data):
-        probabilities, n_patterns, n_ties = ordinal_probabilities(
-            epoch[None, :], dx=dx, tau=tau
-        )
-        if counts is None:
-            counts = np.zeros_like(probabilities)
-        counts += probabilities * n_patterns
-        patterns += n_patterns
-        ties += n_ties
-    if counts is None or patterns == 0:
-        raise ValueError("No ordinal patterns available in epoch block")
-    return counts / patterns, patterns, ties
 
 
 def _bh(p_values: np.ndarray) -> np.ndarray:
@@ -321,7 +362,7 @@ def _bh(p_values: np.ndarray) -> np.ndarray:
 
 
 def group_statistics(table: pd.DataFrame, config: GlobalConfig) -> pd.DataFrame:
-    feature_columns = [column for column in table.columns if column.startswith(("psd__", "entropy__", "bout__", "within_bout__"))]
+    feature_columns = [column for column in table.columns if column.startswith(("psd__", "aperiodic__", "entropy__", "bout__", "within_bout__"))]
     rows: list[dict[str, Any]] = []
     for dataset_id, dataset_table in table.groupby("dataset_id", sort=False):
         groups = sorted(str(value) for value in dataset_table["group"].dropna().unique())
@@ -429,6 +470,138 @@ def _safe_filename(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("_")
 
 
+def _analysis_signature(config: GlobalConfig) -> str:
+    """Return the analysis contract used to validate resumable subject files."""
+    contract = {
+        "schema": 3,
+        "bands": config.bands,
+        "permutation_dimensions": config.permutation_dimensions,
+        "embedding_dimension": config.embedding_dimension,
+        "delay_samples": config.delay_samples,
+        "bout_threshold_percentile": config.bout_threshold_percentile,
+        "bout_minimum_cycles": config.bout_minimum_cycles,
+        "aperiodic_settings": config.aperiodic_settings,
+    }
+    return json.dumps(contract, sort_keys=True, separators=(",", ":"))
+
+
+def _subject_cache_paths(output: Path, record: dict[str, Any]) -> dict[str, Path]:
+    dataset = _safe_filename(record["dataset_id"])
+    recording = _safe_filename(record["recording_id"])
+    directory = output / "intermediate" / "subjects" / dataset
+    return {
+        "features": directory / f"{recording}_features.csv.gz",
+        "patterns": directory / f"{recording}_permutation_patterns.npz",
+        "metadata": directory / f"{recording}_metadata.json",
+    }
+
+
+def _save_subject_cache(
+    output: Path,
+    record: dict[str, Any],
+    features: pd.DataFrame,
+    info: dict[str, Any],
+    config: GlobalConfig,
+) -> None:
+    """Persist one complete subject result and its D=3..7 pattern state."""
+    paths = _subject_cache_paths(output, record)
+    paths["features"].parent.mkdir(parents=True, exist_ok=True)
+    epoch_stat = Path(record["epoch_path"]).stat()
+    arrays = dict(info["pattern_arrays"])
+    arrays["frequencies"] = np.asarray(info["frequencies"], dtype=np.float64)
+    arrays["mean_psd"] = np.asarray(info["mean_psd"], dtype=np.float64)
+
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", suffix=".npz", prefix=f".{paths['patterns'].stem}.",
+            dir=paths["patterns"].parent, delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+        np.savez_compressed(temporary, **arrays)
+        temporary.replace(paths["patterns"])
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+    _write_table_atomic(features, paths["features"])
+    metadata = {
+        "schema_version": 3,
+        "analysis_signature": _analysis_signature(config),
+        "dataset_id": record["dataset_id"],
+        "recording_id": record["recording_id"],
+        "participant_id": record["participant_id"],
+        "epoch_path": str(Path(record["epoch_path"]).resolve()),
+        "epoch_size": int(epoch_stat.st_size),
+        "epoch_mtime_ns": int(epoch_stat.st_mtime_ns),
+        "n_rows": int(len(features)),
+        "channels": list(info["channels"]),
+        "sfreq": float(info["sfreq"]),
+        "permutation_dimensions": list(config.permutation_dimensions),
+        "aperiodic_analysis": config.aperiodic_settings,
+        "pattern_file": paths["patterns"].name,
+        "feature_file": paths["features"].name,
+    }
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", prefix=f".{paths['metadata'].stem}.",
+            dir=paths["metadata"].parent, encoding="utf-8", delete=False
+        ) as handle:
+            temporary = Path(handle.name)
+            json.dump(metadata, handle, indent=2)
+        temporary.replace(paths["metadata"])
+    finally:
+        if temporary is not None and temporary.exists():
+            temporary.unlink()
+
+
+def _load_subject_cache(
+    output: Path,
+    record: dict[str, Any],
+    config: GlobalConfig,
+) -> tuple[pd.DataFrame, dict[str, Any]] | None:
+    """Load a complete subject cache, or return ``None`` when it is stale."""
+    paths = _subject_cache_paths(output, record)
+    if not all(path.exists() for path in paths.values()):
+        return None
+    try:
+        metadata = json.loads(paths["metadata"].read_text(encoding="utf-8"))
+        epoch_path = Path(record["epoch_path"])
+        epoch_stat = epoch_path.stat()
+        if (
+            metadata.get("schema_version") != 3
+            or metadata.get("analysis_signature") != _analysis_signature(config)
+            or metadata.get("epoch_path") != str(epoch_path.resolve())
+            or metadata.get("epoch_size") != int(epoch_stat.st_size)
+            or metadata.get("epoch_mtime_ns") != int(epoch_stat.st_mtime_ns)
+            or metadata.get("permutation_dimensions") != list(config.permutation_dimensions)
+        ):
+            return None
+        features = pd.read_csv(paths["features"], compression="infer")
+        if len(features) != int(metadata.get("n_rows", -1)):
+            return None
+        with np.load(paths["patterns"], allow_pickle=False) as bundle:
+            required = [
+                "frequencies",
+                "mean_psd",
+                *[f"permutation_order__D{dx}" for dx in config.permutation_dimensions],
+            ]
+            if any(key not in bundle for key in required):
+                return None
+            frequencies = np.asarray(bundle["frequencies"], dtype=float)
+            mean_psd = np.asarray(bundle["mean_psd"], dtype=float)
+        return features, {
+            "channels": list(metadata.get("channels", [])),
+            "sfreq": float(metadata["sfreq"]),
+            "frequencies": frequencies,
+            "mean_psd": mean_psd,
+            "cache_reused": True,
+        }
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return None
+
+
 def _feature_map(
     selected: pd.DataFrame,
     group: str,
@@ -470,6 +643,11 @@ def _topomap(
     if selected.empty:
         return
     feature_columns = [column for column in selected if column.startswith(feature_template)]
+    if feature_template in {"entropy__", "within_bout__"}:
+        feature_columns = [
+            column for column in feature_columns
+            if column.endswith(f"__D{config.embedding_dimension}")
+        ]
     if not feature_columns:
         return
     groups = sorted(selected["group"].dropna().unique())
@@ -541,6 +719,11 @@ def _contrast_topomap(
 
     selected = table.loc[table["dataset_id"].eq(dataset_id)].copy()
     feature_columns = [column for column in selected if column.startswith(feature_template)]
+    if feature_template in {"entropy__", "within_bout__"}:
+        feature_columns = [
+            column for column in feature_columns
+            if column.endswith(f"__D{config.embedding_dimension}")
+        ]
     if selected.empty or not feature_columns:
         return
     montage = mne.channels.make_standard_montage("standard_1005")
@@ -645,7 +828,7 @@ def _plot_psd_spectra(
             alpha=0.2,
         )
     axis.set_xlabel("Frequency (Hz)")
-    axis.set_ylabel("Mean PSD across EEG electrodes")
+    axis.set_ylabel("Mean PSD across EEG electrodes (µV²/Hz)")
     axis.set_title(f"{dataset_id}: mean PSD ± 95% CI")
     axis.set_xlim(left=0.0)
     axis.set_yscale("log")
@@ -662,6 +845,7 @@ def _plot_clinical_scatter(
     dataset_id: str,
     outcome: str,
     family: str,
+    config: GlobalConfig,
     output: Path,
 ) -> None:
     """Plot subject-level PD features against one available clinical score."""
@@ -669,6 +853,11 @@ def _plot_clinical_scatter(
 
     prefix = f"{family}__"
     feature_columns = [column for column in table if column.startswith(prefix)]
+    if family in {"within_bout", "entropy"}:
+        feature_columns = [
+            column for column in feature_columns
+            if column.endswith(f"__D{config.embedding_dimension}")
+        ]
     if not feature_columns or outcome not in table:
         return
     selected = table.loc[table["dataset_id"].eq(dataset_id)].copy()
@@ -729,6 +918,7 @@ def _plot_entropy_plane(
     dataset_id: str,
     family: str,
     vertical_metric: str,
+    config: GlobalConfig,
     output: Path,
 ) -> None:
     """Plot subject-level HxC or HxF planes for each frequency band.
@@ -759,8 +949,8 @@ def _plot_entropy_plane(
     for band in bands:
         metric_columns.extend(
             [
-                f"{family}__{band}__entropy",
-                f"{family}__{band}__{vertical_metric}",
+                f"{family}__{band}__entropy__D{config.embedding_dimension}",
+                f"{family}__{band}__{vertical_metric}__D{config.embedding_dimension}",
             ]
         )
     metric_columns = [column for column in metric_columns if column in selected]
@@ -783,8 +973,8 @@ def _plot_entropy_plane(
     plotted = False
     for column_index, band in enumerate(bands):
         axis = axes[0, column_index]
-        horizontal = f"{family}__{band}__entropy"
-        vertical = f"{family}__{band}__{vertical_metric}"
+        horizontal = f"{family}__{band}__entropy__D{config.embedding_dimension}"
+        vertical = f"{family}__{band}__{vertical_metric}__D{config.embedding_dimension}"
         if horizontal not in subject or vertical not in subject:
             axis.axis("off")
             continue
@@ -852,7 +1042,14 @@ def run_global_pipeline(
     analysis_exclusions: list[dict[str, Any]] = []
     for record in canonical.to_dict(orient="records"):
         try:
-            features, info = _analyze_recording(record, config)
+            cached = None if overwrite else _load_subject_cache(output, record, config)
+            if cached is None:
+                features, info = _analyze_recording(record, config)
+                _save_subject_cache(output, record, features, info, config)
+                cache_reused = False
+            else:
+                features, info = cached
+                cache_reused = True
         except ValueError as error:
             if "no accepted epochs" not in str(error):
                 raise
@@ -875,7 +1072,13 @@ def run_global_pipeline(
             "frequencies": info["frequencies"],
             "mean_psd": info["mean_psd"],
         })
-        diagnostics.append({"recording_id": record["recording_id"], "n_channels": len(info["channels"]), "sampling_frequency_hz": info["sfreq"]})
+        diagnostics.append({
+            "dataset_id": record["dataset_id"],
+            "recording_id": record["recording_id"],
+            "n_channels": len(info["channels"]),
+            "sampling_frequency_hz": info["sfreq"],
+            "subject_cache_reused": cache_reused,
+        })
     if not recording_tables:
         raise RuntimeError("No recordings with accepted epochs were available for analysis")
     feature_table = pd.concat(recording_tables, ignore_index=True)
@@ -898,6 +1101,7 @@ def run_global_pipeline(
             dataset_figures = output / "figures" / dataset.dataset_id
             _plot_psd_spectra(spectra, dataset.dataset_id, dataset_figures / "psd_mean_ci.png")
             _topomap(feature_table, config, dataset.dataset_id, "psd", "psd__", output / "figures" / dataset.dataset_id / "psd_topomaps.png")
+            _topomap(feature_table, config, dataset.dataset_id, "aperiodic", "aperiodic__", output / "figures" / dataset.dataset_id / "aperiodic_topomaps.png")
             _topomap(feature_table, config, dataset.dataset_id, "entropy", "entropy__", output / "figures" / dataset.dataset_id / "entropy_topomaps.png")
             _topomap(feature_table, config, dataset.dataset_id, "within_bout", "within_bout__", output / "figures" / dataset.dataset_id / "within_bout_entropy_topomaps.png")
             selected_groups = sorted(feature_table.loc[feature_table["dataset_id"].eq(dataset.dataset_id), "group"].dropna().unique())
@@ -912,6 +1116,16 @@ def run_global_pipeline(
                     group_a,
                     group_b,
                     dataset_figures / f"psd_contrast_{pair_name}_topomaps.png",
+                )
+                _contrast_topomap(
+                    feature_table,
+                    stats,
+                    config,
+                    dataset.dataset_id,
+                    "aperiodic__",
+                    group_a,
+                    group_b,
+                    dataset_figures / f"aperiodic_contrast_{pair_name}_topomaps.png",
                 )
                 _contrast_topomap(
                     feature_table,
@@ -939,6 +1153,7 @@ def run_global_pipeline(
                     dataset.dataset_id,
                     outcome,
                     "bout",
+                    config,
                     dataset_figures / f"scatter_{outcome}_bout.png",
                 )
                 _plot_clinical_scatter(
@@ -946,6 +1161,7 @@ def run_global_pipeline(
                     dataset.dataset_id,
                     outcome,
                     "within_bout",
+                    config,
                     dataset_figures / f"scatter_{outcome}_within_bout.png",
                 )
             for family, filename_prefix in (
@@ -957,6 +1173,7 @@ def run_global_pipeline(
                     dataset.dataset_id,
                     family,
                     "complexity",
+                    config,
                     dataset_figures / f"{filename_prefix}_hxc_planes.png",
                 )
                 _plot_entropy_plane(
@@ -964,6 +1181,7 @@ def run_global_pipeline(
                     dataset.dataset_id,
                     family,
                     "fisher_information",
+                    config,
                     dataset_figures / f"{filename_prefix}_hxf_planes.png",
                 )
     manifest = {
@@ -978,7 +1196,10 @@ def run_global_pipeline(
         "groups": canonical["group"].value_counts().to_dict(),
         "analysis_exclusions": analysis_exclusions,
         "entropy_metrics": list(ENTROPY_METRICS),
-        "memory_policy": "MNE epochs are read in block_epochs-sized blocks; raw samples are not saved in feature tables",
+        "memory_policy": "One cleaned recording is loaded and analyzed at a time; raw samples are released after the subject cache is saved",
+        "subject_cache": str(output / "intermediate" / "subjects"),
+        "permutation_dimensions": list(config.permutation_dimensions),
+        "analysis_signature": _analysis_signature(config),
         "diagnostics": diagnostics,
     }
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
