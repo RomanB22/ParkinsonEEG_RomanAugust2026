@@ -722,10 +722,25 @@ def _feature_label(feature: str) -> str:
     return f"{family.replace('_', ' ').title()} — {band.title()} — {metric}"
 
 
+def _plot_metric_label(feature: str) -> str:
+    """Return a subplot label without repeated family or band context."""
+    parts = str(feature).split("__")
+    if len(parts) < 3:
+        return str(feature).replace("_", " ")
+    metric_name = parts[-1]
+    if metric_name == "aperiodic_offset":
+        return "offset (aperiodic intercept)"
+    if metric_name == "aperiodic_exponent":
+        return "exponent (1/f slope)"
+    family = parts[0]
+    metric_parts = parts[2:]
+    if metric_parts and metric_parts[0].startswith(f"{family}_"):
+        metric_parts[0] = metric_parts[0][len(family) + 1:]
+    return " / ".join(metric_parts).replace("_", " ")
+
+
 APERIODIC_PLOT_METRICS = {
     "aperiodic_offset",
-    "aperiodic_knee",
-    "aperiodic_knee_frequency_hz",
     "aperiodic_exponent",
 }
 
@@ -1022,6 +1037,11 @@ def _topomap(
                 str(group),
                 fontsize=8,
             )
+        axes[row_index, 0].set_ylabel(
+            _plot_metric_label(feature),
+            fontsize=9,
+            labelpad=10,
+        )
     for row_index, feature in enumerate(feature_columns):
         if feature in images:
             fig.colorbar(images[feature], ax=axes[row_index, :].tolist(), shrink=0.75)
@@ -1127,13 +1147,15 @@ def _contrast_topomap(
         )
         images[feature] = image
         significant_count += int(mask.sum())
-        axes[row_index, 0].set_title(_feature_label(feature), fontsize=9)
+        axes[row_index, 0].set_title(_plot_metric_label(feature), fontsize=9)
     for row_index, feature in enumerate(feature_columns):
         if feature in images:
             fig.colorbar(images[feature], ax=axes[row_index, 0], shrink=0.75)
+    analysis_label = feature_template.rstrip("_").replace("_", " ").title()
+    band_label = "Broadband" if band is None else band.replace("_", " ").title()
     title = (
         f"{dataset_id}: {group_b} − {group_a} — "
-        f"{feature_template.rstrip('_').replace('_', ' ').title()} topomaps\n"
+        f"{analysis_label} — {band_label} topomaps\n"
         f"white dots = Welch BH-FDR p < {config.fdr_alpha:g} "
         f"({significant_count} significant electrode-feature maps)"
     )
@@ -1619,8 +1641,7 @@ def _plot_subject_violins(
                         f"{left_group} vs {right_group}: "
                         f"p={raw_p:.3g}, q={q_value:.3g}"
                     )
-            metric = feature.rsplit("__", 1)[-1]
-            metric_label = " / ".join(feature.split("__")[2:]).replace("_", " ")
+            metric_label = _plot_metric_label(feature)
             title = metric_label
             if significant_pairs:
                 title += "\n* Welch BH-FDR q<" + f"{config.fdr_alpha:g}: " + "; ".join(significant_pairs)
@@ -1635,15 +1656,7 @@ def _plot_subject_violins(
                 pad=10,
             )
             axis.grid(axis="y", alpha=0.2)
-            if metric == "aperiodic_knee":
-                # The knee parameter is strictly positive and naturally spans
-                # several orders of magnitude. A log axis keeps a single
-                # extreme subject from flattening the rest of the distribution
-                # while preserving the original values and inferential tests.
-                axis.set_yscale("log")
-                axis.set_ylabel("Subject-average value (log scale)")
-            else:
-                axis.set_ylabel("Subject-average value")
+            axis.set_ylabel("Subject-average value")
         else:
             axis.axis("off")
     for axis in axes.flat[len(feature_columns):]:
