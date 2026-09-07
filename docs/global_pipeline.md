@@ -84,14 +84,16 @@ usable signal. These exclusions are written to each preprocessing output's
 pipeline. Standalone preprocessing remains fail-fast unless
 `--skip-unusable-recordings` is supplied.
 
-The pipeline performs concatenated-signal Welch PSD and relative band power,
+The pipeline performs subject-level Welch PSD and relative band power,
 4–50 Hz aperiodic spectral fitting with fixed and knee models selected by BIC,
 electrode-wise group statistics with Welch/Mann–Whitney tests and BH-FDR, PSD,
 aperiodic, and entropy topomaps,
 the four requested entropy quantities (H, C, F, and weighted entropy),
-Hilbert-amplitude oscillatory bouts, within-bout H/C/F/weighted entropy, and
-PD-only age/sex-adjusted partial Spearman correlations with UPDRS, MOCA, and
-MMSE whenever those outcomes exist.
+eBOSC/wavelet aperiodic-relative oscillatory bouts, within-bout
+H/C/F/weighted entropy, and
+PD-only correlations with UPDRS, MOCA, and MMSE whenever those outcomes exist.
+Both the legacy age/sex-adjusted partial Spearman result and an unadjusted
+Spearman sensitivity result are saved.
 
 Outputs are written under `outputs/global/`:
 
@@ -107,18 +109,20 @@ figures/<dataset>/psd_mean_ci.png
 figures/<dataset>/aperiodic_topomaps.png
 figures/<dataset>/*_contrast_*_topomaps.png
 figures/<dataset>/scatter_<moca|mmse|updrs>_<bout|within_bout>.png
+figures/<dataset>/subject_violins_<psd|aperiodic|entropy|bout|within_bout>.png
 figures/<dataset>/entropy_hx[cf]_planes.png
 figures/<dataset>/within_bout_entropy_hx[cf]_planes.png
 ```
 
 The analysis unit is one complete cleaned recording at a time. All accepted
 four-second epochs for that subject/session/condition are loaded together and
-concatenated in temporal/file order within that recording, then released
-before the next recording is opened. Recordings are never concatenated across
-subjects or medication conditions. PSD uses the established 4-second Hann
-Welch windows with no overlap; ordinal patterns, band filtering, and bout
-detection use the same concatenated recording signal. `block_epochs` is
-retained as a compatibility setting but is no longer an analysis boundary.
+released before the next recording is opened. Recordings are never
+concatenated across subjects or medication conditions. PSD uses the
+subject-level 4-second Hann Welch spectrum with no overlap. Band filtering,
+full-signal ordinal patterns, and eBOSC bout detection preserve epoch
+boundaries; ordinal counts are pooled across epochs without creating windows
+across rejected-data gaps. `block_epochs` is retained as a compatibility
+setting but is no longer an analysis boundary.
 Raw samples and bout waveforms are not written to feature tables. Canonical
 tables use compressed CSV and do not require a Parquet engine.
 
@@ -132,25 +136,36 @@ After every recording, resumable intermediate files are written under
 ```
 
 The compressed NPZ stores the lexicographic permutation order and exact pooled
-pattern-count vectors for full-signal and within-bout analyses, for every
+pattern-count vectors for boundary-safe full-signal and within-bout analyses, for every
 configured embedding dimension (D=3, 4, 5, 6, and 7 by default), together with
-the weighted-entropy accumulators and PSD spectrum. It does not store the raw
-symbol sequence. On a rerun, a matching complete subject cache is reused; a
-changed signal file or analysis configuration automatically invalidates that
-subject only. Aggregation, FDR statistics, clinical correlations, and plotting
-then run from the compact subject results after all selected recordings are
-available.
+the weighted-entropy accumulators, eBOSC settings, and PSD spectrum. It does
+not store the raw symbol sequence. On a rerun, a matching complete subject
+cache is reused; a changed signal file or analysis configuration automatically
+invalidates that subject only. Aggregation, FDR statistics, clinical
+correlations, and plotting then run from the compact subject results after all
+selected recordings are available.
 
-The PSD figure shows recording-level mean PSD across EEG electrodes with a
-95% confidence interval across recordings. Population topomap panels use
-shared color limits for each feature. Contrast topomaps show `group_b -
-group_a` on a symmetric scale centered at zero; white electrode markers
+The PSD figure shows the subject-level median PSD across available EEG
+electrodes with a pointwise 95% bootstrap confidence interval across
+recordings. This robust summary prevents a small number of high-power
+recordings from dominating the figure. Population topomap panels use
+shared color limits for each feature, and each panel title identifies the
+group, family, band, and metric (including the embedding dimension where
+applicable). Contrast topomaps show `group_b - group_a` on a symmetric scale
+centered at zero; white electrode markers
 indicate Welch-test electrodes surviving the BH-FDR threshold. Clinical
 scatter plots use one point per participant and condition, restricted to
 PD-labeled groups, and are created only when the corresponding clinical
 values are available. Their annotations are unadjusted Spearman associations;
-the age/sex-adjusted results remain in
-`statistics/clinical_correlations.csv.gz`.
+the age/sex-adjusted and unadjusted results remain in
+`statistics/clinical_correlations.csv.gz`, with FDR applied separately by
+dataset, outcome, feature family, and method.
+
+Subject violin plots first average all available electrode rows for each
+participant and group/condition. They therefore show one biological
+observation per participant/condition rather than one observation per
+electrode. Entropy and within-bout entropy violins use the configured primary
+embedding dimension; all other configured metrics are included.
 
 Entropy-plane figures show H versus complexity (H×C) and H versus Fisher
 information (H×F), separately for every frequency band. They are produced for

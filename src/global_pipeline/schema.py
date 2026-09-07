@@ -38,6 +38,16 @@ DEFAULT_APERIODIC_SETTINGS = {
     "peak_threshold": 2.0,
 }
 
+DEFAULT_EBOSC_SETTINGS = {
+    "frequency_min_hz": 4.0,
+    "frequency_max_hz": 50.0,
+    "frequency_step_hz": 1.0,
+    "wavenumber": 6.0,
+    "power_percentile": 0.95,
+    "minimum_cycles": 3.0,
+    "edge_padding_seconds": 0.75,
+}
+
 _SUBJECT_RE = re.compile(r"(sub-[A-Za-z0-9]+)")
 _SESSION_RE = re.compile(r"(ses-[A-Za-z0-9]+)")
 
@@ -205,6 +215,9 @@ class GlobalConfig:
     aperiodic_settings: dict[str, Any] = field(
         default_factory=lambda: dict(DEFAULT_APERIODIC_SETTINGS)
     )
+    ebosc_settings: dict[str, Any] = field(
+        default_factory=lambda: dict(DEFAULT_EBOSC_SETTINGS)
+    )
     delay_samples: int = 1
     bout_threshold_percentile: float = 95.0
     bout_minimum_cycles: float = 3.0
@@ -261,6 +274,16 @@ def load_global_config(path: str | Path) -> GlobalConfig:
         raise ValueError("aperiodic.model_selection_criterion must be 'bic'")
     if [float(value) for value in defaults["frequency_range_hz"]] != [4.0, 50.0]:
         raise ValueError("The aperiodic fit range must be 4–50 Hz")
+    ebosc = dict(DEFAULT_EBOSC_SETTINGS)
+    ebosc.update(raw.get("ebosc", {}))
+    if not 0.0 < float(ebosc["frequency_min_hz"]) < float(ebosc["frequency_max_hz"]):
+        raise ValueError("Invalid eBOSC frequency range")
+    if float(ebosc["frequency_step_hz"]) <= 0.0 or float(ebosc["wavenumber"]) <= 0.0:
+        raise ValueError("eBOSC frequency step and wavenumber must be positive")
+    if not 0.0 < float(ebosc["power_percentile"]) < 1.0:
+        raise ValueError("ebosc.power_percentile must be between zero and one")
+    if float(ebosc["minimum_cycles"]) <= 0.0 or float(ebosc["edge_padding_seconds"]) < 0.0:
+        raise ValueError("Invalid eBOSC duration or edge-padding setting")
     percentile = float(raw.get("bout_threshold_percentile", 95.0))
     if not 50.0 < percentile < 100.0:
         raise ValueError("bout_threshold_percentile must be between 50 and 100")
@@ -276,6 +299,7 @@ def load_global_config(path: str | Path) -> GlobalConfig:
         embedding_dimension=dx,
         permutation_dimensions=dimensions,
         aperiodic_settings=defaults,
+        ebosc_settings=ebosc,
         delay_samples=tau,
         bout_threshold_percentile=percentile,
         bout_minimum_cycles=float(raw.get("bout_minimum_cycles", 3.0)),

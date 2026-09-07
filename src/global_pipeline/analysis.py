@@ -1,10 +1,11 @@
 """Subject-level PSD, entropy, bout, and clinical analyses.
 
 The analysis unit is one cleaned recording (a subject/session/condition when a
-dataset has sessions).  All accepted epochs for that unit are loaded together,
-concatenated in recording order, analyzed, and immediately reduced to compact
-feature tables and permutation-pattern sufficient statistics.  Raw samples
-and ordinal symbol sequences are never written to the intermediate state.
+dataset has sessions). All accepted epochs for that unit are loaded together,
+then reduced to compact feature tables and permutation-pattern sufficient
+statistics. PSD uses the subject-level Welch spectrum; filtering, ordinal
+windows, and eBOSC bouts preserve epoch boundaries. Raw samples and ordinal
+symbol sequences are never written to the intermediate state.
 """
 
 from __future__ import annotations
@@ -22,19 +23,26 @@ import mne
 import numpy as np
 import pandas as pd
 import xarray as xr
-from scipy.signal import hilbert
-from scipy.stats import mannwhitneyu, pearsonr, rankdata, spearmanr, ttest_ind
+from scipy.stats import mannwhitneyu, rankdata, spearmanr, t as student_t, ttest_ind
 from tqdm.auto import tqdm
 
-from analyses.bouts.metrics import ordinal_counts, shannon_metrics_from_counts
+from analyses.bouts.metrics import analyze_bout_segments, shannon_metrics_from_counts
 from analyses.ordinal.metrics import (
     filter_epoch_data,
     metrics_from_probabilities,
     ordinal_probabilities,
     weighted_permutation_entropy_epoch_data,
 )
-from analyses.psd.metrics import compute_subject_electrode_psd
-from analyses.scale_free.metrics import fit_specparam_spectrum
+from analyses.psd.metrics import bootstrap_median_ci, compute_subject_electrode_psd, to_db
+from analyses.scale_free.metrics import (
+    aperiodic_wavelet_background,
+    detect_frequency_episodes,
+    ebosc_wavelet_power,
+    extract_band_bouts,
+    fit_specparam_spectrum,
+    power_thresholds,
+    summarize_bouts,
+)
 
 from .converter import convert_config
 from .schema import CANONICAL_COLUMNS, GlobalConfig, load_global_config, read_canonical_table
@@ -69,16 +77,6 @@ def _write_table_atomic(table: pd.DataFrame, path: Path) -> None:
             temporary.unlink()
 
 
-def _runs(mask: np.ndarray, minimum_samples: int) -> list[tuple[int, int]]:
-    padded = np.concatenate(([False], np.asarray(mask, dtype=bool), [False]))
-    changes = np.flatnonzero(padded[1:] != padded[:-1])
-    return [
-        (int(start), int(stop))
-        for start, stop in zip(changes[::2], changes[1::2])
-        if int(stop - start) >= minimum_samples
-    ]
-
-
 def _new_entropy_state(dx: int) -> dict[str, Any]:
     return {
         "counts": np.zeros(math.factorial(dx), dtype=np.int64),
@@ -91,10 +89,9 @@ def _new_entropy_state(dx: int) -> dict[str, Any]:
 
 def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd.DataFrame, dict[str, Any]]:
     path = Path(record["epoch_path"])
-    # The requested analysis unit is the complete cleaned recording.  This
-    # deliberately preloads all accepted epochs for one subject/condition;
-    # no epoch block is analyzed independently or discarded before the
-    # subject-level accumulators are complete.
+    # One recording is loaded at a time. Epochs remain a separate dimension
+    # for filtering, ordinal encoding, and bout detection; this prevents
+    # rejected-data gaps and epoch boundaries from becoming artificial EEG.
     epochs = mne.read_epochs(path, preload=True, verbose="ERROR")
     eeg_picks = list(mne.pick_types(epochs.info, eeg=True, exclude=[]))
     if not eeg_picks:
@@ -117,27 +114,47 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
         },
         name="eeg_subject",
     )
-    # The accepted epochs are concatenated in temporal/file order.  Every
-    # analysis below uses this complete recording-level signal.  In
-    # particular, ordinal windows and Hilbert bouts are allowed to span the
-    # former epoch boundaries, as requested by the global analysis contract.
-    concatenated = xr.DataArray(
-        signal.data.transpose(1, 0, 2).reshape(len(channels), -1),
-        dims=("channel", "sample"),
-        coords={
-            "channel": channels,
-            "sample": np.arange(n_epochs * n_samples, dtype=np.int64) / sfreq,
-        },
-        name="eeg_subject_concatenated",
-    )
 
-    frequencies, mean_psd = compute_subject_electrode_psd(
+    frequencies, electrode_psd = compute_subject_electrode_psd(
         signal.data,
         sfreq,
         fmin=min(low for low, _ in config.bands.values()),
         fmax=max(high for _, high in config.bands.values()),
     )
-    mean_psd = np.asarray(mean_psd, dtype=np.float64)
+    electrode_psd = np.asarray(electrode_psd, dtype=np.float64)
+
+    fit_low, fit_high = (
+        float(value) for value in config.aperiodic_settings["frequency_range_hz"]
+    )
+    aperiodic_bands = {
+        band: (max(float(low), fit_low), min(float(high), fit_high))
+        for band, (low, high) in config.bands.items()
+        if max(float(low), fit_low) < min(float(high), fit_high)
+    }
+    aperiodic_by_channel: list[dict[str, float]] = []
+    aperiodic_curves: list[dict[str, np.ndarray] | None] = []
+    for channel_index in range(len(channels)):
+        try:
+            aperiodic, _, curves = fit_specparam_spectrum(
+                frequencies,
+                electrode_psd[channel_index],
+                aperiodic_bands,
+                config.aperiodic_settings,
+            )
+        except Exception:
+            aperiodic = {}
+            curves = None
+        numeric_values: dict[str, float] = {}
+        for metric, value in aperiodic.items():
+            if isinstance(value, str):
+                continue
+            try:
+                numeric_values[metric] = float(value)
+            except (TypeError, ValueError):
+                continue
+        aperiodic_by_channel.append(numeric_values)
+        aperiodic_curves.append(curves)
+
     entropy: dict[str, list[dict[str, Any]]] = {
         band: [
             {str(dx): _new_entropy_state(dx) for dx in config.permutation_dimensions}
@@ -150,10 +167,7 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
             {
                 "n_bouts": 0,
                 "n_bout_samples": 0,
-                "duration_sum": 0.0,
-                "duration_sq_sum": 0.0,
-                "amplitude_sum": 0.0,
-                "cycle_sum": 0.0,
+                "summary": {},
                 "within": {
                     str(dx): _new_entropy_state(dx)
                     for dx in config.permutation_dimensions
@@ -164,24 +178,73 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
         for band in config.bands
     }
 
-    for band, (low, high) in config.bands.items():
-        filtered = filter_epoch_data(
-            concatenated.data[None, ...].astype(np.float64, copy=False),
-            sfreq=sfreq,
-            low_hz=low,
-            high_hz=high,
-            order=4,
-        )[0]
-        center = max((low + high) / 2.0, 0.1)
-        minimum_samples = max(
-            max(config.permutation_dimensions) + 1,
-            int(math.ceil(config.bout_minimum_cycles * sfreq / center)),
-        )
-        for channel_index in range(len(channels)):
+    ebosc = config.ebosc_settings
+    wavelet_frequencies = np.arange(
+        float(ebosc["frequency_min_hz"]),
+        float(ebosc["frequency_max_hz"]) + 0.5 * float(ebosc["frequency_step_hz"]),
+        float(ebosc["frequency_step_hz"]),
+    )
+    edge_samples = int(round(float(ebosc["edge_padding_seconds"]) * sfreq))
+    data_uv = signal.data.astype(np.float64, copy=False) * 1e6
+
+    for channel_index in range(len(channels)):
+        # Keep filtering boundary-safe while retaining only one channel's
+        # band-pass results in memory. The wavelet transform is shared by all
+        # bands for this electrode and is released before the next electrode.
+        filtered_by_band = {
+            band: filter_epoch_data(
+                signal.data[:, channel_index : channel_index + 1, :].astype(
+                    np.float64, copy=False
+                ),
+                sfreq=sfreq,
+                low_hz=low,
+                high_hz=high,
+                order=4,
+            )[:, 0, :]
+            for band, (low, high) in config.bands.items()
+        }
+        curves = aperiodic_curves[channel_index]
+        wavelet_power = None
+        detected = None
+        thresholds = None
+        if curves is not None:
+            wavelet_power = ebosc_wavelet_power(
+                data_uv[:, channel_index, :],
+                sfreq=sfreq,
+                frequencies=wavelet_frequencies,
+                wavenumber=float(ebosc["wavenumber"]),
+            )
+            interior = (
+                wavelet_power
+                if edge_samples == 0
+                else wavelet_power[..., edge_samples:-edge_samples]
+            )
+            mean_wavelet_power = np.mean(interior, axis=(0, 2))
+            background = aperiodic_wavelet_background(
+                curves["frequencies_hz"],
+                curves["modeled_psd_uv2_hz"],
+                curves["aperiodic_psd_uv2_hz"],
+                wavelet_frequencies,
+                mean_wavelet_power,
+            )
+            thresholds = power_thresholds(
+                background, float(ebosc["power_percentile"])
+            )
+            detected = detect_frequency_episodes(
+                wavelet_power,
+                sfreq=sfreq,
+                frequencies=wavelet_frequencies,
+                thresholds=thresholds,
+                minimum_cycles=float(ebosc["minimum_cycles"]),
+                edge_padding_samples=edge_samples,
+            )
+
+        for band, (low, high) in config.bands.items():
+            channel_filtered = filtered_by_band[band]
             for dx in config.permutation_dimensions:
                 state = entropy[band][channel_index][str(dx)]
                 probabilities, n_patterns, n_ties = ordinal_probabilities(
-                    filtered[channel_index][None, :],
+                    channel_filtered,
                     dx=dx,
                     tau=config.delay_samples,
                 )
@@ -189,81 +252,76 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
                 state["n_patterns"] += n_patterns
                 state["n_ties"] += n_ties
                 state["weighted_sum"] += weighted_permutation_entropy_epoch_data(
-                    filtered[channel_index][None, :], dx=dx, tau=config.delay_samples
+                    channel_filtered, dx=dx, tau=config.delay_samples
                 )
-                state["n_epochs"] += 1
+                state["n_epochs"] = 1
 
             bout_state = bouts[band][channel_index]
-            epoch_signal = filtered[channel_index]
-            amplitude = np.abs(hilbert(epoch_signal))
-            threshold = np.percentile(amplitude, config.bout_threshold_percentile)
-            for bout_start, bout_stop in _runs(amplitude >= threshold, minimum_samples):
-                segment = epoch_signal[bout_start:bout_stop]
-                duration = (bout_stop - bout_start) / sfreq
-                bout_state["n_bouts"] += 1
-                bout_state["n_bout_samples"] += bout_stop - bout_start
-                bout_state["duration_sum"] += duration
-                bout_state["duration_sq_sum"] += duration * duration
-                bout_state["amplitude_sum"] += float(np.mean(amplitude[bout_start:bout_stop]))
-                bout_state["cycle_sum"] += duration * center
+            band_mask = np.zeros((n_epochs, n_samples), dtype=bool)
+            episodes = pd.DataFrame()
+            if (
+                detected is not None
+                and wavelet_power is not None
+                and thresholds is not None
+                and np.any(
+                (wavelet_frequencies >= low) & (wavelet_frequencies <= high)
+                )
+            ):
+                episodes, band_mask = extract_band_bouts(
+                    detected,
+                    wavelet_power,
+                    thresholds,
+                    wavelet_frequencies,
+                    band=band,
+                    band_limits=(low, high),
+                    sfreq=sfreq,
+                )
+                bout_state["summary"] = summarize_bouts(
+                    episodes,
+                    band_mask,
+                    sfreq=sfreq,
+                    edge_padding_samples=edge_samples,
+                )
+            else:
+                bout_state["summary"] = {
+                    "n_bouts": 0,
+                    "oscillatory_occupancy": np.nan,
+                    "bouts_per_minute": 0.0,
+                    "bout_duration_mean_s": np.nan,
+                    "bout_amplitude_mean": np.nan,
+                    "bout_cycles_mean": np.nan,
+                }
+            bout_state["n_bouts"] = int(bout_state["summary"].get("n_bouts", 0))
+            if len(episodes):
                 for dx in config.permutation_dimensions:
                     within = bout_state["within"][str(dx)]
-                    counts, ties = ordinal_counts(
-                        segment, dx=dx, tau=config.delay_samples
+                    pooled, pooled_summary, _, _ = analyze_bout_segments(
+                        channel_filtered,
+                        episodes,
+                        dx=dx,
+                        tau=config.delay_samples,
                     )
-                    within["counts"] += counts
-                    within["n_patterns"] += int(counts.sum())
-                    within["n_ties"] += ties
-                    if int(counts.sum()):
-                        within["weighted_sum"] += float(
-                            weighted_permutation_entropy_epoch_data(
-                                segment[None, :], dx=dx, tau=config.delay_samples
-                            )
-                        ) * int(counts.sum())
-
-    fit_low, fit_high = (
-        float(value) for value in config.aperiodic_settings["frequency_range_hz"]
-    )
-    aperiodic_bands = {
-        band: (max(float(low), fit_low), min(float(high), fit_high))
-        for band, (low, high) in config.bands.items()
-        if max(float(low), fit_low) < min(float(high), fit_high)
-    }
-    aperiodic_by_channel: list[dict[str, float]] = []
-    for channel_index in range(len(channels)):
-        try:
-            aperiodic, _, _ = fit_specparam_spectrum(
-                frequencies,
-                mean_psd[channel_index],
-                aperiodic_bands,
-                config.aperiodic_settings,
-            )
-        except Exception:
-            aperiodic = {}
-        numeric_values: dict[str, float] = {}
-        for metric, value in aperiodic.items():
-            if isinstance(value, str):
-                continue
-            try:
-                numeric_values[metric] = float(value)
-            except (TypeError, ValueError):
-                continue
-        aperiodic_by_channel.append(numeric_values)
+                    within["counts"] = pooled
+                    within["n_patterns"] = int(pooled.sum())
+                    within["n_ties"] = int(pooled_summary.get("n_exact_tied_patterns", 0))
+                    within["weighted_sum"] = float(
+                        pooled_summary.get("weighted_permutation_entropy", 0.0)
+                    ) * within["n_patterns"]
+                    within["n_epochs"] = 1
 
     rows: list[dict[str, Any]] = []
-    duration_minutes = n_epochs * n_samples / sfreq / 60.0
     metadata = {key: record.get(key, "") for key in CANONICAL_COLUMNS if key not in {"epoch_path", "raw_path"}}
     for channel_index, electrode in enumerate(channels):
         total_mask = (frequencies >= min(low for low, _ in config.bands.values())) & (
             frequencies <= max(high for _, high in config.bands.values())
         )
-        total_power = float(np.trapezoid(mean_psd[channel_index, total_mask], frequencies[total_mask]))
+        total_power = float(np.trapezoid(electrode_psd[channel_index, total_mask], frequencies[total_mask]))
         row = {**metadata, "electrode": electrode, "sampling_frequency_hz": sfreq, "n_epochs": n_epochs}
         for metric, value in aperiodic_by_channel[channel_index].items():
             row[f"aperiodic__broadband__{metric}"] = value
         for band, (low, high) in config.bands.items():
             band_mask = (frequencies >= low) & (frequencies <= high)
-            band_power = float(np.trapezoid(mean_psd[channel_index, band_mask], frequencies[band_mask]))
+            band_power = float(np.trapezoid(electrode_psd[channel_index, band_mask], frequencies[band_mask]))
             row[f"psd__{band}__absolute_power"] = band_power
             row[f"psd__{band}__relative_power"] = band_power / total_power if total_power > 0 else np.nan
             for dx in config.permutation_dimensions:
@@ -285,14 +343,13 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
                         row[f"entropy__{band}__{metric}{suffix}"] = np.nan
             bout_state = bouts[band][channel_index]
             count = bout_state["n_bouts"]
+            summary = bout_state["summary"]
             row[f"bout__{band}__n_bouts"] = count
-            row[f"bout__{band}__oscillatory_occupancy"] = (
-                bout_state["n_bout_samples"] / (n_epochs * n_samples) if n_epochs * n_samples else np.nan
-            )
-            row[f"bout__{band}__bouts_per_minute"] = count / duration_minutes if duration_minutes else np.nan
-            row[f"bout__{band}__duration_mean_s"] = bout_state["duration_sum"] / count if count else np.nan
-            row[f"bout__{band}__amplitude_mean"] = bout_state["amplitude_sum"] / count if count else np.nan
-            row[f"bout__{band}__cycles_mean"] = bout_state["cycle_sum"] / count if count else np.nan
+            row[f"bout__{band}__oscillatory_occupancy"] = summary.get("oscillatory_occupancy", np.nan)
+            row[f"bout__{band}__bouts_per_minute"] = summary.get("bouts_per_minute", np.nan)
+            row[f"bout__{band}__duration_mean_s"] = summary.get("bout_duration_mean_s", np.nan)
+            row[f"bout__{band}__amplitude_mean"] = summary.get("bout_amplitude_mean", np.nan)
+            row[f"bout__{band}__cycles_mean"] = summary.get("bout_cycles_mean", np.nan)
             for dx in config.permutation_dimensions:
                 within = bout_state["within"][str(dx)]
                 suffix = f"__D{dx}"
@@ -343,7 +400,9 @@ def _analyze_recording(record: dict[str, Any], config: GlobalConfig) -> tuple[pd
         # Keep only the channel-averaged spectrum for plotting.  The full
         # channel x frequency PSD remains local to this recording; it is not
         # retained in the subject feature table or global aggregation state.
-        "mean_psd": np.mean(mean_psd, axis=0),
+        # Match the old PSD pipeline: one subject-level curve is the median
+        # across that recording's available EEG electrodes.
+        "subject_psd": np.median(electrode_psd, axis=0),
         "pattern_arrays": pattern_arrays,
     }
 
@@ -417,6 +476,11 @@ def _partial_spearman(frame: pd.DataFrame, feature: str, outcome: str) -> tuple[
     selected = frame[columns].apply(pd.to_numeric, errors="coerce").dropna()
     if len(selected) < max(6, len(covariates) + 4):
         return np.nan, np.nan, len(selected)
+    if (
+        np.allclose(selected[feature].to_numpy(float), selected[feature].iloc[0])
+        or np.allclose(selected[outcome].to_numpy(float), selected[outcome].iloc[0])
+    ):
+        return np.nan, np.nan, len(selected)
     y = rankdata(selected[outcome].to_numpy(float))
     x = rankdata(selected[feature].to_numpy(float))
     if covariates:
@@ -425,17 +489,39 @@ def _partial_spearman(frame: pd.DataFrame, feature: str, outcome: str) -> tuple[
         x = x - z @ np.linalg.lstsq(z, x, rcond=None)[0]
         if np.std(x) == 0.0 or np.std(y) == 0.0:
             return np.nan, np.nan, len(selected)
-        correlation = pearsonr(x, y)
+        rho = float(np.corrcoef(x, y)[0, 1])
+        covariate_rank = int(np.linalg.matrix_rank(z) - 1)
+        degrees_freedom = len(selected) - covariate_rank - 2
+        if degrees_freedom <= 0:
+            p_value = np.nan
+        elif abs(rho) >= 1.0:
+            p_value = 0.0
+        else:
+            statistic = rho * np.sqrt(
+                degrees_freedom / max(1.0 - rho**2, np.finfo(float).tiny)
+            )
+            p_value = float(2.0 * student_t.sf(abs(statistic), degrees_freedom))
     else:
         correlation = spearmanr(selected[feature], selected[outcome])
-    return float(correlation.statistic), float(correlation.pvalue), len(selected)
+        rho = float(correlation.statistic)
+        p_value = float(correlation.pvalue)
+    return rho, p_value, len(selected)
 
 
 def clinical_correlations(table: pd.DataFrame, config: GlobalConfig) -> pd.DataFrame:
     feature_columns = [column for column in table.columns if column.startswith(("bout__", "within_bout__", "entropy__"))]
     # One row per biological participant/condition prevents electrodes and repeated
     # epochs from being mistaken for independent clinical observations.
-    subject = table.groupby(["dataset_id", "participant_id", "group"], dropna=False)[feature_columns + ["age_years", "sex", "updrs", "moca", "mmse"]].mean(numeric_only=True).reset_index()
+    subject_source = table[
+        ["dataset_id", "participant_id", "group"]
+        + feature_columns
+        + ["age_years", "sex", "updrs", "moca", "mmse"]
+    ].copy()
+    subject = subject_source.groupby(
+        ["dataset_id", "participant_id", "group"], dropna=False
+    )[feature_columns + ["age_years", "sex", "updrs", "moca", "mmse"]].mean(
+        numeric_only=True
+    ).reset_index()
     # Restore nonnumeric metadata needed by the partial model.
     metadata = table[["dataset_id", "participant_id", "group", "age_years", "sex", "updrs", "moca", "mmse"]].drop_duplicates(["dataset_id", "participant_id", "group"])
     subject = subject.drop(columns=["age_years", "updrs", "moca", "mmse", "sex"], errors="ignore").merge(metadata, on=["dataset_id", "participant_id", "group"], how="left")
@@ -453,16 +539,51 @@ def clinical_correlations(table: pd.DataFrame, config: GlobalConfig) -> pd.DataF
                     "group": group,
                     "outcome": outcome,
                     "feature": feature,
+                    "feature_family": feature.split("__", 1)[0],
+                    "method": "partial_spearman_age_sex",
                     "n_subjects": n,
+                    "rho": rho,
                     "partial_spearman_rho": rho,
                     "p_value": p_value,
                     "covariates": "age_years,sex",
                 })
+                complete = selected[[feature, outcome]].apply(
+                    pd.to_numeric, errors="coerce"
+                ).dropna()
+                if (
+                    len(complete) >= 3
+                    and not np.allclose(complete[feature].to_numpy(float), complete[feature].iloc[0])
+                    and not np.allclose(complete[outcome].to_numpy(float), complete[outcome].iloc[0])
+                ):
+                    unadjusted = spearmanr(complete[feature], complete[outcome])
+                    unadjusted_rho = float(unadjusted.statistic)
+                    unadjusted_p = float(unadjusted.pvalue)
+                else:
+                    unadjusted_rho = unadjusted_p = np.nan
+                rows.append({
+                    "dataset_id": dataset_id,
+                    "group": group,
+                    "outcome": outcome,
+                    "feature": feature,
+                    "feature_family": feature.split("__", 1)[0],
+                    "method": "spearman_unadjusted",
+                    "n_subjects": int(len(complete)),
+                    "rho": unadjusted_rho,
+                    "partial_spearman_rho": np.nan,
+                    "spearman_rho": unadjusted_rho,
+                    "p_value": unadjusted_p,
+                    "covariates": "none",
+                })
     result = pd.DataFrame.from_records(rows)
     if not result.empty:
-        result["p_fdr_bh"] = result.groupby(["dataset_id", "outcome"], sort=False)["p_value"].transform(
-            lambda values: _bh(values.to_numpy(float))
-        )
+        result["p_fdr_bh"] = np.nan
+        for _, indices in result.groupby(
+            ["dataset_id", "outcome", "feature_family", "method"], sort=False
+        ).groups.items():
+            result.loc[indices, "p_fdr_bh"] = _bh(
+                result.loc[indices, "p_value"].to_numpy(float)
+            )
+        result["fdr_scope"] = "dataset,outcome,feature_family,method"
         result["fdr_alpha"] = config.fdr_alpha
     return result
 
@@ -471,10 +592,20 @@ def _safe_filename(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(value)).strip("_")
 
 
+def _feature_label(feature: str) -> str:
+    """Convert a canonical feature column into a readable plot label."""
+    parts = str(feature).split("__")
+    if len(parts) < 3:
+        return str(feature).replace("_", " ")
+    family, band = parts[0], parts[1]
+    metric = " / ".join(parts[2:]).replace("_", " ")
+    return f"{family.replace('_', ' ').title()} — {band.title()} — {metric}"
+
+
 def _analysis_signature(config: GlobalConfig) -> str:
     """Return the analysis contract used to validate resumable subject files."""
     contract = {
-        "schema": 3,
+        "schema": 4,
         "bands": config.bands,
         "permutation_dimensions": config.permutation_dimensions,
         "embedding_dimension": config.embedding_dimension,
@@ -482,6 +613,7 @@ def _analysis_signature(config: GlobalConfig) -> str:
         "bout_threshold_percentile": config.bout_threshold_percentile,
         "bout_minimum_cycles": config.bout_minimum_cycles,
         "aperiodic_settings": config.aperiodic_settings,
+        "ebosc_settings": config.ebosc_settings,
     }
     return json.dumps(contract, sort_keys=True, separators=(",", ":"))
 
@@ -510,7 +642,7 @@ def _save_subject_cache(
     epoch_stat = Path(record["epoch_path"]).stat()
     arrays = dict(info["pattern_arrays"])
     arrays["frequencies"] = np.asarray(info["frequencies"], dtype=np.float64)
-    arrays["mean_psd"] = np.asarray(info["mean_psd"], dtype=np.float64)
+    arrays["subject_psd"] = np.asarray(info["subject_psd"], dtype=np.float64)
 
     temporary: Path | None = None
     try:
@@ -527,7 +659,7 @@ def _save_subject_cache(
 
     _write_table_atomic(features, paths["features"])
     metadata = {
-        "schema_version": 3,
+        "schema_version": 4,
         "analysis_signature": _analysis_signature(config),
         "dataset_id": record["dataset_id"],
         "recording_id": record["recording_id"],
@@ -540,6 +672,7 @@ def _save_subject_cache(
         "sfreq": float(info["sfreq"]),
         "permutation_dimensions": list(config.permutation_dimensions),
         "aperiodic_analysis": config.aperiodic_settings,
+        "ebosc_analysis": config.ebosc_settings,
         "pattern_file": paths["patterns"].name,
         "feature_file": paths["features"].name,
     }
@@ -571,7 +704,7 @@ def _load_subject_cache(
         epoch_path = Path(record["epoch_path"])
         epoch_stat = epoch_path.stat()
         if (
-            metadata.get("schema_version") != 3
+            metadata.get("schema_version") != 4
             or metadata.get("analysis_signature") != _analysis_signature(config)
             or metadata.get("epoch_path") != str(epoch_path.resolve())
             or metadata.get("epoch_size") != int(epoch_stat.st_size)
@@ -585,18 +718,18 @@ def _load_subject_cache(
         with np.load(paths["patterns"], allow_pickle=False) as bundle:
             required = [
                 "frequencies",
-                "mean_psd",
+                "subject_psd",
                 *[f"permutation_order__D{dx}" for dx in config.permutation_dimensions],
             ]
             if any(key not in bundle for key in required):
                 return None
             frequencies = np.asarray(bundle["frequencies"], dtype=float)
-            mean_psd = np.asarray(bundle["mean_psd"], dtype=float)
+            subject_psd = np.asarray(bundle["subject_psd"], dtype=float)
         return features, {
             "channels": list(metadata.get("channels", [])),
             "sfreq": float(metadata["sfreq"]),
             "frequencies": frequencies,
-            "mean_psd": mean_psd,
+            "subject_psd": subject_psd,
             "cache_reused": True,
         }
     except (OSError, ValueError, KeyError, json.JSONDecodeError):
@@ -640,16 +773,21 @@ def _topomap(
 ) -> None:
     import matplotlib.pyplot as plt
 
-    selected = table.loc[table["dataset_id"].eq(dataset_id)].copy()
-    if selected.empty:
-        return
-    feature_columns = [column for column in selected if column.startswith(feature_template)]
+    feature_columns = [column for column in table if column.startswith(feature_template)]
     if feature_template in {"entropy__", "within_bout__"}:
         feature_columns = [
             column for column in feature_columns
             if column.endswith(f"__D{config.embedding_dimension}")
         ]
     if not feature_columns:
+        return
+    selected_columns = list(dict.fromkeys(
+        ["dataset_id", "group", "electrode"] + feature_columns
+    ))
+    selected = table.loc[
+        table["dataset_id"].eq(dataset_id), selected_columns
+    ].copy()
+    if selected.empty:
         return
     groups = sorted(selected["group"].dropna().unique())
     montage = mne.channels.make_standard_montage("standard_1005")
@@ -692,10 +830,17 @@ def _topomap(
                 vlim=limits[feature],
             )
             images.setdefault(feature, image)
-            axes[row_index, column_index].set_title(f"{group}: {feature.split('__')[-1]}")
+            axes[row_index, column_index].set_title(
+                f"{group}\n{_feature_label(feature)}",
+                fontsize=8,
+            )
     for column_index, feature in enumerate(feature_columns):
         if feature in images:
             fig.colorbar(images[feature], ax=axes[:, column_index].tolist(), shrink=0.75)
+    fig.suptitle(
+        f"{dataset_id}: {domain.replace('_', ' ').title()} topomaps",
+        fontsize=13,
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=150)
     plt.close(fig)
@@ -781,11 +926,15 @@ def _contrast_topomap(
             mask_params=mask_params,
         )
         images[feature] = image
-        axes[0, column_index].set_title(feature.split("__")[-1])
+        axes[0, column_index].set_title(_feature_label(feature), fontsize=8)
     for column_index, feature in enumerate(feature_columns):
         if feature in images:
             fig.colorbar(images[feature], ax=axes[0, column_index], shrink=0.75)
-    fig.suptitle(f"{dataset_id}: {group_b} - {group_a} ({feature_template.rstrip('_')})")
+    fig.suptitle(
+        f"{dataset_id}: {group_b} − {group_a} — "
+        f"{feature_template.rstrip('_').replace('_', ' ').title()} topomaps",
+        fontsize=13,
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=150)
     plt.close(fig)
@@ -796,7 +945,7 @@ def _plot_psd_spectra(
     dataset_id: str,
     output: Path,
 ) -> None:
-    """Plot recording-level mean PSD with a 95% CI for each population."""
+    """Plot robust subject-level median PSD with a bootstrap 95% CI."""
     import matplotlib.pyplot as plt
 
     selected = [item for item in spectra if item["dataset_id"] == dataset_id]
@@ -810,29 +959,40 @@ def _plot_psd_spectra(
         curves = []
         for item in group_items:
             frequency = np.asarray(item["frequencies"], dtype=float)
-            curve = np.asarray(item["mean_psd"], dtype=float)
+            curve = np.asarray(item["subject_psd"], dtype=float)
             if not np.array_equal(frequency, reference):
                 curve = np.interp(reference, frequency, curve, left=np.nan, right=np.nan)
             curves.append(curve)
         values = np.asarray(curves, dtype=float)
-        mean = np.nanmean(values, axis=0)
-        n = np.sum(np.isfinite(values), axis=0)
-        standard_deviation = np.nanstd(values, axis=0, ddof=1)
-        standard_error = standard_deviation / np.sqrt(np.maximum(n, 1))
-        interval = np.where(n > 1, 1.96 * standard_error, 0.0)
-        line = axis.plot(reference, mean, linewidth=1.8, label=f"{group} (n={len(group_items)})")[0]
+        values = values[np.all(np.isfinite(values), axis=1)]
+        if len(values) >= 2:
+            center, lower, upper = bootstrap_median_ci(
+                values,
+                n_resamples=2000,
+                confidence_level=0.95,
+                seed=20260826 + len(group),
+            )
+        elif len(values) == 1:
+            center = lower = upper = values[0]
+        else:
+            continue
+        line = axis.plot(
+            reference,
+            to_db(center),
+            linewidth=1.8,
+            label=f"{group} (n={len(values)})",
+        )[0]
         axis.fill_between(
             reference,
-            np.maximum(mean - interval, np.finfo(float).tiny),
-            mean + interval,
+            to_db(lower),
+            to_db(upper),
             color=line.get_color(),
             alpha=0.2,
         )
     axis.set_xlabel("Frequency (Hz)")
-    axis.set_ylabel("Mean PSD across EEG electrodes (µV²/Hz)")
-    axis.set_title(f"{dataset_id}: mean PSD ± 95% CI")
+    axis.set_ylabel("PSD (dB µV²/Hz)")
+    axis.set_title(f"{dataset_id}: median PSD ± 95% bootstrap CI")
     axis.set_xlim(left=0.0)
-    axis.set_yscale("log")
     axis.grid(True, alpha=0.25)
     axis.legend()
     fig.tight_layout()
@@ -861,7 +1021,12 @@ def _plot_clinical_scatter(
         ]
     if not feature_columns or outcome not in table:
         return
-    selected = table.loc[table["dataset_id"].eq(dataset_id)].copy()
+    selected_columns = list(dict.fromkeys(
+        ["dataset_id", "participant_id", "group", outcome] + feature_columns
+    ))
+    selected = table.loc[
+        table["dataset_id"].eq(dataset_id), selected_columns
+    ].copy()
     selected = selected.loc[selected["group"].astype(str).str.lower().str.startswith("pd")]
     subject = (
         selected.groupby(["participant_id", "group"], dropna=False)[feature_columns + [outcome]]
@@ -909,6 +1074,123 @@ def _plot_clinical_scatter(
         fig.legend(handles, labels, loc="upper right")
     fig.suptitle(f"{dataset_id}: PD {family.replace('_', ' ')} vs {outcome.upper()}")
     fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=150)
+    plt.close(fig)
+
+
+def _plot_subject_violins(
+    table: pd.DataFrame,
+    dataset_id: str,
+    family: str,
+    config: GlobalConfig,
+    output: Path,
+) -> None:
+    """Compare electrode-averaged feature values at the subject level.
+
+    Each plotted observation is one participant and group/condition.  The
+    electrode rows are averaged before plotting, so electrodes do not inflate
+    the apparent sample size or the width of the distributions.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    prefix = f"{family}__"
+    feature_columns = [column for column in table if column.startswith(prefix)]
+    if family in {"entropy", "within_bout"}:
+        feature_columns = [
+            column for column in feature_columns
+            if column.endswith(f"__D{config.embedding_dimension}")
+        ]
+    if not feature_columns:
+        return
+
+    selected_columns = [
+        "dataset_id", "participant_id", "group", *feature_columns
+    ]
+    selected = table.loc[
+        table["dataset_id"].eq(dataset_id), selected_columns
+    ].copy()
+    selected = selected.loc[selected["group"].notna()]
+    if selected.empty:
+        return
+    subject = (
+        selected.groupby(["participant_id", "group"], dropna=False)[feature_columns]
+        .mean(numeric_only=True)
+        .reset_index()
+    )
+    groups = sorted(str(value) for value in subject["group"].dropna().unique())
+    if not groups:
+        return
+    colors = {group: f"C{index}" for index, group in enumerate(groups)}
+    ncols = min(4, len(feature_columns))
+    nrows = int(math.ceil(len(feature_columns) / ncols))
+    fig, axes = plt.subplots(
+        nrows,
+        ncols,
+        figsize=(4.0 * ncols, 3.3 * nrows),
+        squeeze=False,
+        constrained_layout=True,
+    )
+    positions = np.arange(1, len(groups) + 1, dtype=float)
+    for feature_index, feature in enumerate(feature_columns):
+        axis = axes.flat[feature_index]
+        plotted = False
+        for position, group in zip(positions, groups):
+            values = subject.loc[
+                subject["group"].astype(str).eq(group), feature
+            ].to_numpy(dtype=float)
+            values = values[np.isfinite(values)]
+            if values.size == 0:
+                continue
+            plotted = True
+            if values.size >= 2 and not np.isclose(values.min(), values.max()):
+                violin = axis.violinplot(
+                    values,
+                    positions=[position],
+                    widths=0.72,
+                    showmeans=False,
+                    showmedians=True,
+                    showextrema=True,
+                )
+                for body in violin["bodies"]:
+                    body.set_facecolor(colors[group])
+                    body.set_edgecolor(colors[group])
+                    body.set_alpha(0.65)
+                violin["cmedians"].set_color("black")
+                violin["cbars"].set_color(colors[group])
+                violin["cmins"].set_color(colors[group])
+                violin["cmaxes"].set_color(colors[group])
+            jitter = np.linspace(-0.08, 0.08, values.size)
+            axis.scatter(
+                np.full(values.size, position) + jitter,
+                values,
+                s=11,
+                color=colors[group],
+                edgecolor="white",
+                linewidth=0.35,
+                alpha=0.75,
+                zorder=3,
+            )
+        if plotted:
+            axis.set_xticks(positions, groups, rotation=25, ha="right")
+            axis.set_title(_feature_label(feature), fontsize=9)
+            axis.grid(axis="y", alpha=0.2)
+            axis.set_ylabel("Subject-average value")
+        else:
+            axis.axis("off")
+    for axis in axes.flat[len(feature_columns):]:
+        axis.axis("off")
+    handles = [
+        Line2D(
+            [], [], color=colors[group], marker="o", linestyle="none", label=group
+        )
+        for group in groups
+    ]
+    axes.flat[0].legend(handles=handles, frameon=False, fontsize=8)
+    fig.suptitle(
+        f"{dataset_id}: subject-level {family.replace('_', ' ')} distributions"
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=150)
     plt.close(fig)
@@ -1086,7 +1368,7 @@ def run_global_pipeline(
             "recording_id": record["recording_id"],
             "group": record["group"],
             "frequencies": info["frequencies"],
-            "mean_psd": info["mean_psd"],
+            "subject_psd": info["subject_psd"],
         })
         diagnostics.append({
             "dataset_id": record["dataset_id"],
@@ -1179,6 +1461,14 @@ def run_global_pipeline(
                     "within_bout",
                     config,
                     dataset_figures / f"scatter_{outcome}_within_bout.png",
+                )
+            for family in ("psd", "aperiodic", "entropy", "bout", "within_bout"):
+                _plot_subject_violins(
+                    feature_table,
+                    dataset.dataset_id,
+                    family,
+                    config,
+                    dataset_figures / f"subject_violins_{family}.png",
                 )
             for family, filename_prefix in (
                 ("entropy", "entropy"),
