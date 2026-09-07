@@ -103,8 +103,11 @@ class DatasetConfig:
     metadata: Path | None
     epochs_dir: Path
     epoch_glob: str
+    task: str = "Rest"
     raw_glob: str | None = None
     preprocessing_config: Path | None = None
+    notch_frequency_hz: float | None = None
+    auxiliary_names: tuple[str, ...] = ()
     enabled: bool = True
     columns: dict[str, str] = field(default_factory=dict)
 
@@ -131,8 +134,15 @@ class DatasetConfig:
             metadata=metadata,
             epochs_dir=epochs_dir,
             epoch_glob=str(value.get("epoch_glob", "sub-*_task-rest_desc-cleaned_epo.fif")),
+            task=str(value.get("task", "Rest")),
             raw_glob=(str(value["raw_glob"]) if value.get("raw_glob") else None),
             preprocessing_config=preprocessing_config,
+            notch_frequency_hz=(
+                float(value["notch_frequency_hz"])
+                if value.get("notch_frequency_hz") is not None
+                else None
+            ),
+            auxiliary_names=tuple(str(item) for item in value.get("auxiliary_names", [])),
             enabled=bool(value.get("enabled", True)),
             columns={str(key): str(item) for key, item in value.get("columns", {}).items()},
         )

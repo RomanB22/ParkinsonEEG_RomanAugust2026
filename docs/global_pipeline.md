@@ -6,13 +6,18 @@ metadata into one schema, and then runs the common analysis battery. The
 converter accepts CSV/TSV participant tables and maps different study column
 names into one schema.
 
-Configure the four studies in [`config/global_pipeline.json`](../config/global_pipeline.json).
-The repository currently has two enabled cohorts and two disabled templates,
-because only two cleaned cohorts are present in this checkout. Set the raw,
-metadata, preprocessing-config, and output paths and `enabled` to `true` for
-studies 3 and 4; no analysis code changes are needed.
+The four configured studies are:
+
+- `dataset` → `primary`
+- `ds002778-1.0.5` → `medication_state`
+- `ds007526-1.0.2`
+- `ds008768-1.0.0`
+
+All four are enabled in [`config/global_pipeline.json`](../config/global_pipeline.json).
 
 ```bash
+bash scripts/ensure_conda_environment.sh --env MNE_August2026
+conda run -n MNE_August2026 python -m pip install "xarray>=2024.10.0"
 bash run_global_pipeline.sh --config config/global_pipeline.json --convert-only
 bash run_global_pipeline.sh --config config/global_pipeline.json --skip-figures
 bash run_global_pipeline.sh --config config/global_pipeline.json
@@ -25,6 +30,17 @@ The last command preprocesses every enabled dataset before analysis. Add
 ```bash
 bash run_global_pipeline.sh --analysis-only
 ```
+
+When resuming after a preprocessing configuration change, the global runner
+automatically recomputes only recordings whose saved ICA provenance is stale:
+
+```bash
+bash run_global_pipeline.sh \
+  --skip-manual-ica-review \
+  --preprocessing-workers 10
+```
+
+Use `--no-repair-incompatible-ica` to restore the strict gate.
 
 By default, every dataset with `"enabled": true` is analyzed. To select a
 subset at the command line, pass dataset IDs from the configuration:
@@ -44,7 +60,7 @@ is:
 
 ```bash
 bash run_global_pipeline.sh \
-  --datasets dataset_3 \
+  --datasets ds007526-1.0.2 \
   --preprocess \
   --skip-manual-ica-review \
   --preprocessing-workers 4

@@ -158,7 +158,29 @@ def interpolate_bad_channels(raw, bad_channels: list[str], logger: logging.Logge
     valid, invalid = _valid_interpolation_channels(interpolated, bad_channels)
     interpolated.info["bads"] = list(valid)
     if valid:
-        interpolated.interpolate_bads(reset_bads=True, mode="accurate", verbose="ERROR")
+        try:
+            interpolated.interpolate_bads(
+                reset_bads=True,
+                mode="accurate",
+                verbose="ERROR",
+            )
+        except np.linalg.LinAlgError:
+            # Some BIDS/EEGLAB recordings contain malformed head-shape
+            # digitization points. MNE's automatic sphere fit can then fail
+            # even when the EEG electrode positions themselves are valid.
+            # The standard montage coordinates are centered at the origin, so
+            # retry spherical interpolation with an explicit origin rather
+            # than dropping an otherwise usable recording.
+            logger.warning(
+                "Automatic head-sphere fitting failed; retrying bad-channel "
+                "interpolation with fixed origin (0, 0, 0)."
+            )
+            interpolated.interpolate_bads(
+                reset_bads=True,
+                mode="accurate",
+                origin=(0.0, 0.0, 0.0),
+                verbose="ERROR",
+            )
     interpolated.info["bads"] = list(invalid)
     logger.info("Interpolated recorded bad channels: %s", valid or "none")
     if invalid:

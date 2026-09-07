@@ -124,7 +124,13 @@ def load_subject(set_path: str | Path, auxiliary_names: list[str] | None = None)
     else:
         raise ValueError(f"Unsupported EEG source format: {set_path.suffix}")
 
-    raw.info["line_freq"] = float(sidecar.get("PowerLineFrequency", 60.0))
+    # BIDS permits ``n/a`` for unknown line frequency. Keep MNE's line_freq
+    # metadata numeric so BrainVision datasets with an unavailable value can
+    # still enter the shared preprocessing contract.
+    try:
+        raw.info["line_freq"] = float(sidecar.get("PowerLineFrequency", 60.0))
+    except (TypeError, ValueError):
+        raw.info["line_freq"] = 60.0
     auxiliaries = [name for name in (auxiliary_names or []) if name in raw.ch_names]
     if auxiliaries:
         raw.set_channel_types({name: "misc" for name in auxiliaries}, verbose="ERROR")

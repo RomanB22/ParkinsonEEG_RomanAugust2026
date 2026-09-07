@@ -31,6 +31,18 @@ def main() -> None:
     review.add_argument("--skip-manual-ica-review", action="store_true")
     review.add_argument("--allow-unreviewed", action="store_true")
     parser.add_argument("--no-progress", action="store_true")
+    parser.add_argument(
+        "--repair-incompatible-ica",
+        action="store_true",
+        default=True,
+        help="Recompute only incompatible saved ICA decompositions while resuming (default)",
+    )
+    parser.add_argument(
+        "--no-repair-incompatible-ica",
+        dest="repair_incompatible_ica",
+        action="store_false",
+        help="Keep the strict preprocessing gate for incompatible ICA files",
+    )
     args = parser.parse_args()
     config = load_global_config(args.config)
     if args.convert_only and args.analysis_only:
@@ -46,6 +58,7 @@ def main() -> None:
             skip_manual_ica_review=args.skip_manual_ica_review,
             allow_unreviewed=args.allow_unreviewed,
             no_progress=args.no_progress,
+            repair_incompatible_ica=args.repair_incompatible_ica,
         )
     if args.convert_only:
         table = convert_config(config, dataset_ids=args.datasets)

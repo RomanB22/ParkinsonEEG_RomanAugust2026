@@ -165,6 +165,25 @@ def main() -> None:
         help="Optional preprocessing output override for development pilots",
     )
     parser.add_argument(
+        "--dataset-dir",
+        help="Optional raw BIDS dataset override for the shared preprocessing config",
+    )
+    parser.add_argument(
+        "--task",
+        help="Optional BIDS task override for the shared preprocessing config",
+    )
+    parser.add_argument(
+        "--notch-frequency",
+        type=float,
+        choices=(50.0, 60.0),
+        help="Optional power-line frequency override for this dataset",
+    )
+    parser.add_argument(
+        "--auxiliary-names",
+        nargs="*",
+        help="Optional channel names to exclude from the EEG analysis",
+    )
+    parser.add_argument(
         "--subjects",
         nargs="*",
         help="Optional participant or recording IDs; default is all recordings",
@@ -186,6 +205,11 @@ def main() -> None:
     )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
+        "--repair-incompatible-ica",
+        action="store_true",
+        help="Recompute only saved ICA decompositions with incompatible provenance",
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=int(os.environ.get("PARKINSON_EEG_PREPROCESSING_WORKERS", "1")),
@@ -202,8 +226,20 @@ def main() -> None:
     if args.review_only and args.skip_manual_ica_review:
         parser.error("--skip-manual-ica-review is only meaningful during cleaning")
     config = load_config(args.config)
+    if args.dataset_dir:
+        config["project"]["dataset_dir"] = args.dataset_dir
+    if args.task:
+        config["project"]["task"] = args.task
     if args.output_dir:
         config["project"]["output_dir"] = args.output_dir
+    if args.notch_frequency is not None:
+        config["filter"]["notch_freq_hz"] = args.notch_frequency
+        config["filter"]["reason"] = (
+            f"The retained band includes the {args.notch_frequency:g} Hz line frequency, "
+            "so notch filtering is applied before resampling."
+        )
+    if args.auxiliary_names is not None:
+        config["channels"]["auxiliary_names"] = args.auxiliary_names
     dataset_dir = config["project"]["dataset_dir"]
     task = config["project"]["task"]
     recordings = discover_recordings(dataset_dir, task)
@@ -287,12 +323,13 @@ def main() -> None:
         for subject_id, status in ica_reuse_status.items()
         if not args.overwrite and status == "incompatible"
     ]
-    if incompatible_ica:
+    if incompatible_ica and not args.repair_incompatible_ica:
         preview = ", ".join(incompatible_ica[:10])
         raise SystemExit(
             "Refusing to refit existing ICA without explicit --overwrite; "
             f"{len(incompatible_ica)} saved decomposition(s) lack compatible "
-            f"provenance ({preview})."
+            f"provenance ({preview}). Use --repair-incompatible-ica to "
+            "recompute only those recordings, or --overwrite to recompute all."
         )
     reusable_ica = {
         subject_id: not args.overwrite and status == "reusable"

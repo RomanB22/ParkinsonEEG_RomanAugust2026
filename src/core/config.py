@@ -53,8 +53,9 @@ def validate_config(config: dict[str, Any]) -> None:
         )
     if not bool(config["filter"].get("notch_enabled", False)):
         raise ValueError("The preprocessing contract requires the 60 Hz notch")
-    if float(config["filter"].get("notch_freq_hz", 0.0)) != 60.0:
-        raise ValueError("filter.notch_freq_hz must be 60 Hz")
+    notch_frequency = float(config["filter"].get("notch_freq_hz", 0.0))
+    if notch_frequency not in (50.0, 60.0):
+        raise ValueError("filter.notch_freq_hz must be either 50 Hz or 60 Hz")
     if (float(config["ica"]["fit_l_freq"]), float(config["ica"]["fit_h_freq"])) != (
         1.0,
         100.0,

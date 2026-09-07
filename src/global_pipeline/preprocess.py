@@ -18,6 +18,7 @@ def run_preprocessing(
     skip_manual_ica_review: bool = False,
     allow_unreviewed: bool = False,
     no_progress: bool = False,
+    repair_incompatible_ica: bool = False,
 ) -> None:
     """Execute one standard preprocessing command per selected dataset."""
     if workers < 1:
@@ -47,11 +48,23 @@ def run_preprocessing(
             "scripts/run_preprocessing.py",
             "--config",
             str(dataset.preprocessing_config),
+            "--dataset-dir",
+            str(dataset.root),
+            "--task",
+            dataset.task,
+            "--output-dir",
+            str(dataset.epochs_dir.parent),
             "--workers",
             str(workers),
         ]
+        if dataset.notch_frequency_hz is not None:
+            command.extend(["--notch-frequency", str(dataset.notch_frequency_hz)])
+        if dataset.auxiliary_names:
+            command.extend(["--auxiliary-names", *dataset.auxiliary_names])
         if overwrite:
             command.append("--overwrite")
+        elif repair_incompatible_ica:
+            command.append("--repair-incompatible-ica")
         if skip_manual_ica_review:
             command.append("--skip-manual-ica-review")
         elif allow_unreviewed:

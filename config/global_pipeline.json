@@ -17,10 +17,11 @@
   "datasets": [
     {
       "id": "primary",
-      "root": ".",
-      "metadata": "processed/metadata/subjects.csv",
+      "root": "dataset",
+      "metadata": "dataset/participants.tsv",
       "epochs_dir": "processed/epochs",
       "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif",
+      "task": "Rest",
       "preprocessing_config": "config/preprocessing.yaml",
       "columns": {
         "group": "GROUP",
@@ -33,10 +34,11 @@
     },
     {
       "id": "medication_state",
-      "root": ".",
-      "metadata": "processed_ds002778/metadata/subjects.csv",
+      "root": "ds002778-1.0.5",
+      "metadata": "ds002778-1.0.5/participants.tsv",
       "epochs_dir": "processed_ds002778/epochs",
       "epoch_glob": "sub-*_ses-*_task-rest_desc-cleaned_epo.fif",
+      "task": "rest",
       "preprocessing_config": "config/preprocessing_ds002778.yaml",
       "columns": {
         "group": "GROUP",
@@ -48,22 +50,38 @@
       }
     },
     {
-      "id": "dataset_3",
-      "enabled": false,
-      "root": "path/to/dataset_3",
-      "metadata": "path/to/dataset_3/participants.tsv",
-      "epochs_dir": "path/to/dataset_3/processed/epochs",
+      "id": "ds007526-1.0.2",
+      "enabled": true,
+      "root": "ds007526-1.0.2",
+      "metadata": "ds007526-1.0.2/participants.tsv",
+      "epochs_dir": "processed_ds007526/epochs",
       "epoch_glob": "sub-*_task-rest_desc-cleaned_epo.fif",
-      "preprocessing_config": "path/to/dataset_3/config/preprocessing.json"
+      "task": "rest",
+      "preprocessing_config": "config/preprocessing.yaml",
+      "notch_frequency_hz": 50.0,
+      "auxiliary_names": ["EOG1", "EOG2", "EOG3", "EOG4", "VREF"],
+      "columns": {
+        "group": "group",
+        "age_years": "age",
+        "sex": "sex",
+        "updrs": "updrs_total",
+        "moca": "moca"
+      }
     },
     {
-      "id": "dataset_4",
-      "enabled": false,
-      "root": "path/to/dataset_4",
-      "metadata": "path/to/dataset_4/participants.tsv",
-      "epochs_dir": "path/to/dataset_4/processed/epochs",
+      "id": "ds008768-1.0.0",
+      "enabled": true,
+      "root": "ds008768-1.0.0",
+      "metadata": "ds008768-1.0.0/participants.tsv",
+      "epochs_dir": "processed_ds008768/epochs",
       "epoch_glob": "sub-*_task-rest_desc-cleaned_epo.fif",
-      "preprocessing_config": "path/to/dataset_4/config/preprocessing.json"
+      "task": "rest",
+      "preprocessing_config": "config/preprocessing.yaml",
+      "columns": {
+        "group": "group",
+        "age_years": "age",
+        "sex": "sex"
+      }
     }
   ]
 }
