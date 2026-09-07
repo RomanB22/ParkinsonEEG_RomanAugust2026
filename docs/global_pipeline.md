@@ -31,6 +31,11 @@ The last command preprocesses every enabled dataset before analysis. Add
 bash run_global_pipeline.sh --analysis-only
 ```
 
+During analysis, a progress bar reports completed recordings across all
+selected datasets. It also indicates whether the current subject result was
+reused from the resumable intermediate cache. Use `--no-progress` in batch
+logs or non-interactive jobs to disable it.
+
 When resuming after a preprocessing configuration change, the global runner
 automatically recomputes only recordings whose saved ICA provenance is stale:
 

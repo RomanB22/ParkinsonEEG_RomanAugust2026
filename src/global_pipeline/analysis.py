@@ -24,6 +24,7 @@ import pandas as pd
 import xarray as xr
 from scipy.signal import hilbert
 from scipy.stats import mannwhitneyu, pearsonr, rankdata, spearmanr, ttest_ind
+from tqdm.auto import tqdm
 
 from analyses.bouts.metrics import ordinal_counts, shannon_metrics_from_counts
 from analyses.ordinal.metrics import (
@@ -1017,6 +1018,7 @@ def run_global_pipeline(
     skip_figures: bool = False,
     overwrite: bool = False,
     dataset_ids: list[str] | tuple[str, ...] | None = None,
+    show_progress: bool = True,
 ) -> dict[str, Any]:
     config = load_global_config(config_path)
     output = config.output_root
@@ -1040,7 +1042,15 @@ def run_global_pipeline(
     diagnostics: list[dict[str, Any]] = []
     spectra: list[dict[str, Any]] = []
     analysis_exclusions: list[dict[str, Any]] = []
-    for record in canonical.to_dict(orient="records"):
+    records = canonical.to_dict(orient="records")
+    progress = tqdm(
+        records,
+        desc="Global analysis",
+        unit="recording",
+        disable=not show_progress,
+        dynamic_ncols=True,
+    )
+    for record in progress:
         try:
             cached = None if overwrite else _load_subject_cache(output, record, config)
             if cached is None:
@@ -1050,6 +1060,12 @@ def run_global_pipeline(
             else:
                 features, info = cached
                 cache_reused = True
+            if show_progress:
+                progress.set_postfix(
+                    dataset=record["dataset_id"],
+                    recording=record["recording_id"],
+                    cached="yes" if cache_reused else "no",
+                )
         except ValueError as error:
             if "no accepted epochs" not in str(error):
                 raise

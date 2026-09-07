@@ -81,6 +81,7 @@ def main() -> None:
         skip_figures=args.skip_figures,
         overwrite=args.overwrite,
         dataset_ids=args.datasets,
+        show_progress=not args.no_progress,
     )
     print(
         f"Global pipeline complete: {manifest['n_datasets']} datasets, "
