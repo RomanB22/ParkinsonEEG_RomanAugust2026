@@ -71,7 +71,25 @@ theta, beta, burst, and aperiodic features. Confidence intervals and a zero
 line emphasize that this small cohort did not produce a clear medication
 effect. This figure is useful as a secondary or supplementary figure.
 
-### 6. Strongest UPDRS association
+### 6. Theta Fisher–alpha power association
+
+`theta_fisher_alpha_power_association.png`
+
+Four side-by-side participant-level scatter plots showing the association
+between theta Fisher information at D=4 and alpha relative power. The first
+three panels show Control and PD; the medication-state panel distinguishes
+Control, PD-OFF, and PD-ON. Each panel reports the sample size, Spearman rho,
+and unadjusted p-value.
+
+### 7. Alpha relative-power distributions and clinical association
+
+`alpha_relative_power_distributions.png` is a four-row violin plot comparing
+alpha relative power across groups, with corrected significance brackets.
+`alpha_power_moca_replication.png` shows alpha relative power versus MoCA in
+the first three datasets and versus MMSE in the medication-state cohort. The
+scatter panels report Spearman rho and FDR q-values.
+
+### 8. Strongest UPDRS association
 
 `updrs_strongest_association.png`
 
@@ -81,7 +99,7 @@ this is beta burst occupancy versus UPDRS-III in ds008768. The plot explicitly
 labels the result as exploratory and single-dataset because it is not
 replicated across cohorts.
 
-### 7. Within-bout clinical associations
+### 9. Within-bout clinical associations
 
 `within_bout_clinical_associations.png`
 
@@ -91,7 +109,7 @@ MoCA findings (primary and ds007526), plus the strongest available UPDRS and
 MMSE findings. Significant results are green; the strongest UPDRS/MMSE panels
 are gray because they do not survive FDR correction.
 
-### 8. Cross-dataset participant distributions
+### 10. Cross-dataset participant distributions
 
 `cross_dataset_distributions.png`
 
@@ -102,7 +120,7 @@ the medication-state row shows Control, PD-OFF, and PD-ON. Stars mark
 participant-level Welch tests that survive
 Benjamini–Hochberg FDR correction within the corresponding dataset and figure.
 
-### 9. Theta H/C/F distributions at D=4
+### 11. Theta H/C/F distributions at D=4
 
 `theta_hcf_D4_distributions.png`
 
@@ -112,7 +130,7 @@ the medication-state row shows Control, PD-OFF, and PD-ON. Stars use the same
 within-dataset Benjamini–Hochberg correction across the three displayed H/C/F
 features.
 
-### 10. Side-by-side PSD comparison
+### 12. Side-by-side PSD comparison
 
 `psd_control_pd_side_by_side.png`
 
@@ -121,7 +139,7 @@ datasets. The first three panels show Control and PD; the medication-state
 panel shows Control, PD-OFF, and PD-ON. Each panel retains the median curves
 with 95% bootstrap confidence bands and the original frequency range.
 
-### 11. Participant age distributions
+### 13. Participant age distributions
 
 `age_group_histograms.png`
 

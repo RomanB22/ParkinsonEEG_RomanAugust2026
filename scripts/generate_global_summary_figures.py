@@ -465,6 +465,35 @@ def plot_cross_dataset_distributions(root: Path, output: Path) -> None:
     plt.close(fig)
 
 
+def plot_alpha_power_distributions(root: Path, output: Path) -> None:
+    feature_specs = [("Alpha relative power", "psd__alpha__relative_power")]
+    datasets = [*DATASETS, "medication_state"]
+    frames = {dataset: _read_subject(root, dataset) for dataset in datasets}
+    fig, axes = plt.subplots(len(datasets), 1, figsize=(5.8, 10.0), squeeze=False)
+    for row, dataset in enumerate(datasets):
+        axis = axes[row, 0]
+        frame = frames[dataset]
+        groups = _groups_for_dataset(dataset)
+        q_values = _corrected_group_pvalues(frame, feature_specs, groups)
+        significant_pairs = [
+            (left_index + 1, right_index + 1)
+            for left_index, left_group in enumerate(groups[:-1])
+            for right_index, right_group in enumerate(groups[left_index + 1:], start=left_index + 1)
+            if q_values.get((feature_specs[0][1], left_group, right_group), np.nan) < 0.05
+        ]
+        _plot_distribution_cell(axis, frame, feature_specs[0][1], groups)
+        _add_significance_bars(axis, significant_pairs)
+        axis.set_title(DATASET_LABELS[dataset], fontsize=11, fontweight="bold")
+        axis.set_ylabel("Alpha relative power")
+        axis.set_xlabel("Group")
+    fig.suptitle("Alpha relative power across datasets", y=0.995, fontsize=15)
+    fig.text(0.5, 0.955, "★ = Welch BH-FDR q < 0.05 within each dataset; medication groups are Control, PD-OFF, and PD-ON", ha="center", fontsize=9)
+    fig.legend(handles=[Line2D([], [], marker="o", linestyle="none", color=GROUP_COLORS[group], label=group.replace("_", " ")) for group in ["Control", "PD", "PD_OFF", "PD_ON"]], loc="lower center", ncol=4, frameon=False, bbox_to_anchor=(0.5, -0.005))
+    fig.tight_layout(rect=(0.04, 0.04, 1, 0.93), h_pad=1.7)
+    fig.savefig(output, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
 def plot_theta_hcf_distributions(root: Path, output: Path) -> None:
     feature_specs = [
         ("H: entropy", "entropy__theta__entropy__D4"),
@@ -652,6 +681,136 @@ def plot_clinical_replication(root: Path, output: Path) -> None:
     plt.close(fig)
 
 
+def plot_theta_fisher_alpha_power(root: Path, output: Path) -> None:
+    x_feature = "entropy__theta__fisher_information__D4"
+    y_feature = "psd__alpha__relative_power"
+    datasets = [*DATASETS, "medication_state"]
+    frames = {dataset: _read_subject(root, dataset) for dataset in datasets}
+    all_points = pd.concat([frame[[x_feature, y_feature]].assign(dataset=dataset) for dataset, frame in frames.items()], ignore_index=True)
+    all_points[x_feature] = pd.to_numeric(all_points[x_feature], errors="coerce")
+    all_points[y_feature] = pd.to_numeric(all_points[y_feature], errors="coerce")
+    all_points = all_points.dropna(subset=[x_feature, y_feature])
+    x_limits = np.nanpercentile(all_points[x_feature], [1, 99])
+    y_limits = np.nanpercentile(all_points[y_feature], [1, 99])
+    x_pad = max((x_limits[1] - x_limits[0]) * 0.08, 1e-9)
+    y_pad = max((y_limits[1] - y_limits[0]) * 0.08, 1e-9)
+    x_limits = (x_limits[0] - x_pad, x_limits[1] + x_pad)
+    y_limits = (y_limits[0] - y_pad, y_limits[1] + y_pad)
+
+    fig, axes = plt.subplots(1, len(datasets), figsize=(15.8, 4.1), sharex=True, sharey=True)
+    for axis, dataset in zip(axes, datasets):
+        frame = frames[dataset].copy()
+        frame[x_feature] = pd.to_numeric(frame[x_feature], errors="coerce")
+        frame[y_feature] = pd.to_numeric(frame[y_feature], errors="coerce")
+        frame = frame.dropna(subset=[x_feature, y_feature])
+        x = frame[x_feature].to_numpy(float)
+        y = frame[y_feature].to_numpy(float)
+        if dataset == "medication_state":
+            for group, marker in [("Control", "o"), ("PD_OFF", "o"), ("PD_ON", "s")]:
+                subset = frame.loc[frame["group"].astype(str).eq(group)]
+                axis.scatter(subset[x_feature], subset[y_feature], s=28, alpha=0.78, color=GROUP_COLORS[group], marker=marker, edgecolor="white", linewidth=0.35, label=group)
+        else:
+            for group in ["Control", "PD"]:
+                subset = frame.loc[frame["group"].astype(str).eq(group)]
+                axis.scatter(subset[x_feature], subset[y_feature], s=28, alpha=0.78, color=GROUP_COLORS[group], edgecolor="white", linewidth=0.35, label=group)
+        if len(frame) >= 3 and np.unique(x).size > 1:
+            slope, intercept = np.polyfit(x, y, 1)
+            grid = np.linspace(x_limits[0], x_limits[1], 80)
+            axis.plot(grid, intercept + slope * grid, color="#222222", linewidth=1.2)
+            rho, p_value = spearmanr(x, y)
+        else:
+            rho, p_value = np.nan, np.nan
+        axis.text(0.04, 0.96, f"n={len(frame)}\nρ={rho:.3f}\np={p_value:.2e}", transform=axis.transAxes, va="top", fontsize=9, bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "none"})
+        axis.set_title(DATASET_LABELS[dataset])
+        axis.set_xlim(x_limits)
+        axis.set_ylim(y_limits)
+        axis.grid(alpha=0.2)
+        axis.set_xlabel("Theta Fisher information (D=4)")
+    axes[0].set_ylabel("Alpha relative power")
+    axes[-1].legend(frameon=False, fontsize=8, loc="lower left")
+    fig.suptitle("Theta Fisher information is negatively associated with alpha relative power", y=1.03, fontsize=14)
+    fig.text(0.5, -0.01, "Participant-level Spearman associations; lines show ordinary least-squares fits", ha="center", fontsize=9, color="#555555")
+    fig.tight_layout(rect=(0, 0.03, 1, 0.93), w_pad=1.0)
+    fig.savefig(output, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _clinical_rho_q(frame: pd.DataFrame, feature: str, outcome: str) -> tuple[float, float, float, int]:
+    """Compute Spearman rho and BH q over the saved subject-level features."""
+    numeric = frame.select_dtypes(include=np.number)
+    excluded = {"age_years", "updrs", "moca", "mmse"}
+    candidate_features = [column for column in numeric.columns if column not in excluded and not column.startswith(("sampling_frequency", "n_epochs", "aperiodic_qc_"))]
+    results = []
+    for candidate in candidate_features:
+        paired = frame[[candidate, outcome]].apply(pd.to_numeric, errors="coerce").dropna()
+        if len(paired) < 5 or paired[candidate].nunique() < 2 or paired[outcome].nunique() < 2:
+            continue
+        rho, p_value = spearmanr(paired[candidate], paired[outcome])
+        results.append((candidate, float(rho), float(p_value)))
+    if not results:
+        return np.nan, np.nan, np.nan, 0
+    p_values = np.asarray([item[2] for item in results], dtype=float)
+    order = np.argsort(p_values)
+    adjusted = np.minimum.accumulate((p_values[order] * len(p_values) / np.arange(1, len(p_values) + 1))[::-1])[::-1]
+    q_values = np.empty_like(adjusted)
+    q_values[order] = np.minimum(adjusted, 1.0)
+    result_index = next(index for index, item in enumerate(results) if item[0] == feature)
+    return results[result_index][1], results[result_index][2], float(q_values[result_index]), len(p_values)
+
+
+def plot_alpha_power_moca(root: Path, output: Path) -> None:
+    feature = "psd__alpha__relative_power"
+    datasets = [*DATASETS, "medication_state"]
+    outcomes = {dataset: ("mmse" if dataset == "medication_state" else "moca") for dataset in datasets}
+    frames = {dataset: _clinical_subject_frame(root, dataset, feature, outcomes[dataset]) for dataset in datasets}
+    stats_frames = {}
+    for dataset in datasets:
+        subject = _read_subject(root, dataset)
+        stats_frames[dataset] = subject.loc[subject["group"].astype(str).str.startswith("PD")].copy()
+    all_points = pd.concat([frame[[feature, outcomes[dataset]]].rename(columns={outcomes[dataset]: "score"}) for dataset, frame in frames.items()], ignore_index=True)
+    x_limits = np.nanpercentile(all_points[feature], [1, 99])
+    y_limits = np.nanpercentile(all_points["score"], [1, 99])
+    x_pad = max((x_limits[1] - x_limits[0]) * 0.08, 1e-9)
+    y_pad = max((y_limits[1] - y_limits[0]) * 0.08, 1e-9)
+    x_limits = (x_limits[0] - x_pad, x_limits[1] + x_pad)
+    y_limits = (y_limits[0] - y_pad, y_limits[1] + y_pad)
+    fig, axes = plt.subplots(1, len(datasets), figsize=(15.8, 3.9), sharex=True, sharey=True)
+    for axis, dataset in zip(axes, datasets):
+        frame = frames[dataset]
+        outcome = outcomes[dataset]
+        x = pd.to_numeric(frame[feature], errors="coerce").to_numpy(float)
+        y = pd.to_numeric(frame[outcome], errors="coerce").to_numpy(float)
+        if dataset == "medication_state":
+            for group, marker in [("PD_OFF", "o"), ("PD_ON", "s")]:
+                subset = frame.loc[frame["group"].astype(str).eq(group)]
+                axis.scatter(subset[feature], subset[outcome], s=28, alpha=0.78, color=GROUP_COLORS[group], marker=marker, edgecolor="white", linewidth=0.35, label=group)
+            group_q = [_clinical_rho_q(stats_frames[dataset].loc[stats_frames[dataset]["group"].astype(str).eq(group)], feature, outcome) for group in ["PD_OFF", "PD_ON"]]
+            rho, p_value = spearmanr(x, y)
+            q_value = np.nanmin([result[2] for result in group_q])
+            q_text = f"min group q={q_value:.4f}"
+        else:
+            axis.scatter(x, y, s=28, alpha=0.78, color=DATASET_COLORS[dataset], edgecolor="white", linewidth=0.35)
+            rho, p_value, q_value, _ = _clinical_rho_q(stats_frames[dataset], feature, outcome)
+            q_text = f"q={q_value:.4f}"
+        if len(frame) >= 3 and np.unique(x).size > 1:
+            slope, intercept = np.polyfit(x, y, 1)
+            grid = np.linspace(x_limits[0], x_limits[1], 80)
+            axis.plot(grid, intercept + slope * grid, color="#222222", linewidth=1.2)
+        axis.text(0.04, 0.96, f"n={len(frame)}\nρ={rho:.3f}\n{q_text}", transform=axis.transAxes, va="top", fontsize=9, bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "none"})
+        axis.set_title(DATASET_LABELS[dataset])
+        axis.set_xlim(x_limits)
+        axis.set_ylim(y_limits)
+        axis.grid(alpha=0.2)
+        axis.set_xlabel("Alpha relative power")
+    axes[0].set_ylabel("MoCA")
+    axes[-1].set_ylabel("MMSE")
+    axes[-1].legend(frameon=False, fontsize=8, loc="lower right")
+    fig.suptitle("Alpha relative power and clinical scores\nMoCA in the first three datasets; MMSE in the medication-state cohort", y=1.04, fontsize=14)
+    fig.tight_layout()
+    fig.savefig(output, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _best_within_bout_result(root: Path, dataset: str, outcome: str) -> pd.Series | None:
     clinical = pd.read_csv(root / "statistics" / dataset / "clinical_correlations.csv.gz", low_memory=False)
     selected = clinical.loc[
@@ -785,12 +944,15 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
     plot_cross_dataset_summary(root, output / "cross_dataset_summary.png")
     plot_cross_dataset_distributions(root, output / "cross_dataset_distributions.png")
+    plot_alpha_power_distributions(root, output / "alpha_relative_power_distributions.png")
     plot_theta_hcf_distributions(root, output / "theta_hcf_D4_distributions.png")
     plot_psd_side_by_side(root, output / "psd_control_pd_side_by_side.png")
     plot_age_group_histograms(root, output / "age_group_histograms.png")
     plot_replicated_topomaps(root, output / "replicated_spectral_topomaps.png")
     plot_theta_bursts(root, output / "theta_burst_effects.png")
     plot_clinical_replication(root, output / "theta_fisher_moca_replication.png")
+    plot_theta_fisher_alpha_power(root, output / "theta_fisher_alpha_power_association.png")
+    plot_alpha_power_moca(root, output / "alpha_power_moca_replication.png")
     plot_within_bout_clinical(root, output / "within_bout_clinical_associations.png")
     plot_strongest_updrs(root, output / "updrs_strongest_association.png")
     plot_medication(root, output / "medication_state_effects.png")
