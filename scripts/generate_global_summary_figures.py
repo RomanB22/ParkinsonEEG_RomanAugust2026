@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import argparse
 import re
+import textwrap
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import mne
 import numpy as np
 import pandas as pd
 from PIL import Image
@@ -463,6 +465,247 @@ def plot_cross_dataset_distributions(root: Path, output: Path) -> None:
     fig.tight_layout(rect=(0.04, 0.04, 1, 0.89), h_pad=1.8, w_pad=1.0)
     fig.savefig(output, dpi=220, bbox_inches="tight")
     plt.close(fig)
+
+
+def _topomap_group_values(
+    root: Path,
+    dataset: str,
+    feature: str,
+    group: str,
+) -> pd.DataFrame:
+    """Return participant-level electrode values for one plotted group."""
+    recording = _read_recording(root, dataset)
+    if feature not in recording:
+        return pd.DataFrame(columns=["participant_id", "electrode", feature])
+    selected = recording[["participant_id", "group", "electrode", feature]].copy()
+    selected[feature] = pd.to_numeric(selected[feature], errors="coerce")
+    selected["electrode"] = selected["electrode"].astype(str)
+    if dataset == "medication_state":
+        selected["plot_group"] = selected["group"].astype(str).replace(
+            {"PD_OFF": "PD", "PD_ON": "PD"}
+        )
+    else:
+        selected["plot_group"] = selected["group"].astype(str)
+    selected = selected.loc[
+        selected["plot_group"].eq(group)
+        & selected[feature].notna()
+        & selected["electrode"].ne("nan")
+    ]
+    if selected.empty:
+        return pd.DataFrame(columns=["participant_id", "electrode", feature])
+    # Reduce repeated recordings within a participant before taking the group
+    # mean, so datasets with multiple sessions do not overweight those people.
+    return selected.groupby(
+        ["participant_id", "electrode"], sort=False
+    )[feature].mean().reset_index()
+
+
+def _topomap_group_table(
+    root: Path,
+    dataset: str,
+    feature: str,
+    group: str,
+) -> pd.Series:
+    """Return participant-weighted electrode means for one plotted group."""
+    values = _topomap_group_values(root, dataset, feature, group)
+    if values.empty:
+        return pd.Series(dtype=float)
+    return values.groupby("electrode")[feature].mean()
+
+
+def _topomap_significant_electrodes(
+    root: Path,
+    dataset: str,
+    feature: str,
+) -> set[str]:
+    """Return electrodes with Welch BH-FDR q < 0.05 for PD vs Control."""
+    group_values = {
+        group: _topomap_group_values(root, dataset, feature, group)
+        for group in ("Control", "PD")
+    }
+    if any(values.empty for values in group_values.values()):
+        return set()
+    p_values: dict[str, float] = {}
+    electrodes = sorted(
+        set(group_values["Control"]["electrode"])
+        | set(group_values["PD"]["electrode"])
+    )
+    for electrode in electrodes:
+        control = group_values["Control"].loc[
+            group_values["Control"]["electrode"].eq(electrode), feature
+        ].to_numpy(float)
+        patient = group_values["PD"].loc[
+            group_values["PD"]["electrode"].eq(electrode), feature
+        ].to_numpy(float)
+        if len(control) < 2 or len(patient) < 2:
+            continue
+        p_value = float(ttest_ind(control, patient, equal_var=False).pvalue)
+        if np.isfinite(p_value):
+            p_values[electrode] = p_value
+    adjusted = _bh_adjust(list(p_values.values()))
+    return {
+        electrode
+        for electrode, q_value in zip(p_values, adjusted)
+        if q_value < 0.05
+    }
+    return participant_means.groupby(level="electrode").mean()
+
+
+def _symmetric_topomap_limits(values: list[np.ndarray]) -> tuple[float, float]:
+    finite = np.concatenate([array[np.isfinite(array)] for array in values if np.isfinite(array).any()])
+    if finite.size == 0:
+        return 0.0, 1.0
+    bound = float(np.max(np.abs(finite)))
+    bound = max(bound, 1e-6)
+    return -bound, bound
+
+
+def plot_cross_dataset_topomaps(root: Path, output_dir: Path) -> None:
+    """Plot one PD-minus-Control contrast topomap per dataset and feature."""
+    feature_specs = [
+        ("Theta relative power", "psd__theta__relative_power", "theta_relative_power"),
+        ("Theta burst count", "bout__theta__n_bouts", "theta_burst_count"),
+        ("Theta burst occupancy", "bout__theta__oscillatory_occupancy", "theta_burst_occupancy"),
+        ("Beta relative power", "psd__beta__relative_power", "beta_relative_power"),
+        ("Alpha entropy (D=3)", "entropy__alpha__entropy__D3", "alpha_entropy_D3"),
+    ]
+    topomap_datasets = [*DATASETS, "medication_state"]
+    row_labels = {
+        **{dataset: DATASET_LABELS[dataset] for dataset in DATASETS},
+        "medication_state": "Medication state\n(PD-OFF + PD-ON pooled)",
+    }
+    montage = mne.channels.make_standard_montage("standard_1005")
+    positions = montage.get_positions()["ch_pos"]
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for title, feature, filename in feature_specs:
+        contrast_tables: dict[str, pd.Series] = {}
+        significant_by_dataset: dict[str, set[str]] = {}
+        all_values: list[np.ndarray] = []
+        channels_by_dataset: dict[str, list[str]] = {}
+        for dataset in topomap_datasets:
+            control = _topomap_group_table(root, dataset, feature, "Control")
+            patient = _topomap_group_table(root, dataset, feature, "PD")
+            channels = control.index.union(patient.index)
+            contrast = patient.reindex(channels) - control.reindex(channels)
+            contrast_tables[dataset] = contrast
+            significant_by_dataset[dataset] = _topomap_significant_electrodes(
+                root, dataset, feature
+            )
+            all_values.append(contrast.to_numpy(dtype=float))
+            dataset_channels = {
+                channel for channel in channels if channel in positions
+            }
+            channels_by_dataset[dataset] = sorted(dataset_channels)
+
+        lower, upper = _symmetric_topomap_limits(all_values)
+        fig, axes = plt.subplots(
+            len(topomap_datasets),
+            1,
+            figsize=(9.2, 12.5),
+            squeeze=False,
+        )
+        image = None
+        info_by_dataset = {}
+        for dataset in topomap_datasets:
+            channels = channels_by_dataset[dataset]
+            info = mne.create_info(channels, sfreq=100.0, ch_types="eeg")
+            info.set_montage(montage, on_missing="ignore", verbose="ERROR")
+            info_by_dataset[dataset] = info
+        for row, dataset in enumerate(topomap_datasets):
+            axis = axes[row, 0]
+            table = contrast_tables[dataset]
+            info = info_by_dataset[dataset]
+            values = table.reindex(info.ch_names).to_numpy(dtype=float)
+            finite = np.isfinite(values)
+            significant = significant_by_dataset[dataset]
+            mask = np.asarray(
+                [channel in significant for channel in info.ch_names], dtype=bool
+            )
+            if finite.sum() < 3:
+                axis.axis("off")
+                axis.text(
+                    0.5,
+                    0.5,
+                    f"Insufficient finite data\n({finite.sum()} electrodes)",
+                    ha="center",
+                    va="center",
+                    transform=axis.transAxes,
+                )
+            else:
+                finite_indices = np.flatnonzero(finite).tolist()
+                finite_info = mne.pick_info(info, finite_indices, copy=True)
+                image, _ = mne.viz.plot_topomap(
+                    values[finite],
+                    finite_info,
+                    axes=axis,
+                    show=False,
+                    sensors=True,
+                    contours=0,
+                    cmap="viridis",
+                    vlim=(lower, upper),
+                    mask=mask[finite],
+                    mask_params={
+                        "marker": "o",
+                        "markerfacecolor": "white",
+                        "markeredgecolor": "black",
+                        "linewidth": 0,
+                        "markersize": 5,
+                    },
+                )
+            axis.text(
+                0.5,
+                -0.04,
+                f"{len(significant)} FDR-significant electrodes (q < 0.05)",
+                transform=axis.transAxes,
+                ha="center",
+                va="top",
+                fontsize=8,
+            )
+            axes[row, 0].text(
+                -0.20,
+                0.5,
+                row_labels[dataset],
+                transform=axis.transAxes,
+                rotation=90,
+                va="center",
+                ha="center",
+                fontsize=10,
+                fontweight="bold",
+            )
+        fig.subplots_adjust(left=0.08, right=0.60, top=0.92, bottom=0.03, hspace=0.18, wspace=0.08)
+        if image is not None:
+            colorbar_axis = fig.add_axes((0.86, 0.20, 0.025, 0.62))
+            colorbar = fig.colorbar(image, cax=colorbar_axis)
+            colorbar.set_label(title)
+        for row, dataset in enumerate(topomap_datasets):
+            axis_position = axes[row, 0].get_position()
+            significant_names = sorted(
+                significant_by_dataset[dataset] & set(channels_by_dataset[dataset])
+            )
+            electrode_text = ", ".join(significant_names) if significant_names else "None"
+            fig.text(
+                0.63,
+                axis_position.y0 + axis_position.height / 2,
+                "FDR-significant electrodes:\n" + textwrap.fill(electrode_text, width=32),
+                ha="left",
+                va="center",
+                fontsize=7.5,
+            )
+        fig.suptitle(
+            f"{title}: PD − Control contrast across datasets",
+            y=0.995,
+            fontsize=15,
+        )
+        fig.text(
+            0.5,
+            0.968,
+            "Viridis scale is centered at zero; white outlined sensors and the lists at right show Welch BH-FDR q < 0.05; medication-state PD pools PD-OFF and PD-ON",
+            ha="center",
+            fontsize=9,
+        )
+        fig.savefig(output_dir / f"cross_dataset_contrast_topomaps_{filename}.png", dpi=220, bbox_inches="tight")
+        plt.close(fig)
 
 
 def plot_alpha_power_distributions(root: Path, output: Path) -> None:
@@ -996,6 +1239,7 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
     plot_cross_dataset_summary(root, output / "cross_dataset_summary.png")
     plot_cross_dataset_distributions(root, output / "cross_dataset_distributions.png")
+    plot_cross_dataset_topomaps(root, output)
     plot_alpha_power_distributions(root, output / "alpha_relative_power_distributions.png")
     plot_theta_hcf_distributions(root, output / "theta_hcf_D4_distributions.png")
     plot_psd_side_by_side(root, output / "psd_control_pd_side_by_side.png")
