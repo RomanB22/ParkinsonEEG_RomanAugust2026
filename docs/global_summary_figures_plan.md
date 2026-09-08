@@ -44,18 +44,23 @@ for precise electrode-level inspection.
 `theta_burst_effects.png`
 
 A horizontal forest plot for theta burst count, burst rate, and occupancy.
-Each dataset has a point estimate and an approximate 95% confidence interval
-for the standardized PD–Control difference. A vertical zero line makes the
-direction and consistency immediately visible.
+Each of the first three datasets has a point estimate and an approximate 95%
+confidence interval for the standardized PD–Control difference. The
+medication-state dataset adds separate PD-OFF–Control and PD-ON–Control
+estimates. A vertical zero line makes the direction and consistency immediately
+visible.
 
 ### 4. Clinical replication
 
 `theta_fisher_moca_replication.png`
 
-Three side-by-side PD-only scatter plots showing theta Fisher information at
-D=4 against MoCA. The panels use common axes and annotate sample size,
-Spearman rho, and FDR q. This directly displays the replicated negative
-association while avoiding a page of exploratory scatter plots.
+Four side-by-side PD-only scatter plots showing theta Fisher information at
+D=4 against clinical score. The first three panels use MoCA; the
+medication-state panel uses MMSE because MoCA is not available in that cohort.
+The panels use common axes and annotate sample size and Spearman rho. FDR q is
+shown for the first three datasets; the medication panel reports the minimum
+group-wise q-value for PD-OFF and PD-ON. This displays the replicated tendency
+without silently mixing clinical scales.
 
 ### 5. Medication-state result
 

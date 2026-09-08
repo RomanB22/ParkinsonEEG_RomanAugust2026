@@ -302,35 +302,43 @@ def plot_replicated_topomaps(root: Path, output: Path) -> None:
 
 def plot_theta_bursts(root: Path, output: Path) -> None:
     results: list[dict[str, float | str]] = []
-    for dataset in DATASETS:
+    burst_datasets = [*DATASETS, "medication_state"]
+    for dataset in burst_datasets:
         subject = _read_subject(root, dataset)
         for label, feature in BURST_FEATURES:
             if feature not in subject:
                 continue
             control = subject.loc[subject["group"].astype(str).eq("Control"), feature].to_numpy(float)
-            pd_values = subject.loc[subject["group"].astype(str).eq("PD"), feature].to_numpy(float)
-            estimate, lower, upper = _hedges_g(control, pd_values)
-            if np.isfinite(estimate):
-                results.append({"metric": label, "dataset": dataset, "estimate": estimate, "lower": lower, "upper": upper})
+            comparison_groups = ["PD_OFF", "PD_ON"] if dataset == "medication_state" else ["PD"]
+            for comparison_group in comparison_groups:
+                comparison = subject.loc[subject["group"].astype(str).eq(comparison_group), feature].to_numpy(float)
+                estimate, lower, upper = _hedges_g(control, comparison)
+                if np.isfinite(estimate):
+                    results.append({"metric": label, "dataset": dataset, "group": comparison_group, "estimate": estimate, "lower": lower, "upper": upper})
     frame = pd.DataFrame(results)
-    fig, axis = plt.subplots(figsize=(9.0, 5.5))
-    offsets = np.linspace(-0.24, 0.24, len(DATASETS))
+    fig, axis = plt.subplots(figsize=(10.2, 5.5))
+    offsets = np.linspace(-0.27, 0.27, len(burst_datasets))
     metric_names = [label for label, _ in BURST_FEATURES]
     for metric_index, metric in enumerate(metric_names):
         subset = frame.loc[frame["metric"].eq(metric)]
-        for dataset_index, dataset in enumerate(DATASETS):
+        for dataset_index, dataset in enumerate(burst_datasets):
             row = subset.loc[subset["dataset"].eq(dataset)]
-            if row.empty:
-                continue
-            item = row.iloc[0]
-            y = metric_index + offsets[dataset_index]
-            axis.errorbar(item["estimate"], y, xerr=[[item["estimate"] - item["lower"]], [item["upper"] - item["estimate"]]], fmt="o", color=DATASET_COLORS[dataset], capsize=3, markersize=6)
+            for _, item in row.iterrows():
+                y = metric_index + offsets[dataset_index]
+                color = GROUP_COLORS[item["group"]] if dataset == "medication_state" else DATASET_COLORS[dataset]
+                marker = "s" if item["group"] == "PD_ON" else "o"
+                axis.errorbar(item["estimate"], y, xerr=[[item["estimate"] - item["lower"]], [item["upper"] - item["estimate"]]], fmt=marker, color=color, capsize=3, markersize=6)
     axis.axvline(0, color="#333333", linewidth=1.0)
     axis.set_yticks(range(len(metric_names)), metric_names)
-    axis.set_xlabel("Hedges g (PD − Control), approximate 95% CI")
-    axis.set_title("Theta-burst effects are directionally consistent across datasets")
+    axis.set_xlabel("Hedges g (patient group − Control), approximate 95% CI")
+    axis.set_title("Theta-burst effects across datasets\nMedication panel: PD-OFF/ON versus Control")
     axis.grid(axis="x", alpha=0.2)
-    axis.legend(handles=[Line2D([], [], marker="o", linestyle="none", color=DATASET_COLORS[d], label=DATASET_LABELS[d]) for d in DATASETS], frameon=False, loc="lower right")
+    handles = [Line2D([], [], marker="o", linestyle="none", color=DATASET_COLORS[d], label=DATASET_LABELS[d]) for d in DATASETS]
+    handles.extend([
+        Line2D([], [], marker="o", linestyle="none", color=GROUP_COLORS["PD_OFF"], label="Medication: PD-OFF"),
+        Line2D([], [], marker="s", linestyle="none", color=GROUP_COLORS["PD_ON"], label="Medication: PD-ON"),
+    ])
+    axis.legend(handles=handles, frameon=False, loc="lower right", fontsize=8)
     fig.tight_layout()
     fig.savefig(output, dpi=220, bbox_inches="tight")
     plt.close(fig)
@@ -590,21 +598,34 @@ def plot_clinical_replication(root: Path, output: Path) -> None:
     frames: dict[str, pd.DataFrame] = {}
     for dataset in DATASETS:
         frames[dataset] = _clinical_subject_frame(root, dataset, feature, "moca")
-    all_points = pd.concat(frames.values(), ignore_index=True)
+    # The medication-state cohort has MMSE rather than MoCA in the saved
+    # clinical table. Keep it as a fourth panel, with its outcome labeled
+    # explicitly instead of silently mixing scales.
+    frames["medication_state"] = _clinical_subject_frame(root, "medication_state", feature, "mmse")
+    outcomes = {dataset: ("mmse" if dataset == "medication_state" else "moca") for dataset in frames}
+    all_points = pd.concat([frame.assign(_outcome=outcomes[dataset]) for dataset, frame in frames.items()], ignore_index=True)
     x_limits = np.nanpercentile(all_points[feature], [1, 99])
-    y_limits = np.nanpercentile(all_points["moca"], [1, 99])
+    y_values = np.concatenate([frame[outcome].to_numpy(float) for dataset, frame in frames.items() for outcome in [outcomes[dataset]]])
+    y_limits = np.nanpercentile(y_values, [1, 99])
     x_pad = max((x_limits[1] - x_limits[0]) * 0.08, 1e-9)
     y_pad = max((y_limits[1] - y_limits[0]) * 0.08, 1e-9)
     x_limits = (x_limits[0] - x_pad, x_limits[1] + x_pad)
     y_limits = (y_limits[0] - y_pad, y_limits[1] + y_pad)
-    fig, axes = plt.subplots(1, len(DATASETS), figsize=(12.2, 3.9), sharex=True, sharey=True)
+    all_datasets = [*DATASETS, "medication_state"]
+    fig, axes = plt.subplots(1, len(all_datasets), figsize=(15.8, 3.9), sharex=True, sharey=True)
     if len(DATASETS) == 1:
         axes = [axes]
-    for axis, dataset in zip(axes, DATASETS):
+    for axis, dataset in zip(axes, all_datasets):
         points = frames[dataset]
+        outcome = outcomes[dataset]
         x = points[feature].to_numpy(float)
-        y = points["moca"].to_numpy(float)
-        axis.scatter(x, y, s=28, alpha=0.78, color=DATASET_COLORS[dataset], edgecolor="white", linewidth=0.35)
+        y = points[outcome].to_numpy(float)
+        if dataset == "medication_state":
+            for group, marker in [("PD_OFF", "o"), ("PD_ON", "s")]:
+                group_points = points.loc[points["group"].eq(group)]
+                axis.scatter(group_points[feature], group_points[outcome], s=28, alpha=0.78, color=GROUP_COLORS[group], marker=marker, edgecolor="white", linewidth=0.35, label=group)
+        else:
+            axis.scatter(x, y, s=28, alpha=0.78, color=DATASET_COLORS[dataset], edgecolor="white", linewidth=0.35)
         if len(points) >= 3 and np.unique(x).size > 1:
             slope, intercept = np.polyfit(x, y, 1)
             grid = np.linspace(x_limits[0], x_limits[1], 80)
@@ -613,16 +634,19 @@ def plot_clinical_replication(root: Path, output: Path) -> None:
         else:
             rho, p_value = np.nan, np.nan
         clinical = pd.read_csv(root / "statistics" / dataset / "clinical_correlations.csv.gz", low_memory=False)
-        row = clinical.loc[(clinical["method"].eq("spearman_unadjusted")) & clinical["outcome"].eq("moca") & clinical["feature"].eq(feature)]
-        q_value = float(row["p_fdr_bh"].iloc[0]) if not row.empty else np.nan
-        axis.text(0.04, 0.96, f"n={len(points)}\nρ={rho:.3f}\nq={q_value:.4f}", transform=axis.transAxes, va="top", fontsize=9, bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "none"})
+        row = clinical.loc[(clinical["method"].eq("spearman_unadjusted")) & clinical["outcome"].eq(outcome) & clinical["feature"].eq(feature)]
+        q_value = float(row["p_fdr_bh"].min()) if not row.empty else np.nan
+        q_text = (f"q={q_value:.4f}" if dataset != "medication_state" else f"min group q={q_value:.4f}") if np.isfinite(q_value) else "q=n/a"
+        axis.text(0.04, 0.96, f"n={len(points)}\nρ={rho:.3f}\n{q_text}", transform=axis.transAxes, va="top", fontsize=9, bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "none"})
         axis.set_title(DATASET_LABELS[dataset])
         axis.set_xlim(x_limits)
         axis.set_ylim(y_limits)
         axis.grid(alpha=0.2)
         axis.set_xlabel("Theta Fisher information (D=4)")
+        axis.set_ylabel("MMSE" if outcome == "mmse" else "MoCA")
     axes[0].set_ylabel("MoCA")
-    fig.suptitle("Replicated clinical association in PD participants", y=1.02, fontsize=14)
+    axes[-1].legend(frameon=False, fontsize=8, loc="lower right")
+    fig.suptitle("Theta Fisher information and clinical scores\nMoCA in the first three datasets; MMSE in the medication-state cohort", y=1.04, fontsize=14)
     fig.tight_layout()
     fig.savefig(output, dpi=220, bbox_inches="tight")
     plt.close(fig)
