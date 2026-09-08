@@ -16,26 +16,29 @@ A matrix with datasets as columns and the main features as rows:
 - theta burst count;
 - theta burst occupancy;
 - beta relative power;
-- broadband aperiodic offset;
 - alpha entropy.
 
-Cell color shows the signed median standardized group difference across
-electrodes. Each cell also reports the number of FDR-significant electrodes,
-for example `63/66`. This is the main overview figure: it shows which findings
-replicate and which are dataset-dependent.
+Each cell shows the direction of the PD–Control effect, the percentage of
+tested electrodes that are FDR-significant, and the count behind that
+percentage, for example `↑ 95%` and `63/66`. A companion bar shows how many
+datasets have a broad effect (at least 50% of electrodes significant). This
+makes replication and dataset dependence visible without mixing effect-size
+units with significance counts.
 
 ### 2. Replicated spectral topographies
 
 `replicated_spectral_topomaps.png`
 
-Three dataset rows and two feature columns:
+Two consistency maps show the number of independent datasets in which each
+electrode is significant:
 
 - theta relative power;
 - beta relative power.
 
-All panels use a common effect scale. FDR-significant electrodes are outlined.
-The figure uses a simple schematic electrode layout so that the broad spatial
-distribution is visible without presenting all of the detailed topomap pages.
+The maps directly answer where the strongest effects are replicated, rather
+than repeating three very similar effect maps. The figure uses a simple
+schematic electrode layout; the original detailed topomaps remain available
+for precise electrode-level inspection.
 
 ### 3. Theta-burst effect sizes
 
@@ -63,6 +66,47 @@ A compact forest plot for PD-ON minus PD-OFF differences in the principal
 theta, beta, burst, and aperiodic features. Confidence intervals and a zero
 line emphasize that this small cohort did not produce a clear medication
 effect. This figure is useful as a secondary or supplementary figure.
+
+### 6. Strongest UPDRS association
+
+`updrs_strongest_association.png`
+
+A PD-only scatter plot for the strongest saved unadjusted UPDRS association,
+selected by the smallest within-dataset FDR q-value. In the current outputs
+this is beta burst occupancy versus UPDRS-III in ds008768. The plot explicitly
+labels the result as exploratory and single-dataset because it is not
+replicated across cohorts.
+
+### 7. Within-bout clinical associations
+
+`within_bout_clinical_associations.png`
+
+A four-panel figure showing the strongest saved within-bout association for
+selected clinical outcomes. The current panels include the two FDR-significant
+MoCA findings (primary and ds007526), plus the strongest available UPDRS and
+MMSE findings. Significant results are green; the strongest UPDRS/MMSE panels
+are gray because they do not survive FDR correction.
+
+### 8. Cross-dataset participant distributions
+
+`cross_dataset_distributions.png`
+
+A three-row by five-column violin grid for the quantities in the cross-dataset
+summary: theta relative power, theta burst count, theta burst occupancy, beta
+relative power, and alpha entropy. Each row is one dataset and each cell shows
+Control versus PD participant-level distributions with the raw participant
+points overlaid. Stars mark participant-level Welch tests that survive
+Benjamini–Hochberg FDR correction within the corresponding dataset and figure.
+
+### 9. Theta H/C/F distributions at D=4
+
+`theta_hcf_D4_distributions.png`
+
+A three-row by three-column violin grid for theta entropy (H), complexity (C),
+and Fisher information (F) at D=4. Each row is one dataset and each cell shows
+Control versus PD participant-level distributions. Stars use the same
+within-dataset Benjamini–Hochberg correction across the three displayed H/C/F
+features.
 
 ## Design rules
 
