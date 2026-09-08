@@ -81,6 +81,10 @@ three panels show Control and PD; the medication-state panel distinguishes
 Control, PD-OFF, and PD-ON. Each panel reports the sample size, Spearman rho,
 and unadjusted p-value.
 
+`theta_fisher_absolute_theta_power_association.png` repeats this analysis with
+absolute theta power, helping distinguish a relationship with theta amplitude
+from one driven by relative-power normalization.
+
 ### 7. Alpha relative-power distributions and clinical association
 
 `alpha_relative_power_distributions.png` is a four-row violin plot comparing

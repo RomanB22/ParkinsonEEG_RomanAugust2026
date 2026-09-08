@@ -735,6 +735,58 @@ def plot_theta_fisher_alpha_power(root: Path, output: Path) -> None:
     plt.close(fig)
 
 
+def plot_theta_fisher_absolute_theta_power(root: Path, output: Path) -> None:
+    x_feature = "entropy__theta__fisher_information__D4"
+    y_feature = "psd__theta__absolute_power"
+    datasets = [*DATASETS, "medication_state"]
+    frames = {dataset: _read_subject(root, dataset) for dataset in datasets}
+    all_points = pd.concat([frame[[x_feature, y_feature]].assign(dataset=dataset) for dataset, frame in frames.items()], ignore_index=True)
+    all_points[x_feature] = pd.to_numeric(all_points[x_feature], errors="coerce")
+    all_points[y_feature] = pd.to_numeric(all_points[y_feature], errors="coerce")
+    all_points = all_points.dropna(subset=[x_feature, y_feature])
+    x_limits = np.nanpercentile(all_points[x_feature], [1, 99])
+    y_limits = np.nanpercentile(all_points[y_feature], [1, 99])
+    x_pad = max((x_limits[1] - x_limits[0]) * 0.08, 1e-9)
+    y_pad = max((y_limits[1] - y_limits[0]) * 0.08, 1e-9)
+    x_limits = (x_limits[0] - x_pad, x_limits[1] + x_pad)
+    y_limits = (y_limits[0] - y_pad, y_limits[1] + y_pad)
+    fig, axes = plt.subplots(1, len(datasets), figsize=(15.8, 4.1), sharex=True, sharey=True)
+    for axis, dataset in zip(axes, datasets):
+        frame = frames[dataset].copy()
+        frame[x_feature] = pd.to_numeric(frame[x_feature], errors="coerce")
+        frame[y_feature] = pd.to_numeric(frame[y_feature], errors="coerce")
+        frame = frame.dropna(subset=[x_feature, y_feature])
+        x = frame[x_feature].to_numpy(float)
+        y = frame[y_feature].to_numpy(float)
+        if dataset == "medication_state":
+            groups = [("Control", "o"), ("PD_OFF", "o"), ("PD_ON", "s")]
+        else:
+            groups = [("Control", "o"), ("PD", "o")]
+        for group, marker in groups:
+            subset = frame.loc[frame["group"].astype(str).eq(group)]
+            axis.scatter(subset[x_feature], subset[y_feature], s=28, alpha=0.78, color=GROUP_COLORS[group], marker=marker, edgecolor="white", linewidth=0.35, label=group)
+        if len(frame) >= 3 and np.unique(x).size > 1:
+            slope, intercept = np.polyfit(x, y, 1)
+            grid = np.linspace(x_limits[0], x_limits[1], 80)
+            axis.plot(grid, intercept + slope * grid, color="#222222", linewidth=1.2)
+            rho, p_value = spearmanr(x, y)
+        else:
+            rho, p_value = np.nan, np.nan
+        axis.text(0.04, 0.96, f"n={len(frame)}\nρ={rho:.3f}\np={p_value:.2e}", transform=axis.transAxes, va="top", fontsize=9, bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "none"})
+        axis.set_title(DATASET_LABELS[dataset])
+        axis.set_xlim(x_limits)
+        axis.set_ylim(y_limits)
+        axis.grid(alpha=0.2)
+        axis.set_xlabel("Theta Fisher information (D=4)")
+    axes[0].set_ylabel("Theta absolute power")
+    axes[-1].legend(frameon=False, fontsize=8, loc="lower right")
+    fig.suptitle("Theta Fisher information and absolute theta power", y=1.03, fontsize=14)
+    fig.text(0.5, -0.01, "Participant-level Spearman associations; lines show ordinary least-squares fits", ha="center", fontsize=9, color="#555555")
+    fig.tight_layout(rect=(0, 0.03, 1, 0.93), w_pad=1.0)
+    fig.savefig(output, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _clinical_rho_q(frame: pd.DataFrame, feature: str, outcome: str) -> tuple[float, float, float, int]:
     """Compute Spearman rho and BH q over the saved subject-level features."""
     numeric = frame.select_dtypes(include=np.number)
@@ -952,6 +1004,7 @@ def main() -> None:
     plot_theta_bursts(root, output / "theta_burst_effects.png")
     plot_clinical_replication(root, output / "theta_fisher_moca_replication.png")
     plot_theta_fisher_alpha_power(root, output / "theta_fisher_alpha_power_association.png")
+    plot_theta_fisher_absolute_theta_power(root, output / "theta_fisher_absolute_theta_power_association.png")
     plot_alpha_power_moca(root, output / "alpha_power_moca_replication.png")
     plot_within_bout_clinical(root, output / "within_bout_clinical_associations.png")
     plot_strongest_updrs(root, output / "updrs_strongest_association.png")
