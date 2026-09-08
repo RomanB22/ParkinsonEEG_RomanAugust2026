@@ -19,7 +19,7 @@ from PIL import Image
 from matplotlib.colors import TwoSlopeNorm, to_rgb
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Rectangle
-from scipy.stats import spearmanr, ttest_ind
+from scipy.stats import spearmanr, t as student_t, ttest_ind
 
 
 DATASETS = ["primary", "ds007526-1.0.2", "ds008768-1.0.0"]
@@ -700,11 +700,149 @@ def plot_cross_dataset_topomaps(root: Path, output_dir: Path) -> None:
         fig.text(
             0.5,
             0.968,
-            "Viridis scale is centered at zero; white outlined sensors and the lists at right show Welch BH-FDR q < 0.05; medication-state PD pools PD-OFF and PD-ON",
+            "Viridis scale centered at zero; white circles/lists = Welch BH-FDR q < 0.05; medication PD pools OFF + ON",
             ha="center",
             fontsize=9,
         )
         fig.savefig(output_dir / f"cross_dataset_contrast_topomaps_{filename}.png", dpi=220, bbox_inches="tight")
+        plt.close(fig)
+
+
+def _plane_limits(frames: dict[str, pd.DataFrame], feature: str) -> tuple[float, float]:
+    values = []
+    for frame in frames.values():
+        if feature in frame:
+            values.extend(pd.to_numeric(frame[feature], errors="coerce").dropna().to_numpy(float))
+    if not values:
+        return 0.0, 1.0
+    lower, upper = float(np.min(values)), float(np.max(values))
+    padding = max((upper - lower) * 0.06, 1e-6)
+    return lower - padding, upper + padding
+
+
+def _mean_ci(values: pd.Series | np.ndarray) -> tuple[float, float]:
+    """Return a mean and two-sided 95% t-based confidence-interval half-width."""
+    finite = pd.to_numeric(pd.Series(values), errors="coerce").dropna().to_numpy(float)
+    if finite.size == 0:
+        return np.nan, np.nan
+    mean = float(np.mean(finite))
+    if finite.size < 2:
+        return mean, 0.0
+    standard_error = float(np.std(finite, ddof=1) / np.sqrt(finite.size))
+    margin = float(student_t.ppf(0.975, finite.size - 1) * standard_error)
+    return mean, margin
+
+
+def plot_cross_dataset_entropy_planes(root: Path, output_dir: Path) -> None:
+    """Plot cross-dataset H×C and H×F planes for two band/dimension pairs."""
+    plane_specs = [
+        (
+            "Alpha",
+            "D=3",
+            "entropy__alpha__entropy__D3",
+            "entropy__alpha__complexity__D3",
+            "H×C",
+            "alpha_D3_hxc",
+            "Complexity C",
+        ),
+        (
+            "Alpha",
+            "D=3",
+            "entropy__alpha__entropy__D3",
+            "entropy__alpha__fisher_information__D3",
+            "H×F",
+            "alpha_D3_hxf",
+            "Fisher information F",
+        ),
+        (
+            "Theta",
+            "D=4",
+            "entropy__theta__entropy__D4",
+            "entropy__theta__complexity__D4",
+            "H×C",
+            "theta_D4_hxc",
+            "Complexity C",
+        ),
+        (
+            "Theta",
+            "D=4",
+            "entropy__theta__entropy__D4",
+            "entropy__theta__fisher_information__D4",
+            "H×F",
+            "theta_D4_hxf",
+            "Fisher information F",
+        ),
+    ]
+    datasets = [*DATASETS, "medication_state"]
+    frames = {dataset: _read_subject(root, dataset) for dataset in datasets}
+    row_labels = {
+        **{dataset: DATASET_LABELS[dataset] for dataset in DATASETS},
+        "medication_state": "Medication state",
+    }
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    for band, dimension, horizontal, vertical, plane_name, filename, vertical_label in plane_specs:
+        x_lower, x_upper = _plane_limits(frames, horizontal)
+        y_lower, y_upper = _plane_limits(frames, vertical)
+        fig, axes = plt.subplots(len(datasets), 1, figsize=(8.0, 13.0), squeeze=False)
+        for row, dataset in enumerate(datasets):
+            axis = axes[row, 0]
+            frame = frames[dataset]
+            groups = _groups_for_dataset(dataset)
+            for group in groups:
+                points = frame.loc[
+                    frame["group"].astype(str).eq(group), [horizontal, vertical]
+                ].apply(pd.to_numeric, errors="coerce").dropna()
+                if points.empty:
+                    continue
+                axis.scatter(
+                    points[horizontal],
+                    points[vertical],
+                    s=26,
+                    alpha=0.72,
+                    color=GROUP_COLORS[group],
+                    edgecolor="white",
+                    linewidth=0.35,
+                    label=f"{group.replace('_', ' ')} (n={len(points)})",
+                )
+                x_mean, x_margin = _mean_ci(points[horizontal])
+                y_mean, y_margin = _mean_ci(points[vertical])
+                axis.errorbar(
+                    x_mean,
+                    y_mean,
+                    xerr=x_margin,
+                    yerr=y_margin,
+                    fmt="o",
+                    color=GROUP_COLORS[group],
+                    markeredgecolor="#222222",
+                    markerfacecolor=GROUP_COLORS[group],
+                    markersize=7,
+                    capsize=3,
+                    elinewidth=1.3,
+                    zorder=5,
+                    label="_nolegend_",
+                )
+            axis.set_xlim(x_lower, x_upper)
+            axis.set_ylim(y_lower, y_upper)
+            axis.set_title(row_labels[dataset], loc="left", fontsize=11, fontweight="bold")
+            axis.set_xlabel("Entropy H")
+            axis.set_ylabel(vertical_label)
+            axis.grid(True, alpha=0.2)
+            axis.legend(frameon=True, fontsize=8, loc="upper left")
+        fig.suptitle(
+            f"{band} {dimension}: entropy {plane_name} planes across datasets",
+            y=0.995,
+            fontsize=15,
+        )
+        fig.text(
+            0.5,
+            0.968,
+            "Points = participants; large outlined markers and bars = mean ± 95% t-based CI; medication row shows Control, PD-OFF, and PD-ON",
+            ha="center",
+            fontsize=9,
+        )
+        fig.tight_layout(rect=(0.05, 0.03, 1, 0.91), h_pad=1.6)
+        fig.savefig(output_dir / f"cross_dataset_entropy_planes_{filename}.png", dpi=220, bbox_inches="tight")
         plt.close(fig)
 
 
@@ -1240,6 +1378,7 @@ def main() -> None:
     plot_cross_dataset_summary(root, output / "cross_dataset_summary.png")
     plot_cross_dataset_distributions(root, output / "cross_dataset_distributions.png")
     plot_cross_dataset_topomaps(root, output)
+    plot_cross_dataset_entropy_planes(root, output)
     plot_alpha_power_distributions(root, output / "alpha_relative_power_distributions.png")
     plot_theta_hcf_distributions(root, output / "theta_hcf_D4_distributions.png")
     plot_psd_side_by_side(root, output / "psd_control_pd_side_by_side.png")
