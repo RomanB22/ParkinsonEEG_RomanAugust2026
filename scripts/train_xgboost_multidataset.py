@@ -531,10 +531,10 @@ def _final_models(
             {
                 "model": model_name,
                 "feature": features,
-                "gain_or_weight": search.best_estimator_.feature_importances_,
+                "gain": search.best_estimator_.feature_importances_,
                 "kind": kind,
             }
-        ).sort_values("gain_or_weight", ascending=False)
+        ).sort_values("gain", ascending=False)
         importance.to_csv(output_dir / f"{kind}_{model_name}_feature_importance.csv", index=False)
         best_params = json.dumps(search.best_params_, sort_keys=True)
         rows.append(
@@ -605,6 +605,16 @@ def main() -> None:
     regression_loso_predictions, regression_loso_metrics = _run_leave_one_dataset_out(
         table, blocks, "regression", args.inner_folds, args.seed + 100
     )
+    classification_loso_summary = _summary(
+        classification_loso_metrics,
+        ["roc_auc", "average_precision", "balanced_accuracy", "sensitivity", "specificity", "brier_score", "log_loss"],
+        ["model"],
+    )
+    regression_loso_summary = _summary(
+        regression_loso_metrics,
+        ["r_squared", "rmse", "mae", "pearson_r", "spearman_rho"],
+        ["model"],
+    )
 
     final_classification = _final_models(
         table, blocks, "classification", classification_metrics, args.inner_folds, args.seed, output_dir
@@ -620,11 +630,13 @@ def main() -> None:
     classification_summary.to_csv(output_dir / "classification_summary.csv", index=False)
     classification_loso_predictions.to_csv(output_dir / "classification_loso_predictions.csv.gz", index=False, compression="gzip")
     classification_loso_metrics.to_csv(output_dir / "classification_loso_metrics.csv", index=False)
+    classification_loso_summary.to_csv(output_dir / "classification_loso_summary.csv", index=False)
     regression_predictions.to_csv(output_dir / "moca_outer_predictions.csv.gz", index=False, compression="gzip")
     regression_metrics.to_csv(output_dir / "moca_outer_metrics.csv", index=False)
     regression_summary.to_csv(output_dir / "moca_summary.csv", index=False)
     regression_loso_predictions.to_csv(output_dir / "moca_loso_predictions.csv.gz", index=False, compression="gzip")
     regression_loso_metrics.to_csv(output_dir / "moca_loso_metrics.csv", index=False)
+    regression_loso_summary.to_csv(output_dir / "moca_loso_summary.csv", index=False)
     final_classification.to_csv(output_dir / "final_classification_models.csv", index=False)
     final_regression.to_csv(output_dir / "final_moca_models.csv", index=False)
     _plot_cv(classification_summary, "classification", root / "figures" / "summary" / "xgboost_classification_cv.png")
