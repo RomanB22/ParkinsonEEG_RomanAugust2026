@@ -10,7 +10,8 @@ conclusions quickly.
 
 `cross_dataset_summary.png`
 
-A matrix with datasets as columns and the main features as rows:
+A matrix with the three PD–Control datasets plus a medication-state column and
+the main features as rows:
 
 - theta relative power;
 - theta burst count;
@@ -18,12 +19,10 @@ A matrix with datasets as columns and the main features as rows:
 - beta relative power;
 - alpha entropy.
 
-Each cell shows the direction of the PD–Control effect, the percentage of
-tested electrodes that are FDR-significant, and the count behind that
-percentage, for example `↑ 95%` and `63/66`. A companion bar shows how many
-datasets have a broad effect (at least 50% of electrodes significant). This
-makes replication and dataset dependence visible without mixing effect-size
-units with significance counts.
+Each cell shows the direction and percentage of significant electrodes. The
+medication-state column summarizes the Control versus PD-OFF/PD-ON contrasts
+and is explicitly not treated as a single PD group. A companion bar shows how
+many columns have a broad effect (at least 50% of electrodes significant).
 
 ### 2. Replicated spectral topographies
 
@@ -91,22 +90,41 @@ are gray because they do not survive FDR correction.
 
 `cross_dataset_distributions.png`
 
-A three-row by five-column violin grid for the quantities in the cross-dataset
+A four-row by five-column violin grid for the quantities in the cross-dataset
 summary: theta relative power, theta burst count, theta burst occupancy, beta
-relative power, and alpha entropy. Each row is one dataset and each cell shows
-Control versus PD participant-level distributions with the raw participant
-points overlaid. Stars mark participant-level Welch tests that survive
+relative power, and alpha entropy. The first three rows show Control versus PD;
+the medication-state row shows Control, PD-OFF, and PD-ON. Stars mark
+participant-level Welch tests that survive
 Benjamini–Hochberg FDR correction within the corresponding dataset and figure.
 
 ### 9. Theta H/C/F distributions at D=4
 
 `theta_hcf_D4_distributions.png`
 
-A three-row by three-column violin grid for theta entropy (H), complexity (C),
-and Fisher information (F) at D=4. Each row is one dataset and each cell shows
-Control versus PD participant-level distributions. Stars use the same
+A four-row by three-column violin grid for theta entropy (H), complexity (C),
+and Fisher information (F) at D=4. The first three rows show Control versus PD;
+the medication-state row shows Control, PD-OFF, and PD-ON. Stars use the same
 within-dataset Benjamini–Hochberg correction across the three displayed H/C/F
 features.
+
+### 10. Side-by-side PSD comparison
+
+`psd_control_pd_side_by_side.png`
+
+A horizontal composition of the saved full PSD comparisons for all four
+datasets. The first three panels show Control and PD; the medication-state
+panel shows Control, PD-OFF, and PD-ON. Each panel retains the median curves
+with 95% bootstrap confidence bands and the original frequency range.
+
+### 11. Participant age distributions
+
+`age_group_histograms.png`
+
+Four side-by-side histograms compare participant ages in the Primary, ds007526,
+ds008768, and medication-state datasets. The first three panels separate
+Control and PD counts; the medication-state panel separates Control, PD-OFF,
+and PD-ON. All panels use common five-year bins, while y-axis limits adapt to
+cohort size so the smaller medication-state cohort remains readable.
 
 ## Design rules
 

@@ -13,6 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from PIL import Image
 from matplotlib.colors import TwoSlopeNorm, to_rgb
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch, Rectangle
@@ -24,6 +25,7 @@ DATASET_LABELS = {
     "primary": "Primary",
     "ds007526-1.0.2": "ds007526",
     "ds008768-1.0.0": "ds008768",
+    "medication_state": "Medication state",
 }
 DATASET_COLORS = {
     "primary": "#2166ac",
@@ -52,7 +54,16 @@ MEDICATION_FEATURES = [
     ("Aperiodic offset", "aperiodic__broadband__fixed_aperiodic_offset"),
 ]
 
-GROUP_COLORS = {"Control": "#7f7f7f", "PD": "#d95f02"}
+GROUP_COLORS = {
+    "Control": "#7f7f7f",
+    "PD": "#d95f02",
+    "PD_OFF": "#7570b3",
+    "PD_ON": "#1b9e77",
+}
+
+
+def _groups_for_dataset(dataset: str) -> list[str]:
+    return ["Control", "PD_OFF", "PD_ON"] if dataset == "medication_state" else ["Control", "PD"]
 
 
 def _read(root: Path, dataset: str, kind: str) -> pd.DataFrame:
@@ -177,12 +188,29 @@ def _draw_head(axis: plt.Axes) -> None:
 
 
 def _summary_values(root: Path, dataset: str, feature: str) -> tuple[float, int, int]:
-    stats = _pd_control_rows(_read_stats(root, dataset), feature)
+    all_stats = _read_stats(root, dataset)
+    if dataset == "medication_state":
+        stats = all_stats.loc[
+            all_stats["feature"].eq(feature)
+            & all_stats["group_a"].astype(str).eq("Control")
+            & all_stats["group_b"].astype(str).str.startswith("PD_")
+        ].copy()
+        if stats.empty:
+            stats = all_stats.loc[
+                all_stats["feature"].eq(feature)
+                & all_stats["group_b"].astype(str).eq("Control")
+                & all_stats["group_a"].astype(str).str.startswith("PD_")
+            ].copy()
+    else:
+        stats = _pd_control_rows(all_stats, feature)
     if stats.empty:
         return np.nan, 0, 0
-    recording = _read_recording(root, dataset)
-    effects = _standardized_effects(recording, feature)
-    values = list(effects.values())
+    if dataset == "medication_state":
+        values = [float(row["mean_b"] - row["mean_a"]) if str(row["group_a"]) == "Control" else float(row["mean_a"] - row["mean_b"]) for _, row in stats.iterrows()]
+    else:
+        recording = _read_recording(root, dataset)
+        effects = _standardized_effects(recording, feature)
+        values = list(effects.values())
     significant = stats.loc[stats["welch_p_fdr_bh"] < 0.05, "electrode"].astype(str).nunique()
     total = stats["electrode"].astype(str).nunique()
     median_effect = float(np.median(values)) if values else float(np.median([_effect_direction(row) for _, row in stats.iterrows()]))
@@ -190,10 +218,11 @@ def _summary_values(root: Path, dataset: str, feature: str) -> tuple[float, int,
 
 
 def plot_cross_dataset_summary(root: Path, output: Path) -> None:
-    fractions = np.zeros((len(SUMMARY_FEATURES), len(DATASETS)))
+    summary_datasets = [*DATASETS, "medication_state"]
+    fractions = np.zeros((len(SUMMARY_FEATURES), len(summary_datasets)))
     directions = np.zeros_like(fractions)
     for row_index, (_, feature) in enumerate(SUMMARY_FEATURES):
-        for col_index, dataset in enumerate(DATASETS):
+        for col_index, dataset in enumerate(summary_datasets):
             effect, significant, total = _summary_values(root, dataset, feature)
             fractions[row_index, col_index] = significant / total if total else 0.0
             directions[row_index, col_index] = np.sign(effect)
@@ -207,21 +236,21 @@ def plot_cross_dataset_summary(root: Path, output: Path) -> None:
             rgba = (*to_rgb(color), 0.12 + 0.88 * fraction)
             axis.add_patch(Rectangle((j - 0.5, i - 0.5), 1, 1, facecolor=rgba, edgecolor="white", linewidth=2))
             arrow = "↑" if directions[i, j] > 0 else "↓" if directions[i, j] < 0 else "—"
-            _, significant, total = _summary_values(root, DATASETS[j], SUMMARY_FEATURES[i][1])
+            _, significant, total = _summary_values(root, summary_datasets[j], SUMMARY_FEATURES[i][1])
             axis.text(j, i, f"{arrow} {fraction:.0%}\n{significant}/{total}", ha="center", va="center", fontsize=10)
-    axis.set(xlim=(-0.5, len(DATASETS) - 0.5), ylim=(len(SUMMARY_FEATURES) - 0.5, -0.5))
-    axis.set_xticks(range(len(DATASETS)), [DATASET_LABELS[d] for d in DATASETS])
+    axis.set(xlim=(-0.5, len(summary_datasets) - 0.5), ylim=(len(SUMMARY_FEATURES) - 0.5, -0.5))
+    axis.set_xticks(range(len(summary_datasets)), ["Medication\nstate" if d == "medication_state" else DATASET_LABELS[d] for d in summary_datasets])
     axis.set_yticks(range(len(SUMMARY_FEATURES)), [name for name, _ in SUMMARY_FEATURES])
-    axis.set_title("How much of the scalp replicates?\nArrow: PD direction; percentage: FDR-significant electrodes", pad=14)
+    axis.set_title("How much of the scalp replicates?\nArrows: PD vs Control; medication column: PD-OFF/ON vs Control", pad=14)
     broad_replication = (fractions >= 0.50).sum(axis=1)
     y_positions = np.arange(len(SUMMARY_FEATURES))
     replication_axis.barh(y_positions, broad_replication, color="#636363")
-    replication_axis.set(xlim=(0, 3.2), ylim=(len(SUMMARY_FEATURES) - 0.5, -0.5))
-    replication_axis.set_xticks([0, 1, 2, 3])
+    replication_axis.set(xlim=(0, len(summary_datasets) + 0.2), ylim=(len(SUMMARY_FEATURES) - 0.5, -0.5))
+    replication_axis.set_xticks(range(len(summary_datasets) + 1))
     replication_axis.set_yticks(y_positions, [])
     replication_axis.set_xlabel("Datasets with ≥50% significant electrodes")
     for y, count in zip(y_positions, broad_replication):
-        replication_axis.text(count + 0.08, y, f"{count}/3", va="center", fontsize=10)
+        replication_axis.text(count + 0.08, y, f"{count}/{len(summary_datasets)}", va="center", fontsize=10)
     replication_axis.set_title("Broad replication", pad=14)
     replication_axis.grid(axis="x", alpha=0.2)
     fig.suptitle("Cross-dataset evidence summary", y=0.995, fontsize=15)
@@ -319,21 +348,23 @@ def _bh_adjust(values: list[float]) -> list[float]:
     return result.tolist()
 
 
-def _corrected_group_pvalues(frame: pd.DataFrame, feature_specs: list[tuple[str, str]]) -> dict[str, float]:
-    raw: dict[str, float] = {}
+def _corrected_group_pvalues(frame: pd.DataFrame, feature_specs: list[tuple[str, str]], groups: list[str]) -> dict[tuple[str, str, str], float]:
+    raw: dict[tuple[str, str, str], float] = {}
     for _, feature in feature_specs:
-        control = pd.to_numeric(frame.loc[frame["group"].astype(str).eq("Control"), feature], errors="coerce").dropna().to_numpy(float)
-        pd_values = pd.to_numeric(frame.loc[frame["group"].astype(str).eq("PD"), feature], errors="coerce").dropna().to_numpy(float)
-        if len(control) >= 2 and len(pd_values) >= 2:
-            p_value = float(ttest_ind(control, pd_values, equal_var=False).pvalue)
-            if np.isfinite(p_value):
-                raw[feature] = p_value
+        for left_index, left_group in enumerate(groups[:-1]):
+            left_values = pd.to_numeric(frame.loc[frame["group"].astype(str).eq(left_group), feature], errors="coerce").dropna().to_numpy(float)
+            for right_group in groups[left_index + 1:]:
+                right_values = pd.to_numeric(frame.loc[frame["group"].astype(str).eq(right_group), feature], errors="coerce").dropna().to_numpy(float)
+                if len(left_values) < 2 or len(right_values) < 2:
+                    continue
+                p_value = float(ttest_ind(left_values, right_values, equal_var=False).pvalue)
+                if np.isfinite(p_value):
+                    raw[(feature, left_group, right_group)] = p_value
     adjusted = _bh_adjust(list(raw.values()))
     return dict(zip(raw, adjusted))
 
 
-def _plot_distribution_cell(axis: plt.Axes, frame: pd.DataFrame, feature: str, significant: bool = False) -> None:
-    groups = ["Control", "PD"]
+def _plot_distribution_cell(axis: plt.Axes, frame: pd.DataFrame, feature: str, groups: list[str]) -> None:
     plotted = False
     for position, group in enumerate(groups, start=1):
         values = pd.to_numeric(frame.loc[frame["group"].astype(str).eq(group), feature], errors="coerce").dropna().to_numpy(float)
@@ -350,21 +381,23 @@ def _plot_distribution_cell(axis: plt.Axes, frame: pd.DataFrame, feature: str, s
         jitter = np.linspace(-0.09, 0.09, values.size)
         axis.scatter(np.full(values.size, position) + jitter, values, s=12, color=GROUP_COLORS[group], alpha=0.65, edgecolor="white", linewidth=0.25, zorder=3)
     if plotted:
-        axis.set_xticks([1, 2], ["Control", "PD"])
+        axis.set_xticks(range(1, len(groups) + 1), [group.replace("_", " ") for group in groups])
         axis.tick_params(axis="x", labelrotation=35, labelsize=8)
         axis.grid(axis="y", alpha=0.18)
 
 
-def _add_significance_bar(axis: plt.Axes, significant: bool) -> None:
-    if not significant:
+def _add_significance_bars(axis: plt.Axes, significant_pairs: list[tuple[int, int]]) -> None:
+    if not significant_pairs:
         return
     lower, upper = axis.get_ylim()
     span = max(upper - lower, np.finfo(float).eps)
-    axis.set_ylim(lower, upper + 0.20 * span)
+    axis.set_ylim(lower, upper + (0.15 + 0.10 * len(significant_pairs)) * span)
     bar_y = upper + 0.07 * span
     cap_height = 0.035 * span
-    axis.plot([1.0, 1.0, 2.0, 2.0], [bar_y, bar_y + cap_height, bar_y + cap_height, bar_y], color="#111111", linewidth=1.2, clip_on=False)
-    axis.text(1.5, bar_y + cap_height + 0.012 * span, "★", ha="center", va="bottom", fontsize=13, color="#111111", clip_on=False)
+    for index, (left, right) in enumerate(significant_pairs):
+        level = bar_y + index * 0.10 * span
+        axis.plot([left, left, right, right], [level, level + cap_height, level + cap_height, level], color="#111111", linewidth=1.2, clip_on=False)
+        axis.text((left + right) / 2, level + cap_height + 0.012 * span, "★", ha="center", va="bottom", fontsize=13, color="#111111", clip_on=False)
 
 
 def _set_column_limits(axes: np.ndarray, frames: dict[str, pd.DataFrame], feature_specs: list[tuple[str, str]]) -> None:
@@ -389,29 +422,36 @@ def plot_cross_dataset_distributions(root: Path, output: Path) -> None:
         ("Beta relative power", "psd__beta__relative_power"),
         ("Alpha entropy (D=3)", "entropy__alpha__entropy__D3"),
     ]
-    frames = {dataset: _read_subject(root, dataset) for dataset in DATASETS}
-    fig, axes = plt.subplots(len(DATASETS), len(feature_specs), figsize=(16.0, 8.0), squeeze=False)
-    significant_cells: dict[tuple[int, int], bool] = {}
-    for row, dataset in enumerate(DATASETS):
+    distribution_datasets = [*DATASETS, "medication_state"]
+    frames = {dataset: _read_subject(root, dataset) for dataset in distribution_datasets}
+    fig, axes = plt.subplots(len(distribution_datasets), len(feature_specs), figsize=(16.0, 10.2), squeeze=False)
+    significant_cells: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for row, dataset in enumerate(distribution_datasets):
         frame = frames[dataset]
-        q_values = _corrected_group_pvalues(frame, feature_specs)
+        groups = _groups_for_dataset(dataset)
+        q_values = _corrected_group_pvalues(frame, feature_specs, groups)
         for column, (label, feature) in enumerate(feature_specs):
-            significant_cells[(row, column)] = q_values.get(feature, np.nan) < 0.05
-            _plot_distribution_cell(axes[row, column], frame, feature)
+            significant_cells[(row, column)] = [
+                (left_index + 1, right_index + 1)
+                for left_index, left_group in enumerate(groups[:-1])
+                for right_index, right_group in enumerate(groups[left_index + 1:], start=left_index + 1)
+                if q_values.get((feature, left_group, right_group), np.nan) < 0.05
+            ]
+            _plot_distribution_cell(axes[row, column], frame, feature, groups)
             if row == 0:
                 axes[row, column].set_title(label, fontsize=10)
             if column == 0:
                 axes[row, column].text(-0.34, 0.5, DATASET_LABELS[dataset], transform=axes[row, column].transAxes, rotation=90, va="center", ha="right", fontsize=11, fontweight="bold")
-            if row == len(DATASETS) - 1:
+            if row == len(distribution_datasets) - 1:
                 axes[row, column].set_xlabel("Group")
             if column == 0:
                 axes[row, column].set_ylabel("Value")
     _set_column_limits(axes, frames, feature_specs)
-    for (row, column), significant in significant_cells.items():
-        _add_significance_bar(axes[row, column], significant)
-    fig.suptitle("Main cross-dataset quantities: participant-level distributions", y=0.985, fontsize=15)
-    fig.text(0.5, 0.935, "Each point is one participant; ★ = participant-level Welch BH-FDR q < 0.05 within each dataset", ha="center", fontsize=10)
-    fig.legend(handles=[Line2D([], [], marker="o", linestyle="none", color=GROUP_COLORS[group], label=group) for group in ["Control", "PD"]], loc="lower center", ncol=2, frameon=False, bbox_to_anchor=(0.5, -0.01))
+    for (row, column), significant_pairs in significant_cells.items():
+        _add_significance_bars(axes[row, column], significant_pairs)
+    fig.suptitle("Main quantities: participant-level distributions", y=0.985, fontsize=15)
+    fig.text(0.5, 0.935, "★ = participant-level Welch BH-FDR q < 0.05 within each dataset; medication groups are Control, PD-OFF, and PD-ON", ha="center", fontsize=10)
+    fig.legend(handles=[Line2D([], [], marker="o", linestyle="none", color=GROUP_COLORS[group], label=group.replace("_", " ")) for group in ["Control", "PD", "PD_OFF", "PD_ON"]], loc="lower center", ncol=4, frameon=False, bbox_to_anchor=(0.5, -0.01))
     fig.tight_layout(rect=(0.04, 0.04, 1, 0.89), h_pad=1.8, w_pad=1.0)
     fig.savefig(output, dpi=220, bbox_inches="tight")
     plt.close(fig)
@@ -423,30 +463,105 @@ def plot_theta_hcf_distributions(root: Path, output: Path) -> None:
         ("C: complexity", "entropy__theta__complexity__D4"),
         ("F: Fisher information", "entropy__theta__fisher_information__D4"),
     ]
-    frames = {dataset: _read_subject(root, dataset) for dataset in DATASETS}
-    fig, axes = plt.subplots(len(DATASETS), len(feature_specs), figsize=(10.5, 8.0), squeeze=False)
-    significant_cells: dict[tuple[int, int], bool] = {}
-    for row, dataset in enumerate(DATASETS):
+    distribution_datasets = [*DATASETS, "medication_state"]
+    frames = {dataset: _read_subject(root, dataset) for dataset in distribution_datasets}
+    fig, axes = plt.subplots(len(distribution_datasets), len(feature_specs), figsize=(10.5, 10.2), squeeze=False)
+    significant_cells: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for row, dataset in enumerate(distribution_datasets):
         frame = frames[dataset]
-        q_values = _corrected_group_pvalues(frame, feature_specs)
+        groups = _groups_for_dataset(dataset)
+        q_values = _corrected_group_pvalues(frame, feature_specs, groups)
         for column, (label, feature) in enumerate(feature_specs):
-            significant_cells[(row, column)] = q_values.get(feature, np.nan) < 0.05
-            _plot_distribution_cell(axes[row, column], frame, feature)
+            significant_cells[(row, column)] = [
+                (left_index + 1, right_index + 1)
+                for left_index, left_group in enumerate(groups[:-1])
+                for right_index, right_group in enumerate(groups[left_index + 1:], start=left_index + 1)
+                if q_values.get((feature, left_group, right_group), np.nan) < 0.05
+            ]
+            _plot_distribution_cell(axes[row, column], frame, feature, groups)
             if row == 0:
                 axes[row, column].set_title(label, fontsize=11)
             if column == 0:
                 axes[row, column].text(-0.28, 0.5, DATASET_LABELS[dataset], transform=axes[row, column].transAxes, rotation=90, va="center", ha="right", fontsize=11, fontweight="bold")
-            if row == len(DATASETS) - 1:
+            if row == len(distribution_datasets) - 1:
                 axes[row, column].set_xlabel("Group")
             if column == 0:
                 axes[row, column].set_ylabel("Value")
     _set_column_limits(axes, frames, feature_specs)
-    for (row, column), significant in significant_cells.items():
-        _add_significance_bar(axes[row, column], significant)
+    for (row, column), significant_pairs in significant_cells.items():
+        _add_significance_bars(axes[row, column], significant_pairs)
     fig.suptitle("Theta-band H/C/F distributions at embedding dimension D=4", y=0.985, fontsize=15)
     fig.text(0.5, 0.935, "H = entropy, C = complexity, F = Fisher information; ★ = participant-level Welch BH-FDR q < 0.05", ha="center", fontsize=10)
-    fig.legend(handles=[Line2D([], [], marker="o", linestyle="none", color=GROUP_COLORS[group], label=group) for group in ["Control", "PD"]], loc="lower center", ncol=2, frameon=False, bbox_to_anchor=(0.5, -0.01))
+    fig.legend(handles=[Line2D([], [], marker="o", linestyle="none", color=GROUP_COLORS[group], label=group.replace("_", " ")) for group in ["Control", "PD", "PD_OFF", "PD_ON"]], loc="lower center", ncol=4, frameon=False, bbox_to_anchor=(0.5, -0.01))
     fig.tight_layout(rect=(0.04, 0.04, 1, 0.89), h_pad=1.8, w_pad=1.2)
+    fig.savefig(output, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_psd_side_by_side(root: Path, output: Path) -> None:
+    """Combine the already-rendered full PSD comparisons into one figure."""
+    paths = [
+        root / "figures" / dataset / "psd_broadband_mean_ci.png"
+        for dataset in [*DATASETS, "medication_state"]
+    ]
+    images = [Image.open(path).convert("RGB") for path in paths if path.exists()]
+    if not images:
+        return
+    width = sum(image.width for image in images)
+    height = max(image.height for image in images)
+    canvas = Image.new("RGB", (width, height), "white")
+    x_offset = 0
+    for image in images:
+        canvas.paste(image, (x_offset, 0))
+        x_offset += image.width
+    canvas.save(output)
+
+
+def plot_age_group_histograms(root: Path, output: Path) -> None:
+    age_datasets = [*DATASETS, "medication_state"]
+    age_groups = ["Control", "PD", "PD_OFF", "PD_ON"]
+    age_colors = {"Control": "#7f7f7f", "PD": "#d95f02", "PD_OFF": "#7570b3", "PD_ON": "#1b9e77"}
+    frames = {dataset: _read_subject(root, dataset) for dataset in age_datasets}
+    ages = []
+    for frame in frames.values():
+        ages.extend(pd.to_numeric(frame["age_years"], errors="coerce").dropna().to_numpy(float))
+    if not ages:
+        return
+    minimum = int(np.floor(np.min(ages) / 5.0) * 5)
+    maximum = int(np.ceil(np.max(ages) / 5.0) * 5 + 5)
+    bins = np.arange(minimum, maximum + 1, 5)
+    counts_by_dataset: dict[str, dict[str, np.ndarray]] = {}
+    maximum_count = 0
+    for dataset, frame in frames.items():
+        counts_by_dataset[dataset] = {}
+        for group in age_groups:
+            values = pd.to_numeric(frame.loc[frame["group"].astype(str).eq(group), "age_years"], errors="coerce").dropna().to_numpy(float)
+            counts = np.histogram(values, bins=bins)[0]
+            counts_by_dataset[dataset][group] = counts
+            maximum_count = max(maximum_count, int(counts.max(initial=0)))
+    width = (bins[1] - bins[0]) * 0.38
+    centers = bins[:-1] + (bins[1] - bins[0]) / 2
+    fig, axes = plt.subplots(1, len(age_datasets), figsize=(16.5, 4.6), sharex=True, sharey=False)
+    if len(age_datasets) == 1:
+        axes = [axes]
+    for axis, dataset in zip(axes, age_datasets):
+        frame = frames[dataset]
+        present_groups = [group for group in age_groups if counts_by_dataset[dataset][group].sum() > 0]
+        group_offsets = np.linspace(-width * (len(present_groups) - 1) / 2, width * (len(present_groups) - 1) / 2, len(present_groups))
+        for offset, group in zip(group_offsets, present_groups):
+            counts = counts_by_dataset[dataset][group]
+            axis.bar(centers + offset, counts, width=width, color=age_colors[group], alpha=0.82, label=f"{group.replace('_', ' ')} (n={int(counts.sum())})", edgecolor="white", linewidth=0.4)
+        axis.set_title(DATASET_LABELS[dataset])
+        axis.set_xlabel("Age (years)")
+        axis.set_xticks(bins[::2])
+        local_maximum = max(int(counts_by_dataset[dataset][group].max(initial=0)) for group in present_groups)
+        axis.set_ylim(0, local_maximum * 1.18 + 1)
+        axis.grid(axis="y", alpha=0.2)
+        axis.legend(frameon=False, fontsize=9)
+        axis.set_ylabel("Number of participants")
+    fig.suptitle("Participant age distributions across all four datasets", y=0.99, fontsize=15)
+    fig.text(0.5, 0.93, "Common 5-year bins; each participant contributes once; y-scales adapt to cohort size", ha="center", fontsize=10)
+    fig.tight_layout(rect=(0, 0.02, 1, 0.86), w_pad=1.4)
     fig.savefig(output, dpi=220, bbox_inches="tight")
     plt.close(fig)
 
@@ -647,6 +762,8 @@ def main() -> None:
     plot_cross_dataset_summary(root, output / "cross_dataset_summary.png")
     plot_cross_dataset_distributions(root, output / "cross_dataset_distributions.png")
     plot_theta_hcf_distributions(root, output / "theta_hcf_D4_distributions.png")
+    plot_psd_side_by_side(root, output / "psd_control_pd_side_by_side.png")
+    plot_age_group_histograms(root, output / "age_group_histograms.png")
     plot_replicated_topomaps(root, output / "replicated_spectral_topomaps.png")
     plot_theta_bursts(root, output / "theta_burst_effects.png")
     plot_clinical_replication(root, output / "theta_fisher_moca_replication.png")
