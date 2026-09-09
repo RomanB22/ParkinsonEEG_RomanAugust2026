@@ -6,12 +6,12 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
+import tempfile
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from matplotlib.colors import TwoSlopeNorm
 from matplotlib.patches import Ellipse
 import numpy as np
 import pandas as pd
@@ -383,58 +383,75 @@ def _plot_pca_coefficients(
     explained: np.ndarray,
     output: Path,
 ) -> None:
-    """Compare the signed feature coefficients defining PC1, PC2, and PC3."""
-    coefficients = pca_components.T
-    order = np.argsort(np.max(np.abs(coefficients), axis=1))[::-1]
+    """Compare PC1-PC3 coefficients with grouped bars in one shared order."""
+    coefficients = pca_components[:3].T
+    order = np.argsort(np.abs(coefficients[:, 0]))[::-1]
     ordered = coefficients[order]
-    feature_labels = [_full_label(features[index]) for index in order]
+    labels = [_full_label(features[index]) for index in order]
     limit = float(np.max(np.abs(ordered)))
+    x_limit = limit * 1.19
+    positions = np.arange(len(labels))
+    bar_height = 0.30
+    colors = ["#0072B2", "#D55E00", "#009E73"]
 
-    fig, ax = plt.subplots(figsize=(12, 12))
-    image = ax.imshow(
-        ordered,
-        cmap="RdBu_r",
-        norm=TwoSlopeNorm(vmin=-limit, vcenter=0, vmax=limit),
-        aspect="auto",
+    fig, ax = plt.subplots(figsize=(16, 14))
+    fig.suptitle(
+        "Feature weights defining the first three PCA directions\n"
+        "Signed coefficients on participant-level XGBoost SHAP contributions",
+        y=0.99,
+        fontsize=16,
     )
-    ax.set_xticks(np.arange(3))
-    ax.set_xticklabels(
-        [f"PC{i + 1}\n({explained[i]:.2f}% variance)" for i in range(3)],
-        fontsize=11,
-    )
-    ax.set_yticks(np.arange(len(feature_labels)))
-    ax.set_yticklabels(feature_labels, fontsize=9)
-    for row in range(ordered.shape[0]):
-        for column in range(ordered.shape[1]):
-            value = ordered[row, column]
-            text_color = "white" if abs(value) > 0.48 * limit else "black"
+    for component_index, color in enumerate(colors):
+        values = ordered[:, component_index]
+        offsets = positions + (component_index - 1) * bar_height
+        ax.barh(
+            offsets,
+            values,
+            height=bar_height * 0.94,
+            color=color,
+            alpha=0.9,
+            label=(
+                f"PC{component_index + 1} "
+                f"({explained[component_index]:.2f}% variance)"
+            ),
+        )
+        for position, value in zip(offsets, values):
+            text_offset = 0.012 * limit
             ax.text(
-                column,
-                row,
+                value + (text_offset if value >= 0 else -text_offset),
+                position,
                 f"{value:+.3f}",
-                ha="center",
+                ha="left" if value >= 0 else "right",
                 va="center",
-                color=text_color,
-                fontsize=8,
+                fontsize=7,
+                color=color,
             )
-    ax.set_xlabel("Principal component")
-    ax.set_ylabel("24 classifier features (ordered by strongest absolute coefficient)")
-    ax.set_title(
-        "Composition of the first three PCA directions\n"
-        "Signed coefficients on participant-level XGBoost SHAP contributions"
-    )
-    colorbar = fig.colorbar(image, ax=ax, fraction=0.035, pad=0.03)
-    colorbar.set_label("PCA coefficient")
-    fig.tight_layout()
+
+    ax.axvline(0, color="#333333", linewidth=0.9)
+    ax.set_xlim(-x_limit, x_limit)
+    ax.set_yticks(positions)
+    ax.set_yticklabels(labels, fontsize=9)
+    ax.invert_yaxis()
+    ax.set_xlabel("Feature weight (PCA loading)")
+    ax.set_ylabel("Classifier feature")
+    ax.grid(axis="x", color="#D9D9D9", linewidth=0.7, alpha=0.8)
+    ax.set_axisbelow(True)
+    ax.legend(loc="lower right", frameon=False, fontsize=10)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout(rect=(0, 0, 1, 0.955))
     fig.savefig(output, dpi=220, bbox_inches="tight")
     plt.close(fig)
 
 
 def _compute_umap_projection(shap_values: np.ndarray, n_components: int) -> np.ndarray:
     """Embed participant-level SHAP vectors with a reproducible UMAP fit."""
-    # The managed environment cannot create numba cache locators for packages
-    # inside the conda environment. UMAP remains deterministic without caching.
-    os.environ.setdefault("NUMBA_DISABLE_CACHING", "1")
+    # The managed environment cannot write numba caches inside the conda
+    # environment, so give UMAP a writable, platform-independent cache path.
+    os.environ.setdefault(
+        "NUMBA_CACHE_DIR",
+        str(Path(tempfile.gettempdir()) / "parkinson_eeg_numba_cache"),
+    )
     import umap
 
     reducer = umap.UMAP(
@@ -447,6 +464,99 @@ def _compute_umap_projection(shap_values: np.ndarray, n_components: int) -> np.n
         n_jobs=1,
     )
     return reducer.fit_transform(shap_values)
+
+
+def _plot_umap_feature_correlations(
+    features: list[str],
+    shap_values: np.ndarray,
+    embedding: np.ndarray,
+    output: Path,
+    output_table: Path,
+) -> None:
+    """Plot descriptive feature correlations with UMAP dimensions 1-3."""
+    centered_shap = shap_values - shap_values.mean(axis=0, keepdims=True)
+    centered_embedding = embedding[:, :3] - embedding[:, :3].mean(axis=0, keepdims=True)
+    numerator = centered_shap.T @ centered_embedding
+    denominator = np.outer(
+        np.linalg.norm(centered_shap, axis=0),
+        np.linalg.norm(centered_embedding, axis=0),
+    )
+    correlations = np.divide(
+        numerator,
+        denominator,
+        out=np.zeros_like(numerator, dtype=float),
+        where=denominator > 0,
+    )
+    pd.DataFrame(
+        {
+            "feature": features,
+            "umap1_correlation": correlations[:, 0],
+            "umap2_correlation": correlations[:, 1],
+            "umap3_correlation": correlations[:, 2],
+        }
+    ).to_csv(output_table, index=False)
+
+    order = np.argsort(np.abs(correlations[:, 0]))[::-1]
+    ordered = correlations[order]
+    labels = [_full_label(features[index]) for index in order]
+    positions = np.arange(len(labels))
+    bar_height = 0.30
+    colors = ["#0072B2", "#D55E00", "#009E73"]
+    limit = float(np.max(np.abs(ordered)))
+
+    fig, ax = plt.subplots(figsize=(16, 14))
+    fig.suptitle(
+        "Feature associations with the first three UMAP dimensions\n"
+        "Pearson correlations with participant-level XGBoost SHAP contributions",
+        y=0.99,
+        fontsize=16,
+    )
+    for dimension_index, color in enumerate(colors):
+        values = ordered[:, dimension_index]
+        offsets = positions + (dimension_index - 1) * bar_height
+        ax.barh(
+            offsets,
+            values,
+            height=bar_height * 0.94,
+            color=color,
+            alpha=0.9,
+            label=f"UMAP-{dimension_index + 1}",
+        )
+        for position, value in zip(offsets, values):
+            text_offset = 0.012 * limit
+            ax.text(
+                value + (text_offset if value >= 0 else -text_offset),
+                position,
+                f"{value:+.3f}",
+                ha="left" if value >= 0 else "right",
+                va="center",
+                fontsize=7,
+                color=color,
+            )
+
+    ax.axvline(0, color="#333333", linewidth=0.9)
+    ax.set_xlim(-limit * 1.19, limit * 1.19)
+    ax.set_yticks(positions)
+    ax.set_yticklabels(labels, fontsize=9)
+    ax.invert_yaxis()
+    ax.set_xlabel("Pearson correlation with UMAP coordinate")
+    ax.set_ylabel("Classifier feature")
+    ax.grid(axis="x", color="#D9D9D9", linewidth=0.7, alpha=0.8)
+    ax.set_axisbelow(True)
+    ax.legend(loc="lower right", frameon=False, fontsize=10)
+    ax.text(
+        0.01,
+        0.01,
+        "Descriptive correlations, not linear loadings; UMAP is nonlinear.",
+        transform=ax.transAxes,
+        fontsize=9,
+        color="#555555",
+    )
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    fig.tight_layout(rect=(0, 0, 1, 0.955))
+    fig.savefig(output, dpi=220, bbox_inches="tight")
+    plt.close(fig)
 
 
 def _plot_umap_2d(embedding: np.ndarray, table: pd.DataFrame, output: Path) -> None:
@@ -686,11 +796,13 @@ def main() -> None:
     coefficient_figure = figure_dir / "xgboost_classifier_shap_pca_coefficients.png"
     umap_figure_2d = figure_dir / "xgboost_classifier_shap_umap_2d.png"
     umap_figure_3d = figure_dir / "xgboost_classifier_shap_umap_3d.png"
+    umap_correlation_figure = figure_dir / "xgboost_classifier_shap_umap_feature_correlations.png"
     umap_figure_1_3 = figure_dir / "xgboost_classifier_shap_umap_1_3.png"
     umap_figure_2_3 = figure_dir / "xgboost_classifier_shap_umap_2_3.png"
     projection_table = output_dir / "classifier_shap_projection.csv"
     umap_table_2d = output_dir / "classifier_shap_umap_2d.csv"
     umap_table_3d = output_dir / "classifier_shap_umap_3d.csv"
+    umap_correlation_table = output_dir / "classifier_shap_umap_feature_correlations.csv"
     loading_table = output_dir / "classifier_shap_pca_loadings.csv"
     shap_coordinates, explained, pca_components = _compute_shap_projection(shap_values)
     pd.DataFrame(
@@ -771,6 +883,13 @@ def main() -> None:
     ).to_csv(umap_table_3d, index=False)
     _plot_umap_2d(umap_coordinates_2d, table, umap_figure_2d)
     _plot_umap_3d(umap_coordinates_3d, table, umap_figure_3d)
+    _plot_umap_feature_correlations(
+        features,
+        shap_values,
+        umap_coordinates_3d,
+        umap_correlation_figure,
+        umap_correlation_table,
+    )
     umap_note = (
         "Each point is one participant. Coordinates are from the 3D UMAP fit "
         "of the 24-feature XGBoost SHAP vectors.\n"
@@ -807,6 +926,7 @@ def main() -> None:
     print(f"Wrote PCA coefficient comparison to {coefficient_figure}")
     print(f"Wrote 2D UMAP projection to {umap_figure_2d}")
     print(f"Wrote 3D UMAP projection to {umap_figure_3d}")
+    print(f"Wrote UMAP feature correlations to {umap_correlation_figure}")
     print(f"Wrote UMAP-1/UMAP-3 projection to {umap_figure_1_3}")
     print(f"Wrote UMAP-2/UMAP-3 projection to {umap_figure_2_3}")
     print(f"Wrote projection coordinates to {projection_table}")
