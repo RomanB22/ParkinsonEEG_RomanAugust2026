@@ -63,6 +63,8 @@ GROUP_COLORS = {
     "PD_ON": "#1b9e77",
 }
 
+PSD_BANDS = ["delta", "theta", "alpha", "beta", "gamma"]
+
 
 def _groups_for_dataset(dataset: str) -> list[str]:
     return ["Control", "PD_OFF", "PD_ON"] if dataset == "medication_state" else ["Control", "PD"]
@@ -1168,6 +1170,143 @@ def plot_theta_fisher_absolute_theta_power(root: Path, output: Path) -> None:
     plt.close(fig)
 
 
+def plot_theta_fisher_all_band_power(
+    root: Path,
+    output: Path,
+    power_type: str,
+) -> pd.DataFrame:
+    """Plot theta Fisher D=4 against every PSD band for one power definition."""
+    if power_type not in {"relative", "absolute"}:
+        raise ValueError(f"Unsupported power type: {power_type}")
+
+    x_feature = "entropy__theta__fisher_information__D4"
+    datasets = [*DATASETS, "medication_state"]
+    frames = {dataset: _read_subject(root, dataset) for dataset in datasets}
+    results: list[dict[str, float | int | str]] = []
+
+    fig, axes = plt.subplots(
+        len(PSD_BANDS),
+        len(datasets),
+        figsize=(15.8, 17.8),
+        sharex=True,
+        squeeze=False,
+    )
+
+    all_x = pd.concat(
+        [pd.to_numeric(frame[x_feature], errors="coerce") for frame in frames.values()],
+        ignore_index=True,
+    ).dropna()
+    x_limits = np.nanpercentile(all_x, [1, 99])
+    x_pad = max((x_limits[1] - x_limits[0]) * 0.08, 1e-9)
+    x_limits = (x_limits[0] - x_pad, x_limits[1] + x_pad)
+
+    for row_index, band in enumerate(PSD_BANDS):
+        y_feature = f"psd__{band}__{power_type}_power"
+        all_y = pd.concat(
+            [pd.to_numeric(frame[y_feature], errors="coerce") for frame in frames.values()],
+            ignore_index=True,
+        ).dropna()
+        y_limits = np.nanpercentile(all_y, [1, 99])
+        y_pad = max((y_limits[1] - y_limits[0]) * 0.08, 1e-9)
+        y_limits = (y_limits[0] - y_pad, y_limits[1] + y_pad)
+
+        for column_index, dataset in enumerate(datasets):
+            axis = axes[row_index, column_index]
+            frame = frames[dataset][["group", x_feature, y_feature]].copy()
+            frame[x_feature] = pd.to_numeric(frame[x_feature], errors="coerce")
+            frame[y_feature] = pd.to_numeric(frame[y_feature], errors="coerce")
+            frame = frame.dropna(subset=[x_feature, y_feature])
+            x = frame[x_feature].to_numpy(float)
+            y = frame[y_feature].to_numpy(float)
+
+            groups = (
+                [("Control", "o"), ("PD_OFF", "o"), ("PD_ON", "s")]
+                if dataset == "medication_state"
+                else [("Control", "o"), ("PD", "o")]
+            )
+            for group, marker in groups:
+                subset = frame.loc[frame["group"].astype(str).eq(group)]
+                axis.scatter(
+                    subset[x_feature],
+                    subset[y_feature],
+                    s=23,
+                    alpha=0.75,
+                    color=GROUP_COLORS[group],
+                    marker=marker,
+                    edgecolor="white",
+                    linewidth=0.3,
+                    label=group,
+                )
+
+            if len(frame) >= 3 and np.unique(x).size > 1 and np.unique(y).size > 1:
+                slope, intercept = np.polyfit(x, y, 1)
+                grid = np.linspace(x_limits[0], x_limits[1], 80)
+                axis.plot(grid, intercept + slope * grid, color="#222222", linewidth=1.1)
+                rho, p_value = spearmanr(x, y)
+            else:
+                rho, p_value = np.nan, np.nan
+            results.append(
+                {
+                    "power_type": power_type,
+                    "band": band,
+                    "dataset": dataset,
+                    "n": len(frame),
+                    "spearman_rho": float(rho),
+                    "p_value": float(p_value),
+                }
+            )
+
+            axis.text(
+                0.04,
+                0.96,
+                f"n={len(frame)}\nρ={rho:.3f}\np={p_value:.2e}",
+                transform=axis.transAxes,
+                va="top",
+                fontsize=8,
+                bbox={"facecolor": "white", "alpha": 0.82, "edgecolor": "none"},
+            )
+            if row_index == 0:
+                axis.set_title(DATASET_LABELS[dataset])
+            axis.set_xlim(x_limits)
+            axis.set_ylim(y_limits)
+            axis.grid(alpha=0.2)
+            if row_index == len(PSD_BANDS) - 1:
+                axis.set_xlabel("Theta Fisher information (D=4)")
+        axes[row_index, 0].set_ylabel(f"{band.title()} {power_type} power")
+
+    handles = [
+        Line2D([], [], marker="o", linestyle="none", color=GROUP_COLORS["Control"], label="Control"),
+        Line2D([], [], marker="o", linestyle="none", color=GROUP_COLORS["PD"], label="PD"),
+        Line2D([], [], marker="o", linestyle="none", color=GROUP_COLORS["PD_OFF"], label="PD-OFF"),
+        Line2D([], [], marker="s", linestyle="none", color=GROUP_COLORS["PD_ON"], label="PD-ON"),
+    ]
+    fig.legend(handles=handles, frameon=False, loc="upper center", ncol=4, bbox_to_anchor=(0.5, 0.965))
+    fig.suptitle(
+        f"Theta Fisher information (D=4) and {power_type} power across frequency bands",
+        y=0.995,
+        fontsize=15,
+    )
+    fig.text(
+        0.5,
+        0.008,
+        "Participant-level Spearman associations pooled across groups within each dataset; lines show ordinary least-squares fits",
+        ha="center",
+        fontsize=9,
+        color="#555555",
+    )
+    fig.tight_layout(rect=(0, 0.025, 1, 0.945), h_pad=1.25, w_pad=0.9)
+    fig.savefig(output, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+    result = pd.DataFrame(results)
+    finite = result["p_value"].notna()
+    result["p_fdr_bh_within_power_type"] = np.nan
+    result.loc[finite, "p_fdr_bh_within_power_type"] = _bh_adjust(
+        result.loc[finite, "p_value"].astype(float).tolist()
+    )
+    return result
+
+
 def _clinical_rho_q(frame: pd.DataFrame, feature: str, outcome: str) -> tuple[float, float, float, int]:
     """Compute Spearman rho and BH q over the saved subject-level features."""
     numeric = frame.select_dtypes(include=np.number)
@@ -1388,6 +1527,27 @@ def main() -> None:
     plot_clinical_replication(root, output / "theta_fisher_moca_replication.png")
     plot_theta_fisher_alpha_power(root, output / "theta_fisher_alpha_power_association.png")
     plot_theta_fisher_absolute_theta_power(root, output / "theta_fisher_absolute_theta_power_association.png")
+    power_correlations = pd.concat(
+        [
+            plot_theta_fisher_all_band_power(
+                root,
+                output / "theta_fisher_relative_power_all_bands_association.png",
+                "relative",
+            ),
+            plot_theta_fisher_all_band_power(
+                root,
+                output / "theta_fisher_absolute_power_all_bands_association.png",
+                "absolute",
+            ),
+        ],
+        ignore_index=True,
+    )
+    statistics_output = root / "statistics" / "summary"
+    statistics_output.mkdir(parents=True, exist_ok=True)
+    power_correlations.to_csv(
+        statistics_output / "theta_fisher_D4_power_correlations.csv",
+        index=False,
+    )
     plot_alpha_power_moca(root, output / "alpha_power_moca_replication.png")
     plot_within_bout_clinical(root, output / "within_bout_clinical_associations.png")
     plot_strongest_updrs(root, output / "updrs_strongest_association.png")
