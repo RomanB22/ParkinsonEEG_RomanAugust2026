@@ -1,0 +1,20 @@
+{
+  "global_output_root": "outputs/global",
+  "output_dir": "outputs/rhythmicity",
+  "workers": 4,
+  "lavi": {
+    "min_frequency_hz": 3.2,
+    "max_frequency_hz": 45.0,
+    "n_frequencies": 48,
+    "lag_cycles": 1.5,
+    "wavelet_width": 5.0,
+    "surrogate_reps": 0
+  },
+  "bands": {
+    "delta": [1.0, 4.0],
+    "theta": [4.0, 8.0],
+    "alpha": [8.0, 13.0],
+    "beta": [13.0, 30.0],
+    "gamma": [30.0, 50.0]
+  }
+}

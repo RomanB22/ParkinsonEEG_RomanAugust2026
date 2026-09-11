@@ -1,0 +1,2 @@
+# Install alongside the main project environment for the independent pipeline.
+lavi-python @ git+https://github.com/laaanchic/LAVI.git@78386879eeb8cf9be06a1edfa6917c91b2d0d2ba#subdirectory=python
