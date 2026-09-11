@@ -608,7 +608,7 @@ def main() -> None:
     parser.add_argument("--skip-figures", action="store_true")
     args = parser.parse_args()
     manifest = run_analysis(args.config, datasets=args.datasets, recordings=args.recordings, workers=args.workers, overwrite=args.overwrite, generate_figures=not args.skip_figures)
-    print(f"Completed rhythmicity analysis for {manifest['n_recordings']} recordings")
+    print(f"Completed rhythmicity analysis for {manifest['n_completed_recordings']} recordings")
 
 
 if __name__ == "__main__":
