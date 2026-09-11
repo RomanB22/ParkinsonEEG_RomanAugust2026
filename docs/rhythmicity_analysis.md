@@ -10,12 +10,16 @@ the existing global metrics.
 
 For every retained recording, every EEG electrode, and a logarithmic frequency
 grid (3.2–45 Hz by default), the pipeline computes a LAVI profile. LAVI is a
-phase/oscillation regularity measure: values near one indicate a more rhythmic,
-phase-consistent signal and values near zero indicate weaker rhythmicity. The
-profile is summarized in the conventional delta (1–4 Hz), theta (4–8 Hz),
-alpha (8–13 Hz), beta (13–30 Hz), and gamma (30–50 Hz) bands. Bands are clipped
-to the available frequency grid, so gamma has bins only up to 45 Hz with the
-default configuration.
+Lagged Angle Vector Index: it compares the complex wavelet representation at
+two time points separated by the configured lag (1.5 cycles here). In
+idealized form, the index is the magnitude of the normalized sum of the
+complex-vector products across time, so values near one indicate a stable,
+phase-consistent oscillatory pattern at that frequency and values near zero
+indicate weak or inconsistent lagged phase structure. It is not a power or
+amplitude measure. The profile is summarized in the conventional delta (1–4
+Hz), theta (4–8 Hz), alpha (8–13 Hz), beta (13–30 Hz), and gamma (30–50 Hz)
+bands. Bands are clipped to the available frequency grid, so gamma has bins
+only up to 45 Hz with the default configuration.
 
 The profile is computed after concatenating retained epochs within each
 electrode, removing the channel mean, and excluding non-EEG channels and
@@ -157,7 +161,13 @@ All figures are saved at 300 dpi in `outputs/rhythmicity/figures/`.
   participant-level 95% confidence ribbons. Multiple recordings from one
   participant are averaged before the ribbon is calculated. Colored background
   strips mark canonical bands; the x-axis is logarithmic with explicit
-  frequency ticks.
+  frequency ticks. Higher LAVI means greater phase/oscillation regularity, not
+  greater power. Grey/orange are Control/PD in the standard datasets; grey,
+  purple, and green are Control/PD-OFF/PD-ON in medication-state. The ribbons
+  are uncertainty in the participant-level group means, not individual traces
+  or electrode-wise intervals. Visual separation is descriptive; use the
+  FDR-adjusted group-comparison table for significance. Each shaded region is
+  labelled with its canonical band name directly in the panel.
 * `lavi_band_group_effects.png` shows one violin per group and band. Every dot
   is one participant (deterministically jittered), with the median and extrema
   visible. Each band row uses a focused y-axis shared across datasets, so

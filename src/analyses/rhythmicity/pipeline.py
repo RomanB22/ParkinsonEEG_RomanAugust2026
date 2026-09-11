@@ -21,6 +21,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.lines import Line2D
 from matplotlib.ticker import FixedLocator, FuncFormatter, MaxNLocator, NullFormatter
 import mne
 import numpy as np
@@ -608,7 +609,24 @@ def _save_profile_figure(results: list[dict[str, Any]], output: Path) -> None:
         foi = np.asarray(subset[0]["foi"])
         for band, (low, high) in DEFAULT_BANDS.items():
             if high >= foi.min() and low <= foi.max():
-                axis.axvspan(max(low, foi.min()), min(high, foi.max()), color=BAND_COLORS[band], alpha=0.07, lw=0, zorder=0)
+                clipped_low, clipped_high = max(low, foi.min()), min(high, foi.max())
+                axis.axvspan(clipped_low, clipped_high, color=BAND_COLORS[band], alpha=0.07, lw=0, zorder=0)
+                # The x-axis is logarithmic, so place each label at the
+                # geometric midpoint of its visible frequency span.
+                band_midpoint = float(np.sqrt(clipped_low * clipped_high))
+                axis.text(
+                    band_midpoint,
+                    0.97,
+                    band.title(),
+                    transform=axis.get_xaxis_transform(),
+                    ha="center",
+                    va="top",
+                    fontsize=8,
+                    fontweight="bold",
+                    color="#555555",
+                    bbox={"facecolor": "white", "edgecolor": "none", "alpha": 0.65, "pad": 1.2},
+                    zorder=3,
+                )
         for group in dict.fromkeys(item["group"] for item in subset):
             group_rows = [item for item in subset if item["group"] == group]
             # The inferential unit is the participant.  If a participant has
@@ -635,9 +653,13 @@ def _save_profile_figure(results: list[dict[str, Any]], output: Path) -> None:
         axis.xaxis.set_minor_formatter(NullFormatter())
         axis.set_xlabel("Frequency (Hz)")
     axes[0, 0].set_ylabel("LAVI")
-    handles, labels = axes.flat[0].get_legend_handles_labels()
-    if handles:
-        axes.flat[0].legend(handles, labels, loc="upper right", frameon=True, framealpha=0.9, fontsize=8)
+    present_groups = list(dict.fromkeys(item["group"] for item in rows))
+    group_handles = []
+    for group in present_groups:
+        label = group.replace("PD_", "PD-") if group.startswith("PD_") else group
+        group_handles.append(Line2D([], [], color=GROUP_COLORS.get(group, "#777777"), linewidth=2.6, label=label))
+    if group_handles:
+        fig.legend(group_handles, [handle.get_label() for handle in group_handles], loc="upper center", bbox_to_anchor=(0.5, 1.01), ncol=len(group_handles), frameon=False, fontsize=9, title="Group (line; ribbon = 95% participant CI)", title_fontsize=8)
     fig.suptitle("All-electrode LAVI profiles", y=1.03, fontsize=14, fontweight="bold")
     fig.savefig(output, dpi=300, bbox_inches="tight"); plt.close(fig)
 
