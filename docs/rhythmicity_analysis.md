@@ -79,6 +79,30 @@ Control-versus-PD groups are shown for the standard datasets, while the
 medication-state row contains Control, PD-OFF, and PD-ON. Brackets with
 `*`/`**`/`***` indicate FDR-adjusted q < .05/.01/.001.
 
+## Canonical bands versus ABBA segmentation
+
+To inspect whether the fixed canonical bands are compatible with a
+data-driven segmentation, run:
+
+```bash
+scripts/plot_abba_segmentation.sh
+```
+
+This produces `figures/abba_band_segmentation_comparison.png` and
+`statistics/abba_representative_segments.csv`. It contains one panel per
+dataset. The representative is selected as the participant whose
+all-electrode, recording-averaged LAVI profile is closest (least-squares
+distance) to that dataset's participant-median profile. The black curve is
+that participant's mean LAVI profile; the dashed line is its ABBA median
+baseline. Shaded labels show the canonical delta/theta/alpha/beta/gamma
+intervals, while green and purple strips show ABBA high- and low-rhythmicity
+segments and dots mark their peaks.
+
+This figure is a sensitivity/interpretation aid, not a replacement for the
+canonical bands used in the inferential tables. ABBA segments are defined on
+the frequency grid and relative to the profile baseline; they do not establish
+temporal burst durations or universally optimal clinical frequency boundaries.
+
 ### Exact LAVI-only quantity calculations
 
 For each recording and electrode, `prepare_lavi` produces a LAVI value on
@@ -189,6 +213,18 @@ All figures are saved at 300 dpi in `outputs/rhythmicity/figures/`.
 * `lavi_burst_quantity_violins_<band>.png` (from the optional LAVI-only command)
   shows the six frequency-domain bout measures for every participant, dataset,
   and group within one band. It does not reuse the global burst detector.
+* `abba_band_segmentation_comparison.png` overlays canonical bands and ABBA
+  frequency segments for a representative participant in each dataset.
+* `abba_band_limits_all_subjects.png` (also written as the backwards-compatible
+  `abba_band_limits_by_dataset.png`) presents aligned, side-by-side interval
+  strips for every participant. The upper strip in each panel is the fixed
+  canonical band definition (with numeric limits); transparent middle strips
+  show each participant's ABBA intervals; and opaque lower strips show ABBA
+  applied to the mean participant profile for that dataset. All panels share
+  one logarithmic frequency scale, so interval widths and shifts can be
+  compared directly across datasets. Profiles for which ABBA returned no
+  finite interval are reported in the panel count but do not contribute an
+  interval overlay.
 * `figures/topomaps/<dataset>_group_topomaps.png` contains group-average LAVI
   topomaps plus a PD-minus-Control (or medication-state PD-ON-minus-PD-OFF)
   contrast when the corresponding groups exist.
