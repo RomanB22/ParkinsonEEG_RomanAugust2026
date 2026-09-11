@@ -11,7 +11,6 @@ import argparse
 import json
 import logging
 import os
-import sys
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -22,12 +21,10 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.colors import Normalize
-from matplotlib.lines import Line2D
 import mne
 import numpy as np
 import pandas as pd
-from scipy.stats import spearmanr, ttest_ind
+from scipy.stats import spearmanr
 from tqdm.auto import tqdm
 
 from core.runtime import configure_runtime
