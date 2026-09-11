@@ -197,8 +197,11 @@ def _process_recording(task: RecordingTask, config: dict[str, Any], foi: np.ndar
     from lavi import abba, prepare_lavi
 
     epochs = mne.read_epochs(task.epoch_path, preload=True, verbose=False)
-    data = epochs.get_data(picks="eeg", units="uV")
-    channels = list(epochs.copy().pick("eeg").ch_names)
+    if len(epochs) == 0:
+        raise ValueError("no retained epochs after preprocessing")
+    eeg_picks = mne.pick_types(epochs.info, eeg=True, exclude=[])
+    channels = [epochs.ch_names[index] for index in eeg_picks]
+    data = epochs.get_data(picks=eeg_picks, units="uV")
     n_epochs, n_channels, n_samples = data.shape
     flattened = data.transpose(1, 0, 2).reshape(n_channels, n_epochs * n_samples)
     valid_channels: list[int] = []
@@ -251,6 +254,7 @@ def _process_recording(task: RecordingTask, config: dict[str, Any], foi: np.ndar
         lavi=lavi.astype(np.float32),
         foi=np.asarray(out_cfg["foi"], dtype=np.float32),
         channels=np.asarray(channels),
+        sigvect=np.asarray(sigvect, dtype=np.float32),
         sampling_frequency_hz=np.asarray([epochs.info["sfreq"]]),
         n_epochs=np.asarray([n_epochs]),
     )
@@ -268,6 +272,35 @@ def _process_recording(task: RecordingTask, config: dict[str, Any], foi: np.ndar
         "n_channels": len(channels),
         "n_epochs": int(n_epochs),
         "sampling_frequency_hz": float(epochs.info["sfreq"]),
+    }
+
+
+def _load_cached_result(task: RecordingTask, config: dict[str, Any]) -> dict[str, Any]:
+    """Reconstruct a worker result from a completed per-recording profile."""
+    from lavi import abba
+
+    with np.load(task.profile_path, allow_pickle=False) as cached:
+        lavi = np.asarray(cached["lavi"], dtype=float)
+        foi = np.asarray(cached["foi"], dtype=float)
+        channels = [str(value) for value in cached["channels"].tolist()]
+        sigvect = np.asarray(cached["sigvect"], dtype=float) if "sigvect" in cached else None
+        n_epochs = int(cached["n_epochs"][0]) if "n_epochs" in cached else -1
+        sfreq = float(cached["sampling_frequency_hz"][0]) if "sampling_frequency_hz" in cached else np.nan
+    if sigvect is None:
+        _, _, sigvect_list = abba(lavi, foi)
+    else:
+        sigvect_list = [row for row in sigvect]
+    bands = {str(name): (float(limits[0]), float(limits[1])) for name, limits in config["bands"].items()}
+    electrode_rows, abba_rows = _band_summaries(lavi, foi, channels, bands, sigvect_list, task)
+    return {
+        "task": asdict(task),
+        "electrode_rows": electrode_rows,
+        "abba_rows": abba_rows,
+        "profile_mean": np.nanmean(lavi, axis=0).astype(float).tolist(),
+        "foi": foi.tolist(),
+        "n_channels": len(channels),
+        "n_epochs": n_epochs,
+        "sampling_frequency_hz": sfreq,
     }
 
 
@@ -519,7 +552,10 @@ def run_analysis(config_path: str | Path, *, datasets: list[str] | None = None, 
     tasks = _load_tasks(config, datasets, output, recordings)
     foi = _frequency_grid(config)
     n_workers = int(workers or config.get("workers", max(1, min(4, os.cpu_count() or 1))))
-    results: list[dict[str, Any]] = []
+    cached_tasks = [] if overwrite else [task for task in tasks if Path(task.profile_path).is_file()]
+    pending_tasks = [task for task in tasks if task not in cached_tasks]
+    results: list[dict[str, Any]] = [_load_cached_result(task, config) for task in cached_tasks]
+    failures: list[dict[str, str]] = []
     # Some managed/macOS environments deny the semaphore-limit query made by
     # ProcessPoolExecutor. Fall back to threads there; the expensive wavelet
     # and array operations release the GIL, and the same worker count/progress
@@ -530,9 +566,14 @@ def run_analysis(config_path: str | Path, *, datasets: list[str] | None = None, 
         logging.warning("Process workers unavailable (%s); falling back to threaded workers", error)
         executor = ThreadPoolExecutor(max_workers=n_workers)
     with executor:
-        futures = [executor.submit(_process_recording, task, config, foi) for task in tasks]
-        for future in tqdm(as_completed(futures), total=len(futures), desc="Rhythmicity recordings"):
-            results.append(future.result())
+        future_tasks = {executor.submit(_process_recording, task, config, foi): task for task in pending_tasks}
+        for future in tqdm(as_completed(future_tasks), total=len(future_tasks), desc="Rhythmicity recordings"):
+            task = future_tasks[future]
+            try:
+                results.append(future.result())
+            except Exception as error:
+                logging.error("Skipping rhythmicity recording %s/%s: %s", task.dataset, task.recording_id, error)
+                failures.append({"dataset": task.dataset, "recording_id": task.recording_id, "reason": str(error)})
     electrode = pd.DataFrame([row for result in results for row in result["electrode_rows"]])
     abba_table = pd.DataFrame([row for result in results for row in result["abba_rows"]])
     if electrode.empty:
@@ -547,7 +588,7 @@ def run_analysis(config_path: str | Path, *, datasets: list[str] | None = None, 
     abba_table.to_csv(metrics_root / "abba_bands.csv.gz", index=False)
     correlations = _correlations(participant)
     correlations.to_csv(statistics_root / "lavi_burst_correlations.csv", index=False)
-    manifest = {"analysis": "all_electrode_lavi_rhythmicity", "config": config, "n_recordings": len(results), "n_electrode_band_rows": len(electrode), "n_participants": int(participant["participant_id"].nunique()), "lavi_frequency_hz": foi.tolist(), "workers": n_workers, "surrogate_reps": int(config["lavi"].get("surrogate_reps", 0)), "abba_mode": "iaaft_95_percentile" if int(config["lavi"].get("surrogate_reps", 0)) > 0 else "channel_median_baseline"}
+    manifest = {"analysis": "all_electrode_lavi_rhythmicity", "config": config, "n_requested_recordings": len(tasks), "n_completed_recordings": len(results), "n_failed_recordings": len(failures), "failed_recordings": failures, "n_electrode_band_rows": len(electrode), "n_participants": int(participant["participant_id"].nunique()), "lavi_frequency_hz": foi.tolist(), "workers": n_workers, "resumed_recordings": len(cached_tasks), "surrogate_reps": int(config["lavi"].get("surrogate_reps", 0)), "abba_mode": "iaaft_95_percentile" if int(config["lavi"].get("surrogate_reps", 0)) > 0 else "channel_median_baseline"}
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     if generate_figures:
         _save_profile_figure(results, figures_root / "lavi_profiles_by_dataset.png")
