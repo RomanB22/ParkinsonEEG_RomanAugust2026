@@ -340,3 +340,62 @@ and figure rendering. The full dataset run is resumable and should be launched
 with the command above; the manifest records completed and failed recordings so
 partial runs remain auditable. No group or clinical conclusion should be drawn
 until that full run completes and the resulting CSVs have been reviewed.
+
+## ABBA-band ordinal H/C/F pipeline
+
+The ABBA ordinal pipeline calculates permutation entropy (H), statistical
+complexity (C), and Fisher information (F) in each valid group-mean ABBA
+interval. It produces two estimates per recording and electrode:
+
+- `full_signal`: epochs are filtered independently in the ABBA interval and
+  then concatenated before ordinal encoding.
+- `within_bout`: temporal amplitude bouts are detected from the robust
+  all-electrode signal using the same 90th-percentile detection,
+  75th-percentile boundary, and two-cycle rules as the ABBA burst analysis.
+  Matching filtered electrode segments are concatenated before ordinal
+  encoding.
+
+Both estimates intentionally permit ordinal patterns to cross concatenation
+joins. The `concatenation_policy` column makes that requested choice explicit.
+Electrode H/C/F values are averaged to recording level and repeated sessions
+are averaged to participant level.
+
+Run the configured Control/PD-OFF/PD-ON analysis with:
+
+```bash
+MNE_DONTWRITE_HOME=true NUMBA_DISABLE_JIT=1 PYTHONPATH=src \
+  conda run --no-capture-output -n MNE_August2026 \
+  python scripts/run_abba_ordinal_analysis.py --workers 4
+```
+
+The default configuration selects all four canonical datasets and retains
+Control, PD, PD-OFF, and PD-ON as distinct populations. Use `--datasets` to
+override the configured datasets,
+`--recordings ...` for a smoke test, `--skip-figures` for computation only,
+or `--overwrite` to ignore compatible checkpoints. Each recording is written
+atomically under `outputs/rhythmicity/intermediate/abba_ordinal_checkpoints/`.
+After each dataset finishes, its recording and electrode tables are saved
+under `metrics/abba_ordinal_by_dataset/<dataset>/`, so an interruption does not
+discard a completed dataset.
+
+Final outputs are:
+
+- `metrics/abba_ordinal_recording_metrics.csv.gz`
+- `metrics/abba_ordinal_electrode_metrics.csv.gz`
+- `metrics/abba_ordinal_participant_metrics.csv.gz`
+- `statistics/abba_ordinal_clinical_correlations.csv`
+- `figures/abba_ordinal/<dataset>__<ABBA-band>.png`
+- `abba_ordinal_manifest.json`
+
+The clinical table contains Spearman correlations for MoCA, MMSE, and UPDRS,
+both overall and stratified by group when at least five complete observations
+exist. For paired medication recordings it also correlates PD ON−OFF H/C/F
+changes with ON−OFF UPDRS changes. Each band figure contains separate H×F planes for the full and bout
+signals (point fill represents C), plus H/C/F scatterplots against the
+available cognitive score (MoCA preferred, MMSE otherwise) and UPDRS.
+Population is encoded by both color and marker shape in every panel: circles
+for Control, squares for PD, triangles for PD-OFF, and diamonds for PD-ON.
+The medication-state canonical table does not expose Total UPDRS in its generic
+`updrs` field, so this pipeline reads `Total UPDRS` from each session's source
+behavior JSON; `updrs_source` records that file in the electrode and recording
+outputs.

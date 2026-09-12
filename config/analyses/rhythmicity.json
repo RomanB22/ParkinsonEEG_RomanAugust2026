@@ -25,5 +25,20 @@
     "minimum_cycles": 2.0,
     "max_shape_bursts_per_segment": 100,
     "confidence_level": 0.95
+  },
+  "abba_ordinal": {
+    "datasets": ["primary", "ds007526-1.0.2", "ds008768-1.0.0", "medication_state"],
+    "groups": ["Control", "PD", "PD_OFF", "PD_ON"],
+    "medication_dataset_dir": "ds002778-1.0.5",
+    "workers": 4,
+    "filter_order": 4,
+    "detection_percentile": 90.0,
+    "boundary_percentile": 75.0,
+    "minimum_cycles": 2.0,
+    "embedding_dimension": 5,
+    "delay_samples": 1,
+    "minimum_scope_samples": 120,
+    "minimum_correlation_n": 5,
+    "figure_dpi": 200
   }
 }
