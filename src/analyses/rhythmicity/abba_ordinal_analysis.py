@@ -1,4 +1,4 @@
-"""Ordinal H, C, and F in group-defined ABBA bands and temporal bouts.
+"""Ordinal H, C, and F in group-specific or Control-defined ABBA bands.
 
 The analysis uses the group-mean ABBA intervals produced by the rhythmicity
 pipeline.  Each accepted EEG epoch is band-pass filtered independently.  For
@@ -43,6 +43,11 @@ from analyses.ordinal.metrics import (
     ordinal_probabilities,
 )
 from analyses.rhythmicity.abba_burst_analysis import _detect_bursts, _global_signal
+from analyses.rhythmicity.control_band_qc import (
+    QC_BAND_DEFINITION,
+    control_defined_segments,
+    qc_output_root,
+)
 
 
 METRICS = ("entropy", "complexity", "fisher_information")
@@ -212,6 +217,9 @@ def _recording_task(task: dict[str, Any]) -> dict[str, Any]:
             "start_hz": low_hz,
             "end_hz": high_hz,
             "peak_hz": float(segment["peak_hz"]),
+            "source_group": str(segment.get("source_group", task["group"])),
+            "source_band_name": str(segment.get("source_band_name", segment["band_name"])),
+            "band_definition": str(segment.get("band_definition", "group_specific_abba")),
         }
         segment_meta["comparison_band_name"] = _comparison_band_name(
             task, segment_meta["band_name"], segment_meta["direction"]
@@ -320,6 +328,7 @@ def _participant_metrics(recordings: pd.DataFrame) -> pd.DataFrame:
         "dataset", "participant_id", "group", "comparison_band_name",
         "cross_dataset_band_name", "band_name", "canonical_region",
         "direction", "segment_index", "start_hz", "end_hz", "peak_hz", "scope",
+        "source_group", "source_band_name", "band_definition",
     ]
     numeric = [*METRICS, "n_bouts", "n_samples_per_electrode"]
     result = recordings.groupby(keys, as_index=False)[numeric].mean(numeric_only=True)
@@ -465,7 +474,9 @@ def _plot_band(frame: pd.DataFrame, output: Path, dpi: int) -> None:
         f"{row.start_hz:g}–{row.end_hz:g} Hz ({directions[group]})"
         for group, row in limits.iterrows()
     )
-    axes[0, 2].text(0.0, 1.0, "ABBA group-mean limits\n" + limit_text, va="top", fontsize=11)
+    control_defined = "band_definition" in frame and frame["band_definition"].eq(QC_BAND_DEFINITION).all()
+    limit_heading = "Control group-mean ABBA limits" if control_defined else "ABBA group-mean limits"
+    axes[0, 2].text(0.0, 1.0, limit_heading + "\n" + limit_text, va="top", fontsize=11)
     axes[0, 3].text(
         0.0,
         1.0,
@@ -482,7 +493,8 @@ def _plot_band(frame: pd.DataFrame, output: Path, dpi: int) -> None:
             _scatter(axes[row, column], frame.loc[frame["scope"].eq(scope)], outcome, metric)
             axes[row, column].set_title(("Full" if scope == "full_signal" else "Bout") + f" × {outcome.upper()}")
     handles, labels = axes[0, 0].get_legend_handles_labels()
-    figure.suptitle(f"{dataset} — ABBA {band}: H, C, F in full signal and bouts", fontsize=16, fontweight="bold")
+    definition = "Control-defined ABBA" if control_defined else "ABBA"
+    figure.suptitle(f"{dataset} — {definition} {band}: H, C, F in full signal and bouts", fontsize=16, fontweight="bold")
     if handles:
         figure.legend(handles, labels, loc="lower center", ncol=len(labels), frameon=False)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -618,9 +630,11 @@ def _save_cross_dataset_planes(
     return expected
 
 
-def _make_tasks(config: dict[str, Any], datasets: list[str] | None, recordings: list[str] | None) -> dict[str, list[dict[str, Any]]]:
+def _make_tasks(config: dict[str, Any], datasets: list[str] | None, recordings: list[str] | None, *, control_bands_qc: bool = False) -> dict[str, list[dict[str, Any]]]:
     output_root = Path(config["output_dir"])
     segments = pd.read_csv(output_root / "statistics" / "abba_group_mean_segments.csv")
+    if control_bands_qc:
+        segments = control_defined_segments(segments)
     settings = config["abba_ordinal"]
     allowed_groups = set(str(value) for value in settings["groups"])
     configured_datasets = settings.get("datasets")
@@ -640,11 +654,10 @@ def _make_tasks(config: dict[str, Any], datasets: list[str] | None, recordings: 
             manifest = manifest.loc[manifest["recording_id"].astype(str).isin(requested_recordings)]
         tasks: list[dict[str, Any]] = []
         for row in manifest.to_dict("records"):
-            selected = segments.loc[
-                segments["dataset"].eq(dataset)
-                & segments["group"].astype(str).eq(str(row["group"]))
-                & segments["end_hz"].gt(segments["start_hz"])
-            ]
+            selector = segments["dataset"].eq(dataset) & segments["end_hz"].gt(segments["start_hz"])
+            if not control_bands_qc:
+                selector &= segments["group"].astype(str).eq(str(row["group"]))
+            selected = segments.loc[selector]
             if selected.empty or not Path(str(row["epoch_path"])).is_file():
                 continue
             task = {key: row.get(key, np.nan) for key in (
@@ -670,7 +683,7 @@ def _make_tasks(config: dict[str, Any], datasets: list[str] | None, recordings: 
                 "embedding_dimension": int(settings["embedding_dimension"]),
                 "delay_samples": int(settings["delay_samples"]),
                 "minimum_scope_samples": int(settings["minimum_scope_samples"]),
-                "comparison_band_alignments": settings.get("comparison_band_alignments", []),
+                "comparison_band_alignments": [] if control_bands_qc else settings.get("comparison_band_alignments", []),
             })
             tasks.append(task)
         if tasks:
@@ -686,12 +699,14 @@ def run(
     workers: int | None = None,
     overwrite: bool = False,
     generate_figures: bool = True,
+    control_bands_qc: bool = False,
 ) -> dict[str, int]:
     config = json.loads(Path(config_path).read_text(encoding="utf-8"))
     settings = config["abba_ordinal"]
-    output_root = Path(config["output_dir"])
+    base_output_root = Path(config["output_dir"])
+    output_root = qc_output_root(base_output_root) if control_bands_qc else base_output_root
     checkpoint_root = output_root / "intermediate" / "abba_ordinal_checkpoints"
-    tasks_by_dataset = _make_tasks(config, datasets, recordings)
+    tasks_by_dataset = _make_tasks(config, datasets, recordings, control_bands_qc=control_bands_qc)
     if not tasks_by_dataset:
         raise RuntimeError("No recordings matched the requested ABBA ordinal cohort")
     worker_count = int(workers if workers is not None else settings.get("workers", 1))
@@ -790,6 +805,8 @@ def run(
     figure_count = dataset_figure_count + cross_dataset_figure_count
     manifest = {
         "analysis": "abba_band_full_and_concatenated_bout_ordinal_hcf",
+        "band_definition": QC_BAND_DEFINITION if control_bands_qc else "group_specific_abba",
+        "control_bands_qc": bool(control_bands_qc),
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(),
         "config": settings,
@@ -821,6 +838,7 @@ def main() -> None:
     parser.add_argument("--workers", type=int)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--skip-figures", action="store_true")
+    parser.add_argument("--control-bands-qc", action="store_true", help="Apply each dataset's Control ABBA limits to every group and write isolated QC outputs")
     args = parser.parse_args()
     summary = run(
         args.config,
@@ -829,6 +847,7 @@ def main() -> None:
         workers=args.workers,
         overwrite=args.overwrite,
         generate_figures=not args.skip_figures,
+        control_bands_qc=args.control_bands_qc,
     )
     print(json.dumps(summary, indent=2))
 

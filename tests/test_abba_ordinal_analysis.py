@@ -15,9 +15,26 @@ from analyses.rhythmicity.abba_ordinal_analysis import (
     compute_correlations,
     concatenate_bouts,
 )
+from analyses.rhythmicity.control_band_qc import (
+    QC_BAND_DEFINITION,
+    control_defined_segments,
+)
 
 
 class AbbaOrdinalAnalysisTests(unittest.TestCase):
+    def test_control_defined_segments_use_direction_labels_and_only_control_limits(self) -> None:
+        segments = pd.DataFrame([
+            {"dataset": "study", "group": "Control", "band_name": "theta_2", "canonical_region": "theta", "direction": "low", "start_hz": 4.5, "end_hz": 7.5},
+            {"dataset": "study", "group": "Control", "band_name": "alpha_1", "canonical_region": "alpha", "direction": "high", "start_hz": 8.0, "end_hz": 12.5},
+            {"dataset": "study", "group": "PD", "band_name": "theta_1", "canonical_region": "theta", "direction": "low", "start_hz": 3.5, "end_hz": 6.0},
+            {"dataset": "study", "group": "Control", "band_name": "gamma_2", "canonical_region": "gamma", "direction": "high", "start_hz": 45.0, "end_hz": 45.0},
+        ])
+        result = control_defined_segments(segments)
+        self.assertEqual(result["band_name"].tolist(), ["theta_low", "alpha_high"])
+        self.assertEqual(result["source_band_name"].tolist(), ["theta_2", "alpha_1"])
+        self.assertEqual(set(result["source_group"]), {"Control"})
+        self.assertEqual(set(result["band_definition"]), {QC_BAND_DEFINITION})
+
     def test_concatenate_bouts_uses_requested_order_and_boundaries(self) -> None:
         filtered = np.arange(2 * 2 * 8, dtype=float).reshape(2, 2, 8)
         bursts = [

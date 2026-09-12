@@ -266,6 +266,19 @@ Run the independent pipeline with
 group-mean intervals and canonical recording manifests, robustly z-scores each
 electrode within epoch, and averages electrodes before filtering. For every
 recording, the fixed group-specific ABBA intervals are filtered separately.
+
+To isolate the effect of group-specific band selection, run the Control-band
+quality-control analysis with:
+
+```bash
+bash scripts/run_abba_burst_analysis.sh --workers 4 --control-bands-qc
+```
+
+For every dataset, this selects only the Control group-mean ABBA intervals and
+applies those exact frequency limits to Control and all PD groups. Bands use
+direction-stable names such as `theta_low`, `alpha_high`, and `beta_high`.
+Results are isolated under `outputs/rhythmicity/control_band_qc/`; the metric
+tables also retain `source_group`, `source_band_name`, and `band_definition`.
 Temporal bursts are runs above the 90th percentile of the band Hilbert
 amplitude; boundaries are expanded to the 75th percentile and runs shorter
 than two centre-frequency cycles are discarded. Quantities are calculated per
@@ -367,6 +380,17 @@ MNE_DONTWRITE_HOME=true NUMBA_DISABLE_JIT=1 PYTHONPATH=src \
   conda run --no-capture-output -n MNE_August2026 \
   python scripts/run_abba_ordinal_analysis.py --workers 4
 ```
+
+The corresponding Control-band QC rerun is:
+
+```bash
+MPLCONFIGDIR=/tmp/mpl-cache-rhythmicity PYTHONPATH=src \
+  python scripts/run_abba_ordinal_analysis.py --workers 4 --control-bands-qc
+```
+
+It uses the same dataset-specific Control limits and `{band}_low` /
+`{band}_high` notation as the burst QC, with independent checkpoints, metrics,
+statistics, figures, and manifest under `outputs/rhythmicity/control_band_qc/`.
 
 The default configuration selects all four canonical datasets and retains
 Control, PD, PD-OFF, and PD-ON as distinct populations. Use `--datasets` to

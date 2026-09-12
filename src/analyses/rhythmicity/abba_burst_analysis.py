@@ -1,4 +1,4 @@
-"""Temporal burst analysis using group-specific ABBA frequency bands.
+"""Temporal burst analysis using group-specific or Control-defined ABBA bands.
 
 This is an optional sensitivity pipeline. It takes the group-mean frequency
 intervals obtained from all-electrode LAVI profiles, filters each recording in
@@ -36,6 +36,11 @@ from scipy.stats import ttest_ind, t as student_t
 from tqdm.auto import tqdm
 
 from core.runtime import configure_runtime
+from analyses.rhythmicity.control_band_qc import (
+    QC_BAND_DEFINITION,
+    control_defined_segments,
+    qc_output_root,
+)
 
 configure_runtime()
 
@@ -58,6 +63,7 @@ QUANTITY_LABELS = {
     "peak_amplitude_uv": "Peak EEG amplitude (µV)",
 }
 SELECTED_ABBA_BANDS = ("theta_1", "alpha_1", "beta_1", "beta_2", "gamma_1")
+SEGMENT_PROVENANCE = ["source_group", "source_band_name", "band_definition"]
 
 
 def _fdr_bh(values: pd.Series | np.ndarray) -> np.ndarray:
@@ -237,6 +243,11 @@ def _recording_task(task: tuple[Any, ...]) -> dict[str, Any]:
         direction = str(segment["direction"])
         band_name = str(segment["band_name"])
         canonical_region = str(segment.get("canonical_region", band_name.rsplit("_", 1)[0]))
+        provenance = {
+            "source_group": str(segment.get("source_group", group)),
+            "source_band_name": str(segment.get("source_band_name", band_name)),
+            "band_definition": str(segment.get("band_definition", "group_specific_abba")),
+        }
         low_hz, high_hz = float(segment["start_hz"]), float(segment["end_hz"])
         if high_hz <= low_hz or low_hz <= 0 or high_hz >= sfreq / 2:
             continue
@@ -253,7 +264,7 @@ def _recording_task(task: tuple[Any, ...]) -> dict[str, Any]:
             minimum_cycles=minimum_cycles,
         )
         if not bursts:
-            segment_rows.append({"dataset": dataset, "recording_id": recording_id, "participant_id": participant_id, "group": group, "segment_index": segment_index, "band_name": band_name, "canonical_region": canonical_region, "direction": direction, "start_hz": low_hz, "end_hz": high_hz, "burst_count": 0, "duration_s": np.nan, "cycles": np.nan, "bursts_per_minute": 0.0, "occupancy_percent": 0.0, "peak_amplitude_uv": np.nan, "relative_amplitude_db": np.nan})
+            segment_rows.append({"dataset": dataset, "recording_id": recording_id, "participant_id": participant_id, "group": group, "segment_index": segment_index, "band_name": band_name, "canonical_region": canonical_region, "direction": direction, **provenance, "start_hz": low_hz, "end_hz": high_hz, "burst_count": 0, "duration_s": np.nan, "cycles": np.nan, "bursts_per_minute": 0.0, "occupancy_percent": 0.0, "peak_amplitude_uv": np.nan, "relative_amplitude_db": np.nan})
             continue
         widths_hz = max(high_hz - low_hz, np.finfo(float).eps)
         duration = np.asarray([row["duration_s"] for row in bursts], dtype=float)
@@ -275,13 +286,13 @@ def _recording_task(task: tuple[Any, ...]) -> dict[str, Any]:
                 voltage_amplitudes_list.append(np.nan)
         voltage_amplitudes = np.asarray(voltage_amplitudes_list, dtype=float)
         occupancy = float(np.sum(duration) / (total_samples / sfreq) * 100.0)
-        segment_rows.append({"dataset": dataset, "recording_id": recording_id, "participant_id": participant_id, "group": group, "segment_index": segment_index, "band_name": band_name, "canonical_region": canonical_region, "direction": direction, "start_hz": low_hz, "end_hz": high_hz, "burst_count": len(bursts), "duration_s": float(np.mean(duration)), "cycles": float(np.mean(cycles)), "bursts_per_minute": float(len(bursts) / (total_samples / sfreq) * 60.0 / widths_hz), "occupancy_percent": occupancy, "peak_amplitude_uv": float(np.mean(voltage_amplitudes)), "relative_amplitude_db": float(np.mean(amplitudes))})
+        segment_rows.append({"dataset": dataset, "recording_id": recording_id, "participant_id": participant_id, "group": group, "segment_index": segment_index, "band_name": band_name, "canonical_region": canonical_region, "direction": direction, **provenance, "start_hz": low_hz, "end_hz": high_hz, "burst_count": len(bursts), "duration_s": float(np.mean(duration)), "cycles": float(np.mean(cycles)), "bursts_per_minute": float(len(bursts) / (total_samples / sfreq) * 60.0 / widths_hz), "occupancy_percent": occupancy, "peak_amplitude_uv": float(np.mean(voltage_amplitudes)), "relative_amplitude_db": float(np.mean(amplitudes))})
         center_frequency = math.sqrt(low_hz * high_hz)
         for burst, voltage_peak_sample in zip(bursts[: int(max_shape_bursts)], voltage_peak_samples[: int(max_shape_bursts)]):
             waveform = _shape_from_burst(filtered_voltage, int(burst["epoch_index"]), int(voltage_peak_sample), sfreq, center_frequency)
             if waveform is None:
                 continue
-            shape_rows.append({"dataset": dataset, "recording_id": recording_id, "participant_id": participant_id, "group": group, "segment_index": segment_index, "band_name": band_name, "canonical_region": canonical_region, "direction": direction, "start_hz": low_hz, "end_hz": high_hz, "waveform": waveform})
+            shape_rows.append({"dataset": dataset, "recording_id": recording_id, "participant_id": participant_id, "group": group, "segment_index": segment_index, "band_name": band_name, "canonical_region": canonical_region, "direction": direction, **provenance, "start_hz": low_hz, "end_hz": high_hz, "waveform": waveform})
     return {"segment_rows": segment_rows, "shape_rows": shape_rows}
 
 
@@ -291,7 +302,9 @@ def _participant_aggregate(segment_table: pd.DataFrame) -> pd.DataFrame:
     # Average recordings within each participant and named ABBA interval, so
     # participants—not recordings or segments—are the independent observations
     # in the violins and tests.
-    return segment_table.groupby(["dataset", "participant_id", "group", "band_name", "canonical_region", "direction"], as_index=False)[QUANTITIES + REFERENCE_QUANTITIES].mean(numeric_only=True)
+    keys = ["dataset", "participant_id", "group", "band_name", "canonical_region", "direction"]
+    keys.extend(column for column in SEGMENT_PROVENANCE if column in segment_table)
+    return segment_table.groupby(keys, as_index=False)[QUANTITIES + REFERENCE_QUANTITIES].mean(numeric_only=True)
 
 
 def _group_statistics(participant_table: pd.DataFrame) -> pd.DataFrame:
@@ -347,7 +360,7 @@ def _focused_comparison_view(table: pd.DataFrame, band_name: str) -> pd.DataFram
     return result
 
 
-def _save_violins(participant: pd.DataFrame, statistics: pd.DataFrame, output: Path, band_names: list[str] | None = None) -> None:
+def _save_violins(participant: pd.DataFrame, statistics: pd.DataFrame, output: Path, band_names: list[str] | None = None, *, control_bands_qc: bool = False) -> None:
     datasets = list(dict.fromkeys(participant["dataset"]))
     def band_key(value: str) -> tuple[int, int, str]:
         region, _, number = str(value).rpartition("_")
@@ -406,18 +419,22 @@ def _save_violins(participant: pd.DataFrame, statistics: pd.DataFrame, output: P
     if len(band_names) == 1:
         title = f"Temporal burst quantities — {band_names[0]} ({_band_direction_label(participant, band_names)})"
     else:
-        title = "Temporal burst quantities in group-specific ABBA bands"
+        title = "Temporal burst quantities in Control-defined ABBA bands" if control_bands_qc else "Temporal burst quantities in group-specific ABBA bands"
     fig.suptitle(title, fontsize=15, fontweight="bold", y=0.995)
     subtitle = "Points are participant-level means; ABBA intervals are not pooled"
     if len(band_names) > 1:
-        subtitle = "Each ABBA interval is retained as band_name_1, band_name_2, …; points are participant-level means"
+        subtitle = (
+            "The same dataset-specific Control limits filter every group; labels retain ABBA direction"
+            if control_bands_qc
+            else "Each ABBA interval is retained as band_name_1, band_name_2, …; points are participant-level means"
+        )
     fig.text(0.5, 0.955, subtitle, ha="center", fontsize=9, color="#444444")
     fig.tight_layout(rect=(0.02, 0.03, 1.0, 0.90))
     fig.savefig(output, dpi=300, bbox_inches="tight")
     plt.close(fig)
 
 
-def _save_shapes(shape_table: pd.DataFrame, output: Path, confidence_level: float = 0.95, band_names: list[str] | None = None) -> None:
+def _save_shapes(shape_table: pd.DataFrame, output: Path, confidence_level: float = 0.95, band_names: list[str] | None = None, *, control_bands_qc: bool = False) -> None:
     if shape_table.empty:
         return
     datasets = list(dict.fromkeys(shape_table["dataset"]))
@@ -464,7 +481,7 @@ def _save_shapes(shape_table: pd.DataFrame, output: Path, confidence_level: floa
     if len(band_names) == 1:
         title = f"Average burst shape — {band_names[0]} ({_band_direction_label(shape_table, band_names)})"
     else:
-        title = "Average burst shape in group-specific ABBA bands"
+        title = "Average burst shape in Control-defined ABBA bands" if control_bands_qc else "Average burst shape in group-specific ABBA bands"
     fig.suptitle(title, fontsize=15, fontweight="bold", y=0.995)
     fig.text(0.5, 0.955, "Curves are participant means; ribbons are 95% Student-t confidence intervals", ha="center", fontsize=9, color="#444444")
     fig.tight_layout(rect=(0.02, 0.03, 1.0, 0.90))
@@ -472,7 +489,7 @@ def _save_shapes(shape_table: pd.DataFrame, output: Path, confidence_level: floa
     plt.close(fig)
 
 
-def run(output_root: Path, config_path: Path | None = None, *, workers: int | None = None, max_recordings: int | None = None) -> dict[str, int]:
+def run(output_root: Path, config_path: Path | None = None, *, workers: int | None = None, max_recordings: int | None = None, control_bands_qc: bool = False) -> dict[str, int]:
     config = json.loads(config_path.read_text()) if config_path and config_path.is_file() else {}
     settings = config.get("abba_bursts", {})
     # Use the opaque group-mean limits shown in abba_band_limits_by_group.png.
@@ -482,6 +499,9 @@ def run(output_root: Path, config_path: Path | None = None, *, workers: int | No
     if not segments_path.is_file():
         raise FileNotFoundError(f"Missing ABBA group-mean segments: {segments_path}")
     segments = pd.read_csv(segments_path)
+    if control_bands_qc:
+        segments = control_defined_segments(segments)
+    analysis_root = qc_output_root(output_root) if control_bands_qc else output_root
     canonical_root = Path(config.get("global_output_root", "outputs/global")) / "canonical"
     tasks: list[tuple[Any, ...]] = []
     for manifest_path in sorted(canonical_root.glob("*/recordings.csv.gz")):
@@ -491,7 +511,10 @@ def run(output_root: Path, config_path: Path | None = None, *, workers: int | No
             epoch_path = str(row.get("epoch_path", ""))
             if not epoch_path or not Path(epoch_path).is_file():
                 continue
-            subset = segments.loc[(segments["dataset"].eq(dataset)) & (segments["group"].astype(str).eq(str(row["group"]))) & (segments["end_hz"] > segments["start_hz"])].to_dict("records")
+            selector = segments["dataset"].eq(dataset) & segments["end_hz"].gt(segments["start_hz"])
+            if not control_bands_qc:
+                selector &= segments["group"].astype(str).eq(str(row["group"]))
+            subset = segments.loc[selector].to_dict("records")
             if not subset:
                 continue
             tasks.append((dataset, str(row["recording_id"]), str(row["participant_id"]), str(row["group"]), epoch_path, subset, int(settings.get("filter_order", 4)), float(settings.get("detection_percentile", 90.0)), float(settings.get("boundary_percentile", 75.0)), float(settings.get("minimum_cycles", 2.0)), int(settings.get("max_shape_bursts_per_segment", 100))))
@@ -523,8 +546,10 @@ def run(output_root: Path, config_path: Path | None = None, *, workers: int | No
     shape_rows = [row for result in results for row in result["shape_rows"]]
     shape_table = pd.DataFrame(shape_rows)
     if not shape_table.empty:
-        shape_table = shape_table.groupby(["dataset", "participant_id", "group", "band_name", "canonical_region", "direction"], as_index=False)["waveform"].agg(lambda values: np.nanmean(np.stack(values), axis=0))
-    metrics_root = output_root / "metrics"; statistics_root = output_root / "statistics"; figures_root = output_root / "figures"
+        shape_keys = ["dataset", "participant_id", "group", "band_name", "canonical_region", "direction"]
+        shape_keys.extend(column for column in SEGMENT_PROVENANCE if column in shape_table)
+        shape_table = shape_table.groupby(shape_keys, as_index=False)["waveform"].agg(lambda values: np.nanmean(np.stack(values), axis=0))
+    metrics_root = analysis_root / "metrics"; statistics_root = analysis_root / "statistics"; figures_root = analysis_root / "figures"
     metrics_root.mkdir(parents=True, exist_ok=True); statistics_root.mkdir(parents=True, exist_ok=True); figures_root.mkdir(parents=True, exist_ok=True)
     segment_table.to_csv(metrics_root / "abba_burst_segment_metrics.csv.gz", index=False)
     participant_table.to_csv(metrics_root / "abba_burst_participant_metrics.csv.gz", index=False)
@@ -539,24 +564,38 @@ def run(output_root: Path, config_path: Path | None = None, *, workers: int | No
             band_name=shape_table["band_name"].to_numpy(dtype=str),
             canonical_region=shape_table["canonical_region"].to_numpy(dtype=str),
             direction=shape_table["direction"].to_numpy(dtype=str),
+            source_group=shape_table["source_group"].to_numpy(dtype=str),
+            source_band_name=shape_table["source_band_name"].to_numpy(dtype=str),
+            band_definition=shape_table["band_definition"].to_numpy(dtype=str),
             cycles=np.linspace(-3.0, 3.0, 121),
             waveforms=np.stack(shape_table["waveform"].to_numpy()),
         )
-    _save_violins(participant_table, statistics, figures_root / "abba_burst_quantity_violins.png")
-    _save_shapes(shape_table, figures_root / "abba_burst_shapes.png", float(settings.get("confidence_level", 0.95)))
+    _save_violins(participant_table, statistics, figures_root / "abba_burst_quantity_violins.png", control_bands_qc=control_bands_qc)
+    _save_shapes(shape_table, figures_root / "abba_burst_shapes.png", float(settings.get("confidence_level", 0.95)), control_bands_qc=control_bands_qc)
     # Also provide focused, publication-friendly figures for the intervals
     # requested for direct comparison across datasets and populations.
     focused_statistics: list[pd.DataFrame] = []
-    for band_name in SELECTED_ABBA_BANDS:
-        focused_participant = _focused_comparison_view(participant_table, band_name)
-        focused_shape = _focused_comparison_view(shape_table, band_name)
+    focused_bands = sorted(participant_table["band_name"].dropna().unique()) if control_bands_qc else SELECTED_ABBA_BANDS
+    for band_name in focused_bands:
+        focused_participant = participant_table if control_bands_qc else _focused_comparison_view(participant_table, band_name)
+        focused_shape = shape_table if control_bands_qc else _focused_comparison_view(shape_table, band_name)
         focused_test = _group_statistics(focused_participant)
         if not focused_test.empty:
             focused_statistics.append(focused_test.loc[focused_test["band_name"].eq(band_name)].copy())
-        _save_violins(focused_participant, focused_test, figures_root / f"abba_burst_quantity_violins_{band_name}.png", [band_name])
-        _save_shapes(focused_shape, figures_root / f"abba_burst_shapes_{band_name}.png", float(settings.get("confidence_level", 0.95)), [band_name])
+        _save_violins(focused_participant, focused_test, figures_root / f"abba_burst_quantity_violins_{band_name}.png", [band_name], control_bands_qc=control_bands_qc)
+        _save_shapes(focused_shape, figures_root / f"abba_burst_shapes_{band_name}.png", float(settings.get("confidence_level", 0.95)), [band_name], control_bands_qc=control_bands_qc)
     if focused_statistics:
         pd.concat(focused_statistics, ignore_index=True).to_csv(statistics_root / "abba_burst_focused_group_comparisons.csv", index=False)
+    manifest = {
+        "analysis": "abba_temporal_bursts",
+        "band_definition": QC_BAND_DEFINITION if control_bands_qc else "group_specific_abba",
+        "control_bands_qc": bool(control_bands_qc),
+        "recordings": len(tasks),
+        "segment_rows": len(segment_table),
+        "participant_rows": len(participant_table),
+        "shape_participants": len(shape_table),
+    }
+    (analysis_root / "abba_burst_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     return {"recordings": len(tasks), "segment_rows": len(segment_table), "participant_rows": len(participant_table), "shape_participants": len(shape_table)}
 
 
@@ -566,8 +605,9 @@ def main() -> None:
     parser.add_argument("--config", type=Path, default=Path("config/analyses/rhythmicity.json"))
     parser.add_argument("--workers", type=int, default=None)
     parser.add_argument("--max-recordings", type=int, default=None, help="Process only the first recordings for a quick smoke test")
+    parser.add_argument("--control-bands-qc", action="store_true", help="Apply each dataset's Control ABBA limits to every group and write isolated QC outputs")
     args = parser.parse_args()
-    print(json.dumps(run(args.output_root, args.config, workers=args.workers, max_recordings=args.max_recordings), indent=2))
+    print(json.dumps(run(args.output_root, args.config, workers=args.workers, max_recordings=args.max_recordings, control_bands_qc=args.control_bands_qc), indent=2))
 
 
 if __name__ == "__main__":
