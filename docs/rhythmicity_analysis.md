@@ -274,6 +274,42 @@ the independent observations. The shape curves use the nearest trough and a
 normalized ±3-cycle window. This is an intentional sensitivity implementation
 of the paper's Figure 3B logic, not a replacement for the project's canonical
 eBOSC burst pipeline.
+
+### ABBA burst–clinical associations
+
+Run `MPLCONFIGDIR=/tmp/mpl-cache-abba PYTHONPATH=src python scripts/plot_abba_burst_clinical.py`
+after the ABBA burst metrics exist. The
+script does not reread or refilter EEG: it merges
+`metrics/abba_burst_participant_metrics.csv.gz` with the participant clinical
+metadata in `outputs/global/canonical/*/recordings.csv.gz`. It writes one
+participant-level scatter-plot figure for each selected interval
+(`theta_1`, `alpha_1`, `beta_1`, `beta_2`, and `gamma_1`) and each outcome
+family:
+
+* `figures/abba_burst_clinical_cognitive_<band>.png` uses MoCA in the three
+  standard datasets and MMSE in `medication_state`, with all available groups
+  shown in their group colours.
+* `figures/abba_burst_clinical_updrs_<band>.png` uses UPDRS and restricts the
+  correlation to PD groups (`PD`, `PD-OFF`, and `PD-ON`), because UPDRS is a
+  motor-severity scale rather than a control-versus-PD outcome. Medication
+  state has no UPDRS values in the canonical metadata and is marked as
+  unavailable.
+
+Each panel is one burst quantity versus the clinical score for one dataset;
+points are participant-state means, lines are pooled within-dataset least-
+squares guides, and annotations report Spearman rho, n, and BH-FDR q. Before
+testing, x-axis burst values are screened separately within each panel and
+values more than three ordinary standard deviations from that panel's x mean
+are excluded. No clinical-score values are removed by this rule. The retained
+statistics are in `statistics/abba_burst_clinical_correlations.csv`; every
+excluded participant/value is audited in
+`statistics/abba_burst_clinical_x_outlier_exclusions.csv`. These are
+exploratory, pooled associations: group separation, missing scores, the
+outlier rule, and the data-driven ABBA interval definitions can all influence
+a correlation, so they should not be interpreted as causal or medication
+effects. The corresponding untrimmed sensitivity table is also retained as
+`statistics/abba_burst_clinical_correlations_untrimmed.csv` so the impact of
+the outlier rule can be checked directly.
 * `figures/topomaps/<dataset>_group_topomaps.png` contains group-average LAVI
   topomaps plus a PD-minus-Control (or medication-state PD-ON-minus-PD-OFF)
   contrast when the corresponding groups exist.
