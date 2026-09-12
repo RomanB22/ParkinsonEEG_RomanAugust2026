@@ -225,6 +225,55 @@ All figures are saved at 300 dpi in `outputs/rhythmicity/figures/`.
   compared directly across datasets. Profiles for which ABBA returned no
   finite interval are reported in the panel count but do not contribute an
   interval overlay.
+* `abba_band_limits_by_group.png` stratifies the all-participant result by
+  diagnostic group: Control and PD for the standard datasets, and Control,
+  PD-OFF, and PD-ON for medication-state. Transparent intervals are the
+  participant-level limits within each group; opaque intervals are ABBA applied
+  to that group's mean participant profile. The corresponding group-average
+  limits are in `statistics/abba_group_mean_segments.csv`.
+* `abba_burst_quantity_violins.png` applies the group-specific ABBA limits
+  shown in `abba_band_limits_by_group.png` to the cleaned time-domain EEG and
+  compares burst duration, cycle count, rate (normalised by interval width),
+  occupancy, and peak EEG amplitude in µV. Every ABBA interval is retained
+  separately with labels such as `delta_1`, `delta_2`, and so on; the group-mean
+  direction (high/low LAVI) is retained as metadata rather than pooled. The
+  medication row includes Control, PD-OFF, and PD-ON. Each point is one
+  participant-state mean and asterisks mark the strongest FDR-adjusted group
+  difference for the same label; the complete pairwise tests remain in the
+  statistics CSV. Detection uses the robust standardized all-electrode signal,
+  but the reported voltage is measured from an unstandardized highest-RMS
+  electrode after broadband artifact-outlier rejection, so it is in physical
+  microvolt units without common-average cancellation.
+* `abba_burst_shapes.png` shows the average trough-aligned, phase-resolved
+  burst shape for each named ABBA interval and population. Curves are first
+  averaged within participant and then across participants; ribbons are 95%
+  Student-t confidence intervals. The horizontal axis spans three cycles before
+  to three cycles after the nearest trough, and the vertical axis is the
+  band-passed EEG voltage in µV (not a normalized amplitude).
+* Focused versions are also written for `theta_1`, `alpha_1`, `beta_1`,
+  `beta_2`, and `gamma_1`: `abba_burst_quantity_violins_<band>.png` and
+  `abba_burst_shapes_<band>.png`. Each title reports whether that interval is
+  high- or low-LAVI (or whether the direction differs by population). For the
+  focused `theta_1` comparison only, medication Control uses its native
+  `theta_2` low-LAVI interval; its separate high-LAVI `theta_1` interval is
+  not mixed into the PD-OFF/PD-ON comparison. This alignment is documented in
+  `statistics/abba_burst_focused_group_comparisons.csv`.
+
+### ABBA temporal-burst sensitivity analysis
+
+Run the independent pipeline with
+`bash scripts/run_abba_burst_analysis.sh --workers 4`. It reads the ABBA
+group-mean intervals and canonical recording manifests, robustly z-scores each
+electrode within epoch, and averages electrodes before filtering. For every
+recording, the fixed group-specific ABBA intervals are filtered separately.
+Temporal bursts are runs above the 90th percentile of the band Hilbert
+amplitude; boundaries are expanded to the 75th percentile and runs shorter
+than two centre-frequency cycles are discarded. Quantities are calculated per
+named interval and then averaged within participant, keeping participants as
+the independent observations. The shape curves use the nearest trough and a
+normalized ±3-cycle window. This is an intentional sensitivity implementation
+of the paper's Figure 3B logic, not a replacement for the project's canonical
+eBOSC burst pipeline.
 * `figures/topomaps/<dataset>_group_topomaps.png` contains group-average LAVI
   topomaps plus a PD-minus-Control (or medication-state PD-ON-minus-PD-OFF)
   contrast when the corresponding groups exist.

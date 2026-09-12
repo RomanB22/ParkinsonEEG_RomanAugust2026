@@ -45,9 +45,13 @@ def _participant_profiles(output_root: Path) -> list[dict]:
     participants: list[dict] = []
     for dataset in dict.fromkeys(item["dataset"] for item in recording_profiles):
         dataset_items = [item for item in recording_profiles if item["dataset"] == dataset]
-        for participant_id in dict.fromkeys(item["participant_id"] for item in dataset_items):
-            items = [item for item in dataset_items if item["participant_id"] == participant_id]
-            participants.append({"dataset": dataset, "participant_id": participant_id, "group": items[0]["group"], "profile": np.nanmean(np.stack([item["profile"] for item in items]), axis=0), "foi": items[0]["foi"]})
+        # Keep medication ON and OFF recordings as separate participant-state
+        # profiles. For the other datasets the group is constant per subject,
+        # so this is equivalent to ordinary participant-level averaging.
+        participant_states = dict.fromkeys((item["participant_id"], item["group"]) for item in dataset_items)
+        for participant_id, group in participant_states:
+            items = [item for item in dataset_items if item["participant_id"] == participant_id and item["group"] == group]
+            participants.append({"dataset": dataset, "participant_id": participant_id, "group": group, "profile": np.nanmean(np.stack([item["profile"] for item in items]), axis=0), "foi": items[0]["foi"]})
     return participants
 
 
@@ -77,7 +81,24 @@ def _dataset_mean_profiles(participants: list[dict]) -> list[dict]:
     return means
 
 
-def _segment_rows(profiles: list[dict], source: str) -> pd.DataFrame:
+def _group_mean_profiles(participants: list[dict]) -> list[dict]:
+    """Build one mean participant profile per dataset and diagnostic group."""
+    means: list[dict] = []
+    for dataset in dict.fromkeys(item["dataset"] for item in participants):
+        dataset_items = [item for item in participants if item["dataset"] == dataset]
+        for group in dict.fromkeys(item["group"] for item in dataset_items):
+            items = [item for item in dataset_items if item["group"] == group]
+            means.append({
+                "dataset": dataset,
+                "participant_id": f"{group}_mean_profile",
+                "group": group,
+                "profile": np.nanmean(np.stack([item["profile"] for item in items]), axis=0),
+                "foi": items[0]["foi"],
+            })
+    return means
+
+
+def _segment_rows(profiles: list[dict], source: str, bands: dict[str, tuple[float, float]]) -> pd.DataFrame:
     """Run ABBA and return one row per frequency segment."""
     rows: list[dict] = []
     for item in profiles:
@@ -100,7 +121,35 @@ def _segment_rows(profiles: list[dict], source: str) -> pd.DataFrame:
                 "direction": "high" if sign > 0 else "low",
                 "source": source,
             })
-    return pd.DataFrame(rows)
+    result = pd.DataFrame(rows)
+    if result.empty:
+        return result
+    # ABBA produces a variable number of intervals. Assign each interval to
+    # the canonical region with which it has the largest frequency overlap,
+    # then number intervals from low to high within that region. This yields
+    # labels such as delta_1/delta_2 without mixing separate ABBA intervals.
+    def region(start: float, end: float) -> str:
+        overlaps = {name: max(0.0, min(end, high) - max(start, low)) for name, (low, high) in bands.items()}
+        best = max(overlaps, key=overlaps.get)
+        if overlaps[best] <= 0.0:
+            midpoint = np.sqrt(start * end)
+            best = min(bands, key=lambda name: abs(np.sqrt(bands[name][0] * bands[name][1]) - midpoint))
+        return str(best)
+
+    result["canonical_region"] = [region(float(start), float(end)) for start, end in zip(result["start_hz"], result["end_hz"])]
+    key_columns = ["dataset"]
+    if source == "group_mean_profile":
+        key_columns.append("group")
+    elif source == "participant":
+        key_columns.extend(["participant_id", "group"])
+    for _, indices in result.groupby(key_columns, sort=False).groups.items():
+        ordered = result.loc[indices].sort_values(["start_hz", "end_hz"])
+        counters: dict[str, int] = {}
+        for index in ordered.index:
+            region_name = str(result.at[index, "canonical_region"])
+            counters[region_name] = counters.get(region_name, 0) + 1
+            result.at[index, "band_name"] = f"{region_name}_{counters[region_name]}"
+    return result
 
 
 def _save_figure(representatives: list[dict], bands: dict[str, tuple[float, float]], output: Path) -> pd.DataFrame:
@@ -202,7 +251,9 @@ def _save_limits_figure(
             last_color = ABBA_COLORS.get(str(mean_subset.iloc[-1]["direction"]), "#777777")
             axis.axvline(last_end, color=last_color, linewidth=0.8, alpha=0.95, zorder=2)
             axis.text(last_end, 0.17, f"{last_end:g}", rotation=90, ha="right", va="top", fontsize=6.5, color=last_color)
-        n_subjects = participant_subset["participant_id"].nunique()
+        # In medication-state the same participant contributes ON and OFF
+        # profiles, so count participant-state pairs rather than IDs alone.
+        n_subjects = participant_subset[["participant_id", "group"]].drop_duplicates().shape[0]
         n_profiles = (participant_counts or {}).get(dataset, n_subjects)
         count_label = f"n = {n_profiles} profiles" if n_profiles == n_subjects else f"n = {n_profiles} profiles\nABBA valid: {n_subjects}"
         axis.text(0.98, 0.97, count_label, transform=axis.transAxes, ha="right", va="top", fontsize=8, color="#555555")
@@ -225,6 +276,81 @@ def _save_limits_figure(
     plt.close(fig)
 
 
+def _save_group_limits_figure(
+    participant_segments: pd.DataFrame,
+    group_mean_segments: pd.DataFrame,
+    bands: dict[str, tuple[float, float]],
+    output: Path,
+    participant_counts: dict[tuple[str, str], int],
+) -> None:
+    """Compare ABBA limits between diagnostic groups within each dataset."""
+    datasets = list(dict.fromkeys(group_mean_segments["dataset"]))
+    fig, axes = plt.subplots(1, len(datasets), figsize=(4.8 * len(datasets), 6.0), sharey=True, squeeze=False)
+    axes = axes.flat
+    shared_x_min = min(float(low) for low, _ in bands.values())
+    shared_x_max = max(float(high) for _, high in bands.values())
+    group_order = {"Control": 0, "PD": 1, "PD_OFF": 1, "PD_ON": 2}
+    for axis, dataset in zip(axes, datasets):
+        groups = sorted(
+            group_mean_segments.loc[group_mean_segments["dataset"].eq(dataset), "group"].dropna().unique(),
+            key=lambda group: (group_order.get(str(group), 99), str(group)),
+        )
+        n_groups = len(groups)
+        # The top strip is reserved for canonical definitions. Remaining rows
+        # are diagnostic groups, with the same vertical positions in every
+        # panel so Control/PD/ON/OFF can be compared directly.
+        group_positions = np.linspace(0.56, 0.24, n_groups) if n_groups > 1 else np.array([0.40])
+        for band, (low, high) in bands.items():
+            axis.add_patch(Rectangle((low, 0.78), high - low, 0.14, facecolor=BAND_COLORS.get(band, "#999999"), edgecolor="white", linewidth=0.8, alpha=0.65))
+            axis.text(np.sqrt(low * high), 0.85, f"{band.title()}\n{low:g}–{high:g} Hz", ha="center", va="center", fontsize=7.5, fontweight="bold", color="#333333", linespacing=1.05)
+        for group, y in zip(groups, group_positions):
+            subject_subset = participant_segments.loc[(participant_segments["dataset"].eq(dataset)) & (participant_segments["group"].eq(group))]
+            mean_subset = group_mean_segments.loc[(group_mean_segments["dataset"].eq(dataset)) & (group_mean_segments["group"].eq(group))]
+            # Subject-level intervals form a translucent distribution behind
+            # the group-average segmentation.
+            for _, row in subject_subset.iterrows():
+                start, end = float(row["start_hz"]), float(row["end_hz"])
+                color = ABBA_COLORS.get(str(row["direction"]), "#777777")
+                axis.add_patch(Rectangle((start, y - 0.065), max(end - start, 0.015), 0.13, facecolor=color, edgecolor="none", alpha=0.035, zorder=1))
+            for _, row in mean_subset.iterrows():
+                start, end = float(row["start_hz"]), float(row["end_hz"])
+                color = ABBA_COLORS.get(str(row["direction"]), "#777777")
+                axis.add_patch(Rectangle((start, y - 0.065), max(end - start, 0.015), 0.13, facecolor=color, edgecolor="white", linewidth=0.7, alpha=0.95, zorder=3))
+                # Keep the interval identifier visible in the same figure
+                # used to define the burst-analysis labels.  Geometric
+                # centering is appropriate because the frequency axis is log.
+                if np.isfinite(start) and np.isfinite(end) and end > start:
+                    axis.text(np.sqrt(start * end), y + 0.075, str(row.get("band_name", "")), ha="center", va="bottom", fontsize=6.5, fontweight="bold", color=color, rotation=90, clip_on=True, zorder=4)
+                axis.axvline(start, color=color, linewidth=0.7, alpha=0.9, zorder=2)
+                axis.text(start, y - 0.10, f"{start:g}", rotation=90, ha="right", va="top", fontsize=6.2, color=color)
+            if not mean_subset.empty:
+                last_end = float(mean_subset.iloc[-1]["end_hz"])
+                last_color = ABBA_COLORS.get(str(mean_subset.iloc[-1]["direction"]), "#777777")
+                axis.axvline(last_end, color=last_color, linewidth=0.7, alpha=0.9, zorder=2)
+                axis.text(last_end, y - 0.10, f"{last_end:g}", rotation=90, ha="right", va="top", fontsize=6.2, color=last_color)
+            n_profiles = participant_counts.get((dataset, str(group)), 0)
+            n_valid = subject_subset["participant_id"].nunique()
+            label = f"{group} (n={n_profiles})" if n_valid == n_profiles else f"{group} (n={n_profiles}; valid={n_valid})"
+            axis.text(0.01, y, label, transform=axis.get_yaxis_transform(), ha="left", va="center", fontsize=8.5, fontweight="bold", color="#333333")
+        axis.set_xscale("log"); axis.set_xlim(shared_x_min, shared_x_max); axis.set_ylim(0.08, 1.0)
+        axis.set_yticks([])
+        axis.grid(axis="x", alpha=0.22, which="both")
+        axis.set_xlabel("Frequency (Hz)")
+        axis.set_title(dataset, fontsize=11, fontweight="bold")
+    legend = [
+        Patch(facecolor=ABBA_COLORS["high"], alpha=0.10, label="Participant high intervals (transparent)"),
+        Patch(facecolor=ABBA_COLORS["low"], alpha=0.10, label="Participant low intervals (transparent)"),
+        Patch(facecolor=ABBA_COLORS["high"], alpha=0.95, label="Group-mean high intervals (opaque)"),
+        Patch(facecolor=ABBA_COLORS["low"], alpha=0.95, label="Group-mean low intervals (opaque)"),
+    ]
+    fig.suptitle("ABBA band limits by diagnostic group", y=0.985, fontsize=15, fontweight="bold")
+    fig.text(0.5, 0.925, "Control versus PD in standard datasets; Control, PD-OFF, and PD-ON in medication-state", ha="center", fontsize=9, color="#444444")
+    fig.legend(handles=legend, loc="upper center", bbox_to_anchor=(0.5, 0.865), ncol=2, frameon=False, fontsize=8.5)
+    fig.subplots_adjust(left=0.15, right=0.99, bottom=0.18, top=0.72, wspace=0.18)
+    fig.savefig(output, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+
 def run(output_root: Path, config_path: Path | None = None) -> dict[str, int]:
     config = json.loads(config_path.read_text()) if config_path and config_path.is_file() else {}
     bands = {str(name): (float(limits[0]), float(limits[1])) for name, limits in config.get("bands", DEFAULT_BANDS).items()}
@@ -233,8 +359,9 @@ def run(output_root: Path, config_path: Path | None = None) -> dict[str, int]:
     figures_root, statistics_root = output_root / "figures", output_root / "statistics"
     figures_root.mkdir(parents=True, exist_ok=True); statistics_root.mkdir(parents=True, exist_ok=True)
     segments = _save_figure(representatives, bands, figures_root / "abba_band_segmentation_comparison.png")
-    participant_segments = _segment_rows(participants, source="participant")
-    mean_segments = _segment_rows(_dataset_mean_profiles(participants), source="dataset_mean_profile")
+    participant_segments = _segment_rows(participants, source="participant", bands=bands)
+    mean_segments = _segment_rows(_dataset_mean_profiles(participants), source="dataset_mean_profile", bands=bands)
+    group_mean_segments = _segment_rows(_group_mean_profiles(participants), source="group_mean_profile", bands=bands)
     participant_counts = {dataset: sum(item["dataset"] == dataset for item in participants) for dataset in dict.fromkeys(item["dataset"] for item in participants)}
     _save_limits_figure(participant_segments, mean_segments, bands, figures_root / "abba_band_limits_all_subjects.png", participant_counts)
     # Keep the original filename as a convenient, backwards-compatible alias
@@ -243,7 +370,10 @@ def run(output_root: Path, config_path: Path | None = None) -> dict[str, int]:
     segments.to_csv(statistics_root / "abba_representative_segments.csv", index=False)
     participant_segments.to_csv(statistics_root / "abba_subject_segments.csv", index=False)
     mean_segments.to_csv(statistics_root / "abba_dataset_mean_segments.csv", index=False)
-    return {"datasets": len(representatives), "participants": len(participants), "segments": len(segments), "subject_segments": len(participant_segments)}
+    group_counts = {(dataset, str(group)): sum(item["dataset"] == dataset and str(item["group"]) == str(group) for item in participants) for dataset in dict.fromkeys(item["dataset"] for item in participants) for group in dict.fromkeys(item["group"] for item in participants if item["dataset"] == dataset)}
+    _save_group_limits_figure(participant_segments, group_mean_segments, bands, figures_root / "abba_band_limits_by_group.png", group_counts)
+    group_mean_segments.to_csv(statistics_root / "abba_group_mean_segments.csv", index=False)
+    return {"datasets": len(representatives), "participants": len(participants), "segments": len(segments), "subject_segments": len(participant_segments), "group_mean_segments": len(group_mean_segments)}
 
 
 def main() -> None:

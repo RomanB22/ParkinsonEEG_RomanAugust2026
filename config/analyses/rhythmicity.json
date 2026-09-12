@@ -16,5 +16,14 @@
     "alpha": [8.0, 13.0],
     "beta": [13.0, 30.0],
     "gamma": [30.0, 50.0]
+  },
+  "abba_bursts": {
+    "workers": 4,
+    "filter_order": 4,
+    "detection_percentile": 90.0,
+    "boundary_percentile": 75.0,
+    "minimum_cycles": 2.0,
+    "max_shape_bursts_per_segment": 100,
+    "confidence_level": 0.95
   }
 }
