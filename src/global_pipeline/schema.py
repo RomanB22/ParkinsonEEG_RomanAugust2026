@@ -137,6 +137,7 @@ class DatasetConfig:
     task: str = "Rest"
     raw_glob: str | None = None
     preprocessing_config: Path | None = None
+    exclude_participants_file: Path | None = None
     notch_frequency_hz: float | None = None
     auxiliary_names: tuple[str, ...] = ()
     enabled: bool = True
@@ -160,6 +161,7 @@ class DatasetConfig:
         epochs_dir = resolve(value.get("epochs_dir", "processed/epochs"))
         metadata = resolve(value.get("metadata"), allow_none=True)
         preprocessing_config = resolve(value.get("preprocessing_config"), allow_none=True)
+        exclude_participants_file = resolve(value.get("exclude_participants_file"), allow_none=True)
         return cls(
             dataset_id=dataset_id,
             root=resolve(value.get("root", ".")),
@@ -174,6 +176,7 @@ class DatasetConfig:
             task=str(value.get("task", "Rest")),
             raw_glob=(str(value["raw_glob"]) if value.get("raw_glob") else None),
             preprocessing_config=preprocessing_config,
+            exclude_participants_file=exclude_participants_file,
             notch_frequency_hz=(
                 float(value["notch_frequency_hz"])
                 if value.get("notch_frequency_hz") is not None

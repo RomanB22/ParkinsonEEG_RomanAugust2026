@@ -110,6 +110,7 @@
       "root": "ds008768-1.0.0",
       "metadata": "ds008768-1.0.0/participants.tsv",
       "session_metadata_glob": "sub-*/sub-*_sessions.tsv",
+      "exclude_participants_file": "config/exclusions/ds008768_primary_overlap_participants.csv",
       "epochs_dir": "processed_ds008768/epochs",
       "epoch_glob": "sub-*_task-rest_desc-cleaned_epo.fif",
       "task": "rest",

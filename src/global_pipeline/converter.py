@@ -89,6 +89,34 @@ def _raw_lookup(dataset: DatasetConfig) -> dict[str, Path]:
     return {recording_from_path(path): path for path in paths}
 
 
+def _excluded_participants(dataset: DatasetConfig) -> set[str]:
+    """Load a dataset-specific participant exclusion list.
+
+    Exclusions are applied before canonical records are constructed, so every
+    recording/session belonging to an excluded biological participant is
+    omitted from every downstream analysis.
+    """
+    path = dataset.exclude_participants_file
+    if path is None:
+        return set()
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Dataset {dataset.dataset_id!r}: participant exclusion file does not exist: {path}"
+        )
+    separator = "\t" if path.suffix.lower() in {".tsv", ".txt"} else ","
+    table = pd.read_csv(path, sep=separator, dtype=str)
+    if "participant_id" not in table:
+        raise ValueError(f"Participant exclusion file must contain participant_id: {path}")
+    result: set[str] = set()
+    for value in table["participant_id"].dropna():
+        participant_id = str(value).strip()
+        if participant_id and not participant_id.startswith("sub-"):
+            participant_id = f"sub-{participant_id}"
+        if participant_id:
+            result.add(participant_id)
+    return result
+
+
 def convert_dataset(dataset: DatasetConfig) -> list[CanonicalRecording]:
     if not dataset.epochs_dir.exists():
         raise FileNotFoundError(
@@ -105,9 +133,12 @@ def convert_dataset(dataset: DatasetConfig) -> list[CanonicalRecording]:
     metadata = _metadata_index(_read_metadata(dataset))
     session_metadata = _session_metadata_index(dataset)
     raw_paths = _raw_lookup(dataset)
+    excluded_participants = _excluded_participants(dataset)
     records: list[CanonicalRecording] = []
     for epoch_path in epoch_paths:
         participant_id = subject_from_path(epoch_path)
+        if participant_id in excluded_participants:
+            continue
         session_id = session_from_path(epoch_path)
         recording_id = recording_from_path(epoch_path)
         row = dict(metadata.get(recording_id, metadata.get(participant_id, {})))
@@ -184,6 +215,11 @@ def convert_config(
                     "dataset_id": dataset.dataset_id,
                     "n_recordings": len(table),
                     "groups": table["group"].value_counts().to_dict(),
+                    "participant_exclusion_file": (
+                        str(dataset.exclude_participants_file)
+                        if dataset.exclude_participants_file else None
+                    ),
+                    "n_excluded_participants_configured": len(_excluded_participants(dataset)),
                     "columns": list(CANONICAL_COLUMNS),
                 },
                 indent=2,

@@ -112,6 +112,46 @@ class GlobalPipelineInputTests(unittest.TestCase):
             self.assertEqual(result["moca"].tolist(), [28.0, 25.0])
             self.assertEqual(result["updrs"].tolist(), [15.0, 21.0])
 
+    def test_converter_excludes_every_session_for_listed_participant(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            epochs = root / "epochs"
+            epochs.mkdir()
+            for name in (
+                "sub-keep_ses-01_task-rest_desc-cleaned_epo.fif",
+                "sub-drop_ses-01_task-rest_desc-cleaned_epo.fif",
+                "sub-drop_ses-02_task-rest_desc-cleaned_epo.fif",
+            ):
+                (epochs / name).touch()
+            exclusions = root / "exclusions.csv"
+            pd.DataFrame({"participant_id": ["sub-drop"]}).to_csv(exclusions, index=False)
+            config_path = root / "config.json"
+            config_path.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "output_root": "out",
+                        "bands": {"alpha": [8, 13]},
+                        "datasets": [
+                            {
+                                "id": "study",
+                                "epochs_dir": str(epochs),
+                                "epoch_glob": "*.fif",
+                                "exclude_participants_file": str(exclusions),
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            config = load_global_config(config_path)
+            result = convert_config(config)
+            self.assertEqual(result["participant_id"].tolist(), ["sub-keep"])
+            dataset_manifest = json.loads(
+                (config.output_root / "canonical" / "study" / "dataset.json").read_text()
+            )
+            self.assertEqual(dataset_manifest["n_excluded_participants_configured"], 1)
+
     def test_four_dataset_configuration_is_supported_without_hard_coded_names(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
