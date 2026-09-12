@@ -30,6 +30,26 @@
     "datasets": ["primary", "ds007526-1.0.2", "ds008768-1.0.0", "medication_state"],
     "groups": ["Control", "PD", "PD_OFF", "PD_ON"],
     "medication_dataset_dir": "ds002778-1.0.5",
+    "comparison_band_alignments": [
+      {
+        "dataset": "medication_state",
+        "comparison_band_name": "theta_low_aligned",
+        "source_band_by_group": {
+          "Control": "theta_2",
+          "PD_OFF": "theta_1",
+          "PD_ON": "theta_1"
+        },
+        "required_direction": "low"
+      },
+      {
+        "dataset": "medication_state",
+        "comparison_band_name": "theta_high_control_only",
+        "source_band_by_group": {
+          "Control": "theta_1"
+        },
+        "required_direction": "high"
+      }
+    ],
     "workers": 4,
     "filter_order": 4,
     "detection_percentile": 90.0,

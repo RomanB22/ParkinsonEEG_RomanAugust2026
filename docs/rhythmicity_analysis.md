@@ -385,6 +385,7 @@ Final outputs are:
 - `metrics/abba_ordinal_participant_metrics.csv.gz`
 - `statistics/abba_ordinal_clinical_correlations.csv`
 - `figures/abba_ordinal/<dataset>__<ABBA-band>.png`
+- `figures/abba_ordinal/cross_dataset_planes/<scope>__<region_direction>.png`
 - `abba_ordinal_manifest.json`
 
 The clinical table contains Spearman correlations for MoCA, MMSE, and UPDRS,
@@ -395,6 +396,21 @@ signals (point fill represents C), plus H/C/F scatterplots against the
 available cognitive score (MoCA preferred, MMSE otherwise) and UPDRS.
 Population is encoded by both color and marker shape in every panel: circles
 for Control, squares for PD, triangles for PD-OFF, and diamonds for PD-ON.
+For medication-state theta comparisons, the configured
+`theta_low_aligned` comparison deliberately combines Control `theta_2` with
+PD-OFF `theta_1` and PD-ON `theta_1`. These are all ABBA low-LAVI intervals.
+The native interval remains in `band_name`; the harmonized plotting and
+correlation label is stored separately in `comparison_band_name`.
+The unmatched high-LAVI Control `theta_1` is labeled
+`theta_high_control_only` so it cannot be mistaken for the aligned
+cross-population theta comparison.
+
+The cross-dataset plane gallery contains separate figures for `full_signal`
+and `within_bout`. Within each scope, one figure is written for every ABBA
+region/direction characteristic observed in at least two datasets. Each figure
+has four dataset rows and paired H×C and H×F columns with shared axes. Thus the
+theta-low figure compares the aligned low-LAVI theta interval in all four
+datasets, including the special medication-state mapping above.
 The medication-state canonical table does not expose Total UPDRS in its generic
 `updrs` field, so this pipeline reads `Total UPDRS` from each session's source
 behavior JSON; `updrs_source` records that file in the electrode and recording

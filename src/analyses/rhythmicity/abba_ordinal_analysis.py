@@ -30,6 +30,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import mne
 import numpy as np
 import pandas as pd
@@ -67,6 +68,29 @@ CONCATENATION_POLICY = "literal_concatenation_patterns_may_cross_joins"
 
 def _safe_name(value: str) -> str:
     return "".join(character if character.isalnum() or character in "-_" else "_" for character in value)
+
+
+def _comparison_band_name(task: dict[str, Any], band_name: str, direction: str) -> str:
+    """Map native ABBA labels onto explicitly comparable interval labels."""
+    for alignment in task.get("comparison_band_alignments", []):
+        if str(alignment.get("dataset")) != str(task["dataset"]):
+            continue
+        source = alignment.get("source_band_by_group", {}).get(str(task["group"]))
+        if source != str(band_name):
+            continue
+        required = alignment.get("required_direction")
+        if required is not None and str(required) != str(direction):
+            raise ValueError(
+                f"Configured alignment {alignment['comparison_band_name']} expected "
+                f"{required} LAVI for {task['group']} {band_name}, found {direction}"
+            )
+        return str(alignment["comparison_band_name"])
+    return str(band_name)
+
+
+def _cross_dataset_band_name(canonical_region: str, direction: str) -> str:
+    """Name ABBA bands by canonical region and shared LAVI characteristic."""
+    return f"{canonical_region}_{direction}"
 
 
 def _atomic_pickle(value: Any, path: Path) -> None:
@@ -189,6 +213,12 @@ def _recording_task(task: dict[str, Any]) -> dict[str, Any]:
             "end_hz": high_hz,
             "peak_hz": float(segment["peak_hz"]),
         }
+        segment_meta["comparison_band_name"] = _comparison_band_name(
+            task, segment_meta["band_name"], segment_meta["direction"]
+        )
+        segment_meta["cross_dataset_band_name"] = _cross_dataset_band_name(
+            segment_meta["canonical_region"], segment_meta["direction"]
+        )
         for scope, signals in scopes.items():
             metrics = _electrode_metrics(
                 signals,
@@ -275,13 +305,20 @@ def _refresh_result_metadata(result: dict[str, Any], task: dict[str, Any]) -> No
     for table_name in ("recording_rows", "electrode_rows"):
         for row in result[table_name]:
             row.update({key: task[key] for key in keys})
+            row["comparison_band_name"] = _comparison_band_name(
+                task, str(row["band_name"]), str(row["direction"])
+            )
+            row["cross_dataset_band_name"] = _cross_dataset_band_name(
+                str(row["canonical_region"]), str(row["direction"])
+            )
 
 
 def _participant_metrics(recordings: pd.DataFrame) -> pd.DataFrame:
     if recordings.empty:
         return recordings.copy()
     keys = [
-        "dataset", "participant_id", "group", "band_name", "canonical_region",
+        "dataset", "participant_id", "group", "comparison_band_name",
+        "cross_dataset_band_name", "band_name", "canonical_region",
         "direction", "segment_index", "start_hz", "end_hz", "peak_hz", "scope",
     ]
     numeric = [*METRICS, "n_bouts", "n_samples_per_electrode"]
@@ -309,7 +346,10 @@ def _fdr_bh(values: pd.Series) -> np.ndarray:
 
 def compute_correlations(participant: pd.DataFrame, minimum_n: int = 5) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    for (dataset, band, scope), frame in participant.groupby(["dataset", "band_name", "scope"]):
+    comparison_column = (
+        "comparison_band_name" if "comparison_band_name" in participant else "band_name"
+    )
+    for (dataset, band, scope), frame in participant.groupby(["dataset", comparison_column, "scope"]):
         group_sets = [("all", frame)] + [(str(group), selected) for group, selected in frame.groupby("group")]
         pd_frame = frame.loc[frame["group"].astype(str).str.startswith("PD")]
         if len(pd_frame) and set(pd_frame["group"]) != {"PD"}:
@@ -324,7 +364,7 @@ def compute_correlations(participant: pd.DataFrame, minimum_n: int = 5) -> pd.Da
                     else:
                         rho, p_value = np.nan, np.nan
                     rows.append({
-                        "dataset": dataset, "band_name": band, "scope": scope,
+                        "dataset": dataset, "comparison_band_name": band, "scope": scope,
                         "group_model": group_model, "outcome": outcome, "metric": metric,
                         "n": int(len(paired)), "spearman_rho": rho, "p_value": p_value,
                     })
@@ -349,7 +389,7 @@ def compute_correlations(participant: pd.DataFrame, minimum_n: int = 5) -> pd.Da
                 else:
                     rho, p_value = np.nan, np.nan
                 rows.append({
-                    "dataset": dataset, "band_name": band, "scope": scope,
+                    "dataset": dataset, "comparison_band_name": band, "scope": scope,
                     "group_model": "PD_ON_minus_PD_OFF", "outcome": "updrs_change",
                     "metric": metric, "n": int(len(joined)), "spearman_rho": rho,
                     "p_value": p_value,
@@ -391,7 +431,7 @@ def _scatter(axis: plt.Axes, frame: pd.DataFrame, outcome: str, metric: str) -> 
 
 def _plot_band(frame: pd.DataFrame, output: Path, dpi: int) -> None:
     dataset = str(frame["dataset"].iloc[0])
-    band = str(frame["band_name"].iloc[0])
+    band = str(frame["comparison_band_name"].iloc[0])
     cognitive = "moca" if frame["moca"].notna().any() else "mmse"
     figure, axes = plt.subplots(4, 4, figsize=(18, 15), constrained_layout=True)
     for column, scope in enumerate(("full_signal", "within_bout")):
@@ -418,10 +458,11 @@ def _plot_band(frame: pd.DataFrame, output: Path, dpi: int) -> None:
     colorbar.set_label("Statistical complexity (C)")
     axes[0, 2].axis("off")
     axes[0, 3].axis("off")
-    limits = frame.groupby("group")[["start_hz", "end_hz"]].first()
+    limits = frame.groupby("group")[["start_hz", "end_hz", "band_name"]].first()
     directions = frame.groupby("group")["direction"].first()
     limit_text = "\n".join(
-        f"{str(group).replace('PD_', 'PD-')}: {row.start_hz:g}–{row.end_hz:g} Hz ({directions[group]})"
+        f"{str(group).replace('PD_', 'PD-')}: {row.band_name}, "
+        f"{row.start_hz:g}–{row.end_hz:g} Hz ({directions[group]})"
         for group, row in limits.iterrows()
     )
     axes[0, 2].text(0.0, 1.0, "ABBA group-mean limits\n" + limit_text, va="top", fontsize=11)
@@ -447,6 +488,128 @@ def _plot_band(frame: pd.DataFrame, output: Path, dpi: int) -> None:
     output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output, dpi=int(dpi), bbox_inches="tight")
     plt.close(figure)
+
+
+def _plot_cross_dataset_plane(
+    frame: pd.DataFrame,
+    *,
+    scope: str,
+    band: str,
+    dataset_order: list[str],
+    output: Path,
+    dpi: int,
+) -> None:
+    selected = frame.loc[
+        frame["scope"].eq(scope) & frame["cross_dataset_band_name"].eq(band)
+    ]
+    figure, axes = plt.subplots(
+        len(dataset_order),
+        2,
+        figsize=(11.5, 3.2 * len(dataset_order)),
+        sharex="col",
+        sharey="col",
+        squeeze=False,
+        constrained_layout=True,
+    )
+    for row_index, dataset in enumerate(dataset_order):
+        dataset_frame = selected.loc[selected["dataset"].eq(dataset)]
+        if dataset_frame.empty:
+            for axis in axes[row_index]:
+                axis.text(
+                    0.5, 0.5, "No matching ABBA interval", ha="center", va="center",
+                    transform=axis.transAxes, color="0.45",
+                )
+                axis.grid(alpha=0.18)
+        else:
+            for group, group_frame in dataset_frame.groupby("group", sort=False):
+                style = {
+                    "color": GROUP_COLORS.get(str(group), "#666666"),
+                    "marker": GROUP_MARKERS.get(str(group), "o"),
+                    "s": 38,
+                    "alpha": 0.82,
+                    "label": str(group).replace("PD_", "PD-"),
+                }
+                axes[row_index, 0].scatter(
+                    group_frame["entropy"], group_frame["complexity"], **style
+                )
+                axes[row_index, 1].scatter(
+                    group_frame["entropy"], group_frame["fisher_information"], **style
+                )
+            sources = dataset_frame.groupby("group").agg(
+                band_name=("band_name", "first"),
+                start_hz=("start_hz", "first"),
+                end_hz=("end_hz", "first"),
+            )
+            source_text = "; ".join(
+                f"{str(group).replace('PD_', 'PD-')} {row.band_name} "
+                f"{row.start_hz:g}–{row.end_hz:g} Hz"
+                for group, row in sources.iterrows()
+            )
+            axes[row_index, 0].text(
+                0.01, 0.98, source_text, transform=axes[row_index, 0].transAxes,
+                va="top", fontsize=7, color="0.35",
+            )
+            for axis in axes[row_index]:
+                axis.grid(alpha=0.18)
+        axes[row_index, 0].set_ylabel(f"{dataset}\nComplexity (C)")
+        axes[row_index, 1].set_ylabel(f"{dataset}\nFisher information (F)")
+    axes[0, 0].set_title("H × C plane", fontweight="bold")
+    axes[0, 1].set_title("H × F plane", fontweight="bold")
+    axes[-1, 0].set_xlabel("Permutation entropy (H)")
+    axes[-1, 1].set_xlabel("Permutation entropy (H)")
+    present_groups = [
+        group for group in ("Control", "PD", "PD_OFF", "PD_ON")
+        if group in set(selected["group"])
+    ]
+    handles = [
+        Line2D(
+            [], [], linestyle="none", marker=GROUP_MARKERS[group],
+            markerfacecolor=GROUP_COLORS[group], markeredgecolor=GROUP_COLORS[group],
+            markersize=7, label=group.replace("PD_", "PD-"),
+        )
+        for group in present_groups
+    ]
+    scope_label = "Full filtered signal" if scope == "full_signal" else "Concatenated bouts"
+    figure.suptitle(
+        f"{scope_label} — ABBA {band.replace('_', ' ')} across four datasets",
+        fontsize=15,
+        fontweight="bold",
+    )
+    if handles:
+        figure.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    figure.savefig(output, dpi=int(dpi), bbox_inches="tight")
+    plt.close(figure)
+
+
+def _save_cross_dataset_planes(
+    participant: pd.DataFrame,
+    *,
+    dataset_order: list[str],
+    output_root: Path,
+    dpi: int,
+) -> list[Path]:
+    dataset_counts = participant.groupby("cross_dataset_band_name")["dataset"].nunique()
+    bands = sorted(dataset_counts.loc[dataset_counts.ge(2)].index.astype(str))
+    figure_root = output_root / "figures" / "abba_ordinal" / "cross_dataset_planes"
+    expected: list[Path] = []
+    for scope in ("full_signal", "within_bout"):
+        for band in bands:
+            path = figure_root / f"{scope}__{_safe_name(band)}.png"
+            _plot_cross_dataset_plane(
+                participant,
+                scope=scope,
+                band=band,
+                dataset_order=dataset_order,
+                output=path,
+                dpi=dpi,
+            )
+            expected.append(path)
+    expected_set = set(expected)
+    for path in figure_root.glob("*.png"):
+        if path not in expected_set:
+            path.unlink()
+    return expected
 
 
 def _make_tasks(config: dict[str, Any], datasets: list[str] | None, recordings: list[str] | None) -> dict[str, list[dict[str, Any]]]:
@@ -501,6 +664,7 @@ def _make_tasks(config: dict[str, Any], datasets: list[str] | None, recordings: 
                 "embedding_dimension": int(settings["embedding_dimension"]),
                 "delay_samples": int(settings["delay_samples"]),
                 "minimum_scope_samples": int(settings["minimum_scope_samples"]),
+                "comparison_band_alignments": settings.get("comparison_band_alignments", []),
             })
             tasks.append(task)
         if tasks:
@@ -588,12 +752,36 @@ def run(
     _write_csv(electrode_table, metrics_root / "abba_ordinal_electrode_metrics.csv.gz")
     _write_csv(participant_table, metrics_root / "abba_ordinal_participant_metrics.csv.gz")
     _write_csv(correlations, statistics_root / "abba_ordinal_clinical_correlations.csv")
-    figure_count = 0
+    dataset_figure_count = 0
+    cross_dataset_figure_count = 0
     if generate_figures:
-        for (dataset, band), frame in participant_table.groupby(["dataset", "band_name"], sort=True):
+        expected_paths: set[Path] = set()
+        for (dataset, band), frame in participant_table.groupby(["dataset", "comparison_band_name"], sort=True):
             path = output_root / "figures" / "abba_ordinal" / f"{_safe_name(dataset)}__{_safe_name(band)}.png"
             _plot_band(frame, path, int(settings.get("figure_dpi", 200)))
-            figure_count += 1
+            expected_paths.add(path)
+            dataset_figure_count += 1
+        figure_root = output_root / "figures" / "abba_ordinal"
+        for dataset in tasks_by_dataset:
+            prefix = f"{_safe_name(dataset)}__"
+            for path in figure_root.glob(f"{prefix}*.png"):
+                if path not in expected_paths:
+                    path.unlink()
+        configured_order = [
+            str(dataset) for dataset in settings.get("datasets", [])
+            if str(dataset) in tasks_by_dataset
+        ]
+        dataset_order = configured_order + [
+            dataset for dataset in tasks_by_dataset if dataset not in configured_order
+        ]
+        cross_dataset_paths = _save_cross_dataset_planes(
+            participant_table,
+            dataset_order=dataset_order,
+            output_root=output_root,
+            dpi=int(settings.get("figure_dpi", 200)),
+        )
+        cross_dataset_figure_count = len(cross_dataset_paths)
+    figure_count = dataset_figure_count + cross_dataset_figure_count
     manifest = {
         "analysis": "abba_band_full_and_concatenated_bout_ordinal_hcf",
         "created_utc": datetime.now(timezone.utc).isoformat(),
@@ -605,10 +793,18 @@ def run(
         "n_participants": int(participant_table[["dataset", "participant_id"]].drop_duplicates().shape[0]),
         "resumed_recordings": int(resumed),
         "figures": int(figure_count),
+        "dataset_band_figures": int(dataset_figure_count),
+        "cross_dataset_plane_figures": int(cross_dataset_figure_count),
     }
     manifest_path = output_root / "abba_ordinal_manifest.json"
     manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-    return {"recordings": manifest["n_recordings"], "participants": manifest["n_participants"], "figures": figure_count, "resumed": resumed}
+    return {
+        "recordings": manifest["n_recordings"],
+        "participants": manifest["n_participants"],
+        "figures": figure_count,
+        "cross_dataset_plane_figures": cross_dataset_figure_count,
+        "resumed": resumed,
+    }
 
 
 def main() -> None:

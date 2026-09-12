@@ -9,6 +9,8 @@ import pandas as pd
 
 from analyses.rhythmicity.abba_ordinal_analysis import (
     CONCATENATION_POLICY,
+    _comparison_band_name,
+    _cross_dataset_band_name,
     _electrode_metrics,
     compute_correlations,
     concatenate_bouts,
@@ -49,6 +51,41 @@ class AbbaOrdinalAnalysisTests(unittest.TestCase):
 
     def test_policy_explicitly_allows_cross_join_patterns(self) -> None:
         self.assertIn("may_cross_joins", CONCATENATION_POLICY)
+
+    def test_medication_low_theta_alignment_uses_control_theta_2(self) -> None:
+        alignment = [{
+            "dataset": "medication_state",
+            "comparison_band_name": "theta_low_aligned",
+            "source_band_by_group": {
+                "Control": "theta_2", "PD_OFF": "theta_1", "PD_ON": "theta_1"
+            },
+            "required_direction": "low",
+        }]
+        for group, source in (("Control", "theta_2"), ("PD_OFF", "theta_1"), ("PD_ON", "theta_1")):
+            task = {"dataset": "medication_state", "group": group, "comparison_band_alignments": alignment}
+            self.assertEqual(_comparison_band_name(task, source, "low"), "theta_low_aligned")
+        control = {"dataset": "medication_state", "group": "Control", "comparison_band_alignments": alignment}
+        self.assertEqual(_comparison_band_name(control, "theta_1", "high"), "theta_1")
+
+    def test_control_high_theta_can_be_labeled_as_noncomparison(self) -> None:
+        task = {
+            "dataset": "medication_state",
+            "group": "Control",
+            "comparison_band_alignments": [{
+                "dataset": "medication_state",
+                "comparison_band_name": "theta_high_control_only",
+                "source_band_by_group": {"Control": "theta_1"},
+                "required_direction": "high",
+            }],
+        }
+        self.assertEqual(
+            _comparison_band_name(task, "theta_1", "high"),
+            "theta_high_control_only",
+        )
+
+    def test_cross_dataset_band_uses_region_and_lavi_direction(self) -> None:
+        self.assertEqual(_cross_dataset_band_name("theta", "low"), "theta_low")
+        self.assertEqual(_cross_dataset_band_name("beta", "high"), "beta_high")
 
     def test_paired_change_tolerates_one_state_with_all_missing_metrics(self) -> None:
         rows = []
