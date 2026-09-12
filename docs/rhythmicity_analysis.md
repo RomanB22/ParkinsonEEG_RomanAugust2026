@@ -388,6 +388,22 @@ MPLCONFIGDIR=/tmp/mpl-cache-rhythmicity PYTHONPATH=src \
   python scripts/run_abba_ordinal_analysis.py --workers 4 --control-bands-qc
 ```
 
+The configured embedding-dimension sensitivity analysis runs D=4, 5, and 6
+independently at tau=1:
+
+```bash
+MNE_DONTWRITE_HOME=true NUMBA_DISABLE_JIT=1 PYTHONPATH=src \
+  conda run --no-capture-output -n MNE_August2026 \
+  python scripts/run_abba_ordinal_sweep.py --workers 4
+```
+
+Outputs and generated configs are isolated under
+`outputs/rhythmicity/abba_ordinal_dimension_sweep/D<dimension>_tau1/`.
+Compatible checkpoints from the former single-D run are reused for D=5.
+Add `--control-bands-qc` to run the same D=4/5/6 sweep with each dataset's
+Control-group ABBA limits applied unchanged to every population. Those outputs
+are isolated in each dimension's `control_band_qc/` subdirectory.
+
 It uses the same dataset-specific Control limits and `{band}_low` /
 `{band}_high` notation as the burst QC, with independent checkpoints, metrics,
 statistics, figures, and manifest under `outputs/rhythmicity/control_band_qc/`.

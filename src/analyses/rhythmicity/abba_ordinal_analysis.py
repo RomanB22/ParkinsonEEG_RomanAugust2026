@@ -310,9 +310,20 @@ def _refresh_result_metadata(result: dict[str, Any], task: dict[str, Any]) -> No
         "participant_id", "session_id", "group", "medication_state", "moca",
         "mmse", "updrs", "updrs_source", "age_years", "sex",
     )
+    segments = {
+        int(segment["segment_index"]): segment for segment in task["segments"]
+    }
     for table_name in ("recording_rows", "electrode_rows"):
         for row in result[table_name]:
             row.update({key: task[key] for key in keys})
+            segment = segments[int(row["segment_index"])]
+            row["source_group"] = str(segment.get("source_group", task["group"]))
+            row["source_band_name"] = str(
+                segment.get("source_band_name", segment["band_name"])
+            )
+            row["band_definition"] = str(
+                segment.get("band_definition", "group_specific_abba")
+            )
             row["comparison_band_name"] = _comparison_band_name(
                 task, str(row["band_name"]), str(row["direction"])
             )
@@ -631,7 +642,9 @@ def _save_cross_dataset_planes(
 
 
 def _make_tasks(config: dict[str, Any], datasets: list[str] | None, recordings: list[str] | None, *, control_bands_qc: bool = False) -> dict[str, list[dict[str, Any]]]:
-    output_root = Path(config["output_dir"])
+    # Dimension-sensitivity runs write beneath their own output directory but
+    # consume the ABBA segments produced by the shared rhythmicity analysis.
+    output_root = Path(config.get("source_output_dir", config["output_dir"]))
     segments = pd.read_csv(output_root / "statistics" / "abba_group_mean_segments.csv")
     if control_bands_qc:
         segments = control_defined_segments(segments)

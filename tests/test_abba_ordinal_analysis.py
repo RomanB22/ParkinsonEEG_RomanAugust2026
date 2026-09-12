@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import numpy as np
 import pandas as pd
@@ -12,6 +14,7 @@ from analyses.rhythmicity.abba_ordinal_analysis import (
     _comparison_band_name,
     _cross_dataset_band_name,
     _electrode_metrics,
+    _refresh_result_metadata,
     compute_correlations,
     concatenate_bouts,
 )
@@ -19,9 +22,85 @@ from analyses.rhythmicity.control_band_qc import (
     QC_BAND_DEFINITION,
     control_defined_segments,
 )
+from analyses.rhythmicity.abba_ordinal_sweep import _seed_compatible_checkpoints
 
 
 class AbbaOrdinalAnalysisTests(unittest.TestCase):
+    def test_checkpoint_refresh_backfills_band_provenance(self) -> None:
+        row = {
+            "segment_index": 2,
+            "band_name": "theta_1",
+            "canonical_region": "theta",
+            "direction": "low",
+        }
+        result = {"recording_rows": [row.copy()], "electrode_rows": [row.copy()]}
+        task = {
+            "participant_id": "sub-001",
+            "session_id": "",
+            "group": "PD",
+            "medication_state": "",
+            "moca": 25.0,
+            "mmse": 27.0,
+            "updrs": 30.0,
+            "updrs_source": "table.tsv",
+            "age_years": 70.0,
+            "sex": "M",
+            "dataset": "study",
+            "comparison_band_alignments": [],
+            "segments": [{
+                "segment_index": 2,
+                "band_name": "theta_1",
+                "source_group": "Control",
+                "source_band_name": "theta_2",
+                "band_definition": "control_defined_abba",
+            }],
+        }
+        _refresh_result_metadata(result, task)
+        for refreshed in (result["recording_rows"][0], result["electrode_rows"][0]):
+            self.assertEqual(refreshed["source_group"], "Control")
+            self.assertEqual(refreshed["source_band_name"], "theta_2")
+            self.assertEqual(refreshed["band_definition"], "control_defined_abba")
+
+    def test_sweep_reuses_only_matching_legacy_dimension_checkpoints(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            checkpoint = source / "intermediate" / "abba_ordinal_checkpoints" / "study" / "one.pkl"
+            checkpoint.parent.mkdir(parents=True)
+            checkpoint.write_bytes(b"checkpoint")
+            base = {
+                "output_dir": str(source),
+                "abba_ordinal": {"embedding_dimension": 5, "delay_samples": 1},
+            }
+            target = root / "target"
+            self.assertEqual(_seed_compatible_checkpoints(base, target, 4, 1), 0)
+            self.assertEqual(_seed_compatible_checkpoints(base, target, 5, 1), 1)
+            self.assertEqual(
+                (target / "intermediate" / "abba_ordinal_checkpoints" / "study" / "one.pkl").read_bytes(),
+                b"checkpoint",
+            )
+
+    def test_sweep_reuses_matching_control_band_checkpoints(self) -> None:
+        with TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / "source"
+            checkpoint = source / "control_band_qc" / "intermediate" / "abba_ordinal_checkpoints" / "study" / "one.pkl"
+            checkpoint.parent.mkdir(parents=True)
+            checkpoint.write_bytes(b"control checkpoint")
+            base = {
+                "output_dir": str(source),
+                "abba_ordinal": {"embedding_dimension": 5, "delay_samples": 1},
+            }
+            target = root / "target"
+            self.assertEqual(
+                _seed_compatible_checkpoints(
+                    base, target, 5, 1, control_bands_qc=True
+                ),
+                1,
+            )
+            copied = target / "control_band_qc" / "intermediate" / "abba_ordinal_checkpoints" / "study" / "one.pkl"
+            self.assertEqual(copied.read_bytes(), b"control checkpoint")
+
     def test_control_defined_segments_use_direction_labels_and_only_control_limits(self) -> None:
         segments = pd.DataFrame([
             {"dataset": "study", "group": "Control", "band_name": "theta_2", "canonical_region": "theta", "direction": "low", "start_hz": 4.5, "end_hz": 7.5},
