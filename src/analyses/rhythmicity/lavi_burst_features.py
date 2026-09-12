@@ -296,7 +296,7 @@ def run(output_root: Path, config_path: Path | None = None) -> dict[str, int]:
     statistics = _group_statistics(participant)
     statistics.to_csv(statistics_root / "lavi_burst_feature_group_comparisons.csv", index=False)
     _save_violins(participant, figures_root, bands_ordered, statistics)
-    return {"electrode_rows": len(electrode), "participant_rows": len(participant), "n_participants": int(participant["participant_id"].nunique()) if not participant.empty else 0}
+    return {"electrode_rows": len(electrode), "participant_rows": len(participant), "n_participants": int(participant[["dataset", "participant_id"]].drop_duplicates().shape[0]) if not participant.empty else 0}
 
 
 def main() -> None:

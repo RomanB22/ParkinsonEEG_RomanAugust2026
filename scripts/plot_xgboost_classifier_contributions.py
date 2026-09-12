@@ -724,12 +724,17 @@ def _plot_contribution_bars(
 def _load_classifier_data(root: Path, output_dir: Path) -> tuple[pd.DataFrame, list[str], XGBClassifier]:
     table = workflow._load_table(root)
     feature_file = output_dir / "classification_minimal_features.csv"
-    model_file = output_dir / "classification_minimal_24_features.json"
-    if not feature_file.exists() or not model_file.exists():
+    if not feature_file.exists():
         raise FileNotFoundError(
             "Compact classifier outputs are missing; run analyze_xgboost_minimal_features.py first"
         )
     features = pd.read_csv(feature_file).sort_values("rank")["feature"].tolist()
+    model_file = output_dir / f"classification_minimal_{len(features)}_features.json"
+    if not model_file.exists():
+        raise FileNotFoundError(
+            "Selected compact classifier model is missing; run "
+            "analyze_xgboost_minimal_features.py first"
+        )
     model = XGBClassifier()
     model.load_model(model_file)
     return table, features, model

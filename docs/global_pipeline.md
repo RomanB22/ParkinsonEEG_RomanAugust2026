@@ -15,6 +15,16 @@ The four configured studies are:
 
 All four are enabled in [`config/global_pipeline.json`](../config/global_pipeline.json).
 
+The `primary` cohort is also distributed as a subset of `ds008768-1.0.0`
+under different participant identifiers. To keep the four analysis cohorts
+independent, the `ds008768-1.0.0` configuration points to
+[`config/exclusions/ds008768_primary_overlap_participants.csv`](../config/exclusions/ds008768_primary_overlap_participants.csv).
+The converter excludes all sessions for those 149 participants before it
+constructs the canonical recording table. This removes 174 recordings and
+leaves 163 participants (183 recordings) in `ds008768-1.0.0`; repeat sessions
+belonging to participants outside the exclusion list remain included. The raw
+and preprocessed source files are not deleted.
+
 ```bash
 bash scripts/ensure_conda_environment.sh --env MNE_August2026
 conda run -n MNE_August2026 python -m pip install "xarray>=2024.10.0"

@@ -2213,7 +2213,12 @@ def _run_global_pipeline_parallel(
             sum(table["recording_id"].nunique() for table in all_feature_tables)
         ),
         "n_excluded_recordings": int(len(all_exclusions)),
-        "n_subjects": int(canonical["participant_id"].nunique()),
+        # BIDS participant labels are only unique within a dataset.  Counting
+        # the label alone incorrectly merges unrelated people such as
+        # ``primary/sub-001`` and ``ds008768/sub-001``.
+        "n_subjects": int(
+            canonical[["dataset_id", "participant_id"]].drop_duplicates().shape[0]
+        ),
         "groups": canonical["group"].value_counts().to_dict(),
         "analysis_exclusions": all_exclusions,
         "entropy_metrics": list(ENTROPY_METRICS),

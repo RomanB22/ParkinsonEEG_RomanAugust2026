@@ -61,13 +61,18 @@ def main() -> None:
     table = workflow._load_table(root)
     table = table.loc[table["target_pd"].eq(1) & table["moca"].notna()].copy()
     feature_file = output_dir / "regression_minimal_features.csv"
-    model_file = output_dir / "regression_minimal_12_features.json"
-    if not feature_file.exists() or not model_file.exists():
+    if not feature_file.exists():
         raise FileNotFoundError(
             "Compact MoCA outputs are missing; run analyze_xgboost_minimal_features.py first"
         )
     features = pd.read_csv(feature_file).sort_values("rank")["feature"].tolist()
     features = features[: min(args.top_n, len(features))]
+    model_file = output_dir / f"regression_minimal_{len(features)}_features.json"
+    if not model_file.exists():
+        raise FileNotFoundError(
+            "Selected compact MoCA model is missing; run "
+            "analyze_xgboost_minimal_features.py first"
+        )
     model = XGBRegressor()
     model.load_model(model_file)
 
