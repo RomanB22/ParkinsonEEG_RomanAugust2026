@@ -576,7 +576,13 @@ def _plot_cross_dataset_plane(
         fontweight="bold",
     )
     if handles:
-        figure.legend(handles=handles, loc="lower center", ncol=len(handles), frameon=False)
+        figure.legend(
+            handles=handles,
+            loc="lower center",
+            bbox_to_anchor=(0.5, -0.015),
+            ncol=len(handles),
+            frameon=False,
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output, dpi=int(dpi), bbox_inches="tight")
     plt.close(figure)
