@@ -448,9 +448,13 @@ cross-population theta comparison.
 The cross-dataset plane gallery contains separate figures for `full_signal`
 and `within_bout`. Within each scope, one figure is written for every ABBA
 region/direction characteristic observed in at least two datasets. Each figure
-has four dataset rows and paired H×C and H×F columns with shared axes. Thus the
-theta-low figure compares the aligned low-LAVI theta interval in all four
-datasets, including the special medication-state mapping above.
+overlays every dataset on one H×C plane and one H×F plane. Color identifies the
+dataset, marker shape identifies the population, small translucent markers are
+participants or conditions, and large outlined markers are dataset-by-group
+means. Thus the theta-low figure directly compares the aligned low-LAVI theta
+interval in all four datasets, including the special medication-state mapping
+above. Dimension-sweep figures include D in the title so D=4, D=5, and D=6 can
+be compared without relying on the parent directory name.
 The medication-state canonical table does not expose Total UPDRS in its generic
 `updrs` field, so this pipeline reads `Total UPDRS` from each session's source
 behavior JSON; `updrs_source` records that file in the electrode and recording

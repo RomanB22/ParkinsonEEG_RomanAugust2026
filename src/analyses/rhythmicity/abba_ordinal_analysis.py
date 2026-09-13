@@ -68,6 +68,18 @@ GROUP_MARKERS = {
     "PD_OFF": "^",
     "PD_ON": "D",
 }
+DATASET_COLORS = {
+    "primary": "#2166AC",
+    "ds007526-1.0.2": "#1B9E77",
+    "ds008768-1.0.0": "#D73027",
+    "medication_state": "#7B3294",
+}
+DATASET_LABELS = {
+    "primary": "Primary",
+    "ds007526-1.0.2": "ds007526",
+    "ds008768-1.0.0": "ds008768",
+    "medication_state": "Medication state",
+}
 CONCATENATION_POLICY = "literal_concatenation_patterns_may_cross_joins"
 
 
@@ -521,91 +533,106 @@ def _plot_cross_dataset_plane(
     dataset_order: list[str],
     output: Path,
     dpi: int,
+    embedding_dimension: int | None = None,
 ) -> None:
+    """Overlay all datasets on one H×C axis and one H×F axis."""
     selected = frame.loc[
         frame["scope"].eq(scope) & frame["cross_dataset_band_name"].eq(band)
     ]
-    figure, axes = plt.subplots(
-        len(dataset_order),
-        2,
-        figsize=(11.5, 3.2 * len(dataset_order)),
-        sharex="col",
-        sharey="col",
-        squeeze=False,
-        constrained_layout=True,
-    )
-    for row_index, dataset in enumerate(dataset_order):
+    figure, axes = plt.subplots(1, 2, figsize=(12.5, 5.7), constrained_layout=True)
+    for dataset in dataset_order:
         dataset_frame = selected.loc[selected["dataset"].eq(dataset)]
         if dataset_frame.empty:
-            for axis in axes[row_index]:
-                axis.text(
-                    0.5, 0.5, "No matching ABBA interval", ha="center", va="center",
-                    transform=axis.transAxes, color="0.45",
-                )
-                axis.grid(alpha=0.18)
-        else:
-            for group, group_frame in dataset_frame.groupby("group", sort=False):
-                style = {
-                    "color": GROUP_COLORS.get(str(group), "#666666"),
-                    "marker": GROUP_MARKERS.get(str(group), "o"),
-                    "s": 38,
-                    "alpha": 0.82,
-                    "label": str(group).replace("PD_", "PD-"),
-                }
-                axes[row_index, 0].scatter(
-                    group_frame["entropy"], group_frame["complexity"], **style
-                )
-                axes[row_index, 1].scatter(
-                    group_frame["entropy"], group_frame["fisher_information"], **style
-                )
-            sources = dataset_frame.groupby("group").agg(
-                band_name=("band_name", "first"),
-                start_hz=("start_hz", "first"),
-                end_hz=("end_hz", "first"),
+            continue
+        dataset_color = DATASET_COLORS.get(dataset, "#666666")
+        for group, group_frame in dataset_frame.groupby("group", sort=False):
+            marker = GROUP_MARKERS.get(str(group), "o")
+            point_style = {
+                "color": dataset_color,
+                "marker": marker,
+                "s": 24,
+                "alpha": 0.34,
+                "edgecolors": "none",
+            }
+            axes[0].scatter(
+                group_frame["entropy"], group_frame["complexity"], **point_style
             )
-            source_text = "; ".join(
-                f"{str(group).replace('PD_', 'PD-')} {row.band_name} "
-                f"{row.start_hz:g}–{row.end_hz:g} Hz"
-                for group, row in sources.iterrows()
+            axes[1].scatter(
+                group_frame["entropy"], group_frame["fisher_information"],
+                **point_style,
             )
-            axes[row_index, 0].text(
-                0.01, 0.98, source_text, transform=axes[row_index, 0].transAxes,
-                va="top", fontsize=7, color="0.35",
+            # Large outlined centroids make cross-dataset agreement visible even
+            # where hundreds of participant points overlap.
+            means = group_frame[["entropy", "complexity", "fisher_information"]].mean()
+            centroid_style = {
+                "color": dataset_color,
+                "marker": marker,
+                "s": 105,
+                "edgecolors": "#202020",
+                "linewidth": 1.1,
+                "zorder": 5,
+            }
+            axes[0].scatter(means["entropy"], means["complexity"], **centroid_style)
+            axes[1].scatter(
+                means["entropy"], means["fisher_information"], **centroid_style
             )
-            for axis in axes[row_index]:
-                axis.grid(alpha=0.18)
-        axes[row_index, 0].set_ylabel(f"{dataset}\nComplexity (C)")
-        axes[row_index, 1].set_ylabel(f"{dataset}\nFisher information (F)")
-    axes[0, 0].set_title("H × C plane", fontweight="bold")
-    axes[0, 1].set_title("H × F plane", fontweight="bold")
-    axes[-1, 0].set_xlabel("Permutation entropy (H)")
-    axes[-1, 1].set_xlabel("Permutation entropy (H)")
+
+    axes[0].set_title("H × C plane", fontweight="bold")
+    axes[1].set_title("H × F plane", fontweight="bold")
+    axes[0].set_ylabel("Statistical complexity (C)")
+    axes[1].set_ylabel("Fisher information (F)")
+    for axis in axes:
+        axis.set_xlabel("Permutation entropy (H)")
+        axis.grid(alpha=0.18)
     present_groups = [
         group for group in ("Control", "PD", "PD_OFF", "PD_ON")
         if group in set(selected["group"])
     ]
-    handles = [
+    group_handles = [
         Line2D(
             [], [], linestyle="none", marker=GROUP_MARKERS[group],
-            markerfacecolor=GROUP_COLORS[group], markeredgecolor=GROUP_COLORS[group],
+            markerfacecolor="0.45", markeredgecolor="0.2",
             markersize=7, label=group.replace("PD_", "PD-"),
         )
         for group in present_groups
     ]
+    present_datasets = [
+        dataset for dataset in dataset_order
+        if dataset in set(selected["dataset"])
+    ]
+    dataset_handles = [
+        Line2D(
+            [], [], linestyle="none", marker="o",
+            markerfacecolor=DATASET_COLORS.get(dataset, "#666666"),
+            markeredgecolor=DATASET_COLORS.get(dataset, "#666666"),
+            markersize=7,
+            label=DATASET_LABELS.get(dataset, dataset),
+        )
+        for dataset in present_datasets
+    ]
     scope_label = "Full filtered signal" if scope == "full_signal" else "Concatenated bouts"
+    dimension_label = (
+        f", D={embedding_dimension}" if embedding_dimension is not None else ""
+    )
     figure.suptitle(
-        f"{scope_label} — ABBA {band.replace('_', ' ')} across four datasets",
+        f"{scope_label} — ABBA {band.replace('_', ' ')} across datasets{dimension_label}",
         fontsize=15,
         fontweight="bold",
     )
-    if handles:
-        figure.legend(
-            handles=handles,
-            loc="lower center",
-            bbox_to_anchor=(0.5, -0.015),
-            ncol=len(handles),
-            frameon=False,
-        )
+    figure.legend(
+        handles=dataset_handles,
+        title="Dataset (color)",
+        loc="outside lower left",
+        ncol=min(len(dataset_handles), 4),
+        frameon=False,
+    )
+    figure.legend(
+        handles=group_handles,
+        title="Group (marker)",
+        loc="outside lower right",
+        ncol=len(group_handles),
+        frameon=False,
+    )
     output.parent.mkdir(parents=True, exist_ok=True)
     figure.savefig(output, dpi=int(dpi), bbox_inches="tight")
     plt.close(figure)
@@ -617,6 +644,7 @@ def _save_cross_dataset_planes(
     dataset_order: list[str],
     output_root: Path,
     dpi: int,
+    embedding_dimension: int | None = None,
 ) -> list[Path]:
     dataset_counts = participant.groupby("cross_dataset_band_name")["dataset"].nunique()
     bands = sorted(dataset_counts.loc[dataset_counts.ge(2)].index.astype(str))
@@ -632,6 +660,7 @@ def _save_cross_dataset_planes(
                 dataset_order=dataset_order,
                 output=path,
                 dpi=dpi,
+                embedding_dimension=embedding_dimension,
             )
             expected.append(path)
     expected_set = set(expected)
@@ -813,6 +842,7 @@ def run(
             dataset_order=dataset_order,
             output_root=output_root,
             dpi=int(settings.get("figure_dpi", 200)),
+            embedding_dimension=int(settings["embedding_dimension"]),
         )
         cross_dataset_figure_count = len(cross_dataset_paths)
     figure_count = dataset_figure_count + cross_dataset_figure_count
