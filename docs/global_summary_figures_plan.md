@@ -134,6 +134,15 @@ the medication-state row shows Control, PD-OFF, and PD-ON. Stars use the same
 within-dataset Benjamini–Hochberg correction across the three displayed H/C/F
 features.
 
+`cross_dataset_theta_D4_hxc_combined.png` and
+`cross_dataset_theta_D4_hxf_combined.png` overlay all four datasets on one
+H×C plane and one H×F plane. Dataset is encoded by color and diagnostic or
+medication group by marker. Large markers show group means with marginal 95%
+confidence intervals, while arrows connect each dataset's Control mean to its
+PD mean or medication-state means. These two views are intended specifically
+for judging whether absolute ordinal values and group shifts reproduce across
+datasets.
+
 ### 12. Side-by-side PSD comparison
 
 `psd_control_pd_side_by_side.png`

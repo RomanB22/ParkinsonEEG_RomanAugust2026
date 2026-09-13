@@ -33,6 +33,7 @@ DATASET_COLORS = {
     "primary": "#2166ac",
     "ds007526-1.0.2": "#4daf4a",
     "ds008768-1.0.0": "#d73027",
+    "medication_state": "#7b3294",
 }
 
 SUMMARY_FEATURES = [
@@ -848,6 +849,168 @@ def plot_cross_dataset_entropy_planes(root: Path, output_dir: Path) -> None:
         plt.close(fig)
 
 
+def _plot_combined_entropy_plane(
+    frames: dict[str, pd.DataFrame],
+    horizontal: str,
+    vertical: str,
+    vertical_label: str,
+    plane_name: str,
+    output: Path,
+) -> None:
+    """Overlay every dataset on one ordinal plane with group-specific markers."""
+    datasets = [*DATASETS, "medication_state"]
+    group_markers = {
+        "Control": "o",
+        "PD": "o",
+        "PD_OFF": "^",
+        "PD_ON": "s",
+    }
+    x_limits = _plane_limits(frames, horizontal)
+    y_limits = _plane_limits(frames, vertical)
+
+    fig, axis = plt.subplots(figsize=(9.2, 6.8))
+    centroids: dict[tuple[str, str], tuple[float, float]] = {}
+    for dataset in datasets:
+        frame = frames[dataset]
+        color = DATASET_COLORS[dataset]
+        for group in _groups_for_dataset(dataset):
+            points = frame.loc[
+                frame["group"].astype(str).eq(group), [horizontal, vertical]
+            ].apply(pd.to_numeric, errors="coerce").dropna()
+            if points.empty:
+                continue
+            marker = group_markers[group]
+            is_open = group == "Control"
+            axis.scatter(
+                points[horizontal],
+                points[vertical],
+                s=25,
+                alpha=0.32 if not is_open else 0.42,
+                marker=marker,
+                facecolors="none" if is_open else color,
+                edgecolors=color,
+                linewidth=0.7 if is_open else 0.25,
+                zorder=2,
+            )
+            x_mean, x_margin = _mean_ci(points[horizontal])
+            y_mean, y_margin = _mean_ci(points[vertical])
+            centroids[(dataset, group)] = (x_mean, y_mean)
+            axis.errorbar(
+                x_mean,
+                y_mean,
+                xerr=x_margin,
+                yerr=y_margin,
+                fmt=marker,
+                color=color,
+                markeredgecolor=color if is_open else "#202020",
+                markerfacecolor="white" if is_open else color,
+                markeredgewidth=1.5,
+                markersize=9,
+                capsize=3,
+                elinewidth=1.4,
+                zorder=5,
+            )
+
+        control = centroids.get((dataset, "Control"))
+        comparison_groups = (
+            ["PD_OFF", "PD_ON"] if dataset == "medication_state" else ["PD"]
+        )
+        if control is not None:
+            for group in comparison_groups:
+                comparison = centroids.get((dataset, group))
+                if comparison is not None:
+                    axis.annotate(
+                        "",
+                        xy=comparison,
+                        xytext=control,
+                        arrowprops={
+                            "arrowstyle": "->",
+                            "color": color,
+                            "linewidth": 1.4,
+                            "alpha": 0.9,
+                            "shrinkA": 8,
+                            "shrinkB": 8,
+                        },
+                        zorder=4,
+                    )
+
+    dataset_handles = [
+        Line2D(
+            [], [], marker="o", linestyle="-", color=DATASET_COLORS[dataset],
+            label=DATASET_LABELS[dataset], markersize=6,
+        )
+        for dataset in datasets
+    ]
+    group_handles = [
+        Line2D([], [], marker="o", linestyle="none", markerfacecolor="white",
+               markeredgecolor="#222222", label="Control", markersize=7),
+        Line2D([], [], marker="o", linestyle="none", markerfacecolor="#777777",
+               markeredgecolor="#222222", label="PD", markersize=7),
+        Line2D([], [], marker="^", linestyle="none", markerfacecolor="#777777",
+               markeredgecolor="#222222", label="PD OFF", markersize=7),
+        Line2D([], [], marker="s", linestyle="none", markerfacecolor="#777777",
+               markeredgecolor="#222222", label="PD ON", markersize=7),
+    ]
+    dataset_legend = axis.legend(
+        handles=dataset_handles,
+        title="Dataset (color)",
+        frameon=True,
+        fontsize=9,
+        loc="upper left",
+    )
+    axis.add_artist(dataset_legend)
+    axis.legend(
+        handles=group_handles,
+        title="Group (marker)",
+        frameon=True,
+        fontsize=9,
+        loc="lower right",
+    )
+    axis.set(
+        xlim=x_limits,
+        ylim=y_limits,
+        xlabel="Normalized permutation entropy H",
+        ylabel=vertical_label,
+        title=f"Theta D=4: all datasets on one {plane_name} plane",
+    )
+    axis.grid(True, alpha=0.2)
+    fig.text(
+        0.5,
+        0.015,
+        "Small markers = participants/conditions; large markers = group means with marginal 95% CIs; arrows run from Control to PD state",
+        ha="center",
+        fontsize=9,
+        color="#444444",
+    )
+    fig.tight_layout(rect=(0, 0.045, 1, 1))
+    fig.savefig(output, dpi=220, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_combined_cross_dataset_entropy_planes(root: Path, output_dir: Path) -> None:
+    """Create one H×C and one H×F overlay for the theta D=4 summary."""
+    datasets = [*DATASETS, "medication_state"]
+    frames = {dataset: _read_subject(root, dataset) for dataset in datasets}
+    output_dir.mkdir(parents=True, exist_ok=True)
+    entropy = "entropy__theta__entropy__D4"
+    _plot_combined_entropy_plane(
+        frames,
+        entropy,
+        "entropy__theta__complexity__D4",
+        "Statistical complexity C",
+        "H×C",
+        output_dir / "cross_dataset_theta_D4_hxc_combined.png",
+    )
+    _plot_combined_entropy_plane(
+        frames,
+        entropy,
+        "entropy__theta__fisher_information__D4",
+        "Fisher information F",
+        "H×F",
+        output_dir / "cross_dataset_theta_D4_hxf_combined.png",
+    )
+
+
 def plot_alpha_power_distributions(root: Path, output: Path) -> None:
     feature_specs = [("Alpha relative power", "psd__alpha__relative_power")]
     datasets = [*DATASETS, "medication_state"]
@@ -1518,6 +1681,7 @@ def main() -> None:
     plot_cross_dataset_distributions(root, output / "cross_dataset_distributions.png")
     plot_cross_dataset_topomaps(root, output)
     plot_cross_dataset_entropy_planes(root, output)
+    plot_combined_cross_dataset_entropy_planes(root, output)
     plot_alpha_power_distributions(root, output / "alpha_relative_power_distributions.png")
     plot_theta_hcf_distributions(root, output / "theta_hcf_D4_distributions.png")
     plot_psd_side_by_side(root, output / "psd_control_pd_side_by_side.png")
