@@ -181,6 +181,52 @@ be inferred from these LAVI frequency bouts.
 
 All figures are saved at 300 dpi in `outputs/rhythmicity/figures/`.
 
+Focused summary figures can be regenerated from the finalized metrics and
+statistics tables without rerunning LAVI or ABBA:
+
+```bash
+MNE_DONTWRITE_HOME=true NUMBA_DISABLE_JIT=1 \
+  conda run --no-capture-output -n MNE_August2026 \
+  python scripts/generate_rhythmicity_summary_figures.py
+```
+
+They are written as PNG and vector PDF files under `figures/summary/`.
+
+* `rhythmicity_lavi_violins` shows participant-level theta and beta LAVI
+  distributions. It focuses on the replicated theta result and the supported
+  primary-cohort beta result instead of displaying every band equally.
+* `rhythmicity_lavi_cognitive_scatters_theta` and
+  `rhythmicity_lavi_cognitive_scatters_alpha` show mean LAVI against cognition
+  for all four datasets, one frequency band per figure. The medication panels
+  include Control, PD-OFF, and PD-ON because their reported correlations use all
+  three groups. Standard datasets use MoCA and medication-state uses MMSE.
+* `rhythmicity_lavi_medication_on_off_violins` compares PD-OFF with PD-ON in
+  every canonical band. Lines connect the same 15 participants across states;
+  displayed q values come from the existing Welch comparison table.
+* `rhythmicity_abba_medication_on_off_<quantity>_violins` provides the same
+  paired medication-state view for ABBA temporal-burst rate, cycles, duration,
+  occupancy, and peak amplitude. Each figure contains theta 1, alpha 1, beta 1,
+  beta 2, and gamma 1 intervals; stars mark the existing BH-FDR-supported
+  PD-OFF versus PD-ON contrast. ABBA intervals remain group-specific.
+* `rhythmicity_abba_group_band_definitions` plots the exact focused ABBA
+  interval limits for every dataset and group. Bar labels give start–end Hz,
+  colors identify the canonical region, and hatching distinguishes low-LAVI
+  from high-LAVI segments.
+* `rhythmicity_abba_burst_violins` shows four interpretable temporal-burst
+  examples: alpha and beta burst rates, theta occupancy, and beta duration.
+* `rhythmicity_theta_topomaps` shows the electrode distribution of the theta
+  LAVI contrast. White-ringed electrodes pass electrode-wise BH-FDR correction.
+  The medication map uses PD-ON versus Control.
+* `rhythmicity_summary_lavi` pairs the standardized Parkinson-state versus
+  Control effect in each canonical band with the corresponding association
+  between mean LAVI and cognition. The medication row uses PD-ON versus Control
+  and MMSE; all other rows use PD versus Control and MoCA. Stars require both
+  BH-FDR significance and the prespecified practical-effect threshold.
+* `rhythmicity_summary_abba_bursts` shows the log2 ratio of Parkinson-state to
+  Control means for five temporal-burst quantities across the focused ABBA
+  intervals. Stars mark BH-FDR significance. The medication row again uses
+  PD-ON; PD-OFF and all other pairwise contrasts remain in the source table.
+
 * `lavi_profiles_by_dataset.png` shows group means as bold lines with
   participant-level 95% confidence ribbons. Multiple recordings from one
   participant are averaged before the ribbon is calculated. Colored background
