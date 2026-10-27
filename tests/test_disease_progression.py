@@ -49,7 +49,7 @@ class DiseaseProgressionTests(unittest.TestCase):
             self.config, cohort
         )
         self.assertEqual(len(cohort), 100)
-        self.assertEqual(len(dictionary), 141)
+        self.assertEqual(len(dictionary), 151)
         self.assertEqual(len(features), len(cohort) * len(dictionary))
         self.assertFalse(features.duplicated(["subject_id", "feature_id"]).any())
         self.assertEqual(len(electrodes), 60)

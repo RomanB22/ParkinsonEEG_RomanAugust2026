@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import multiprocessing
 import os
@@ -22,8 +23,13 @@ from core.config import (
     preprocessing_signature,
     write_ica_review_proposal,
 )
-from core.dataset import discover_recordings, subject_id_from_path
+from core.dataset import (
+    discover_recordings,
+    recording_id_from_path,
+    subject_id_from_path,
+)
 from core.metadata import expected_channels_from_dataset, update_preprocessing_qc
+from core.ica import UnusableICADataError
 from core.preprocessing import process_subject
 
 
@@ -33,13 +39,14 @@ def _subject_output_is_complete(
     *,
     review_only: bool,
     config: dict | None = None,
+    task: str = "Rest",
 ) -> bool:
     """Return whether the required subject outputs already exist."""
     output_dir = Path(output_dir)
     required = [
         output_dir
         / "ica"
-        / f"{subject_id}_task-Rest_desc-preprocessing-ica.fif",
+        / f"{subject_id}_task-{task}_desc-preprocessing-ica.fif",
         output_dir / "qc" / subject_id / "decisions.json",
     ]
     if not review_only:
@@ -47,10 +54,10 @@ def _subject_output_is_complete(
             [
                 output_dir
                 / "cleaned_raw"
-                / f"{subject_id}_task-Rest_desc-cleaned_raw.fif",
+                / f"{subject_id}_task-{task}_desc-cleaned_raw.fif",
                 output_dir
                 / "epochs"
-                / f"{subject_id}_task-Rest_desc-cleaned_epo.fif",
+                / f"{subject_id}_task-{task}_desc-cleaned_epo.fif",
             ]
         )
     if not all(path.is_file() for path in required):
@@ -68,12 +75,13 @@ def _existing_ica_reuse_status(
     output_dir: str | Path,
     subject_id: str,
     config: dict,
+    task: str = "Rest",
 ) -> str:
     """Classify an existing ICA as missing, reusable, or incompatible."""
     ica_path = (
         Path(output_dir)
         / "ica"
-        / f"{subject_id}_task-Rest_desc-preprocessing-ica.fif"
+        / f"{subject_id}_task-{task}_desc-preprocessing-ica.fif"
     )
     if not ica_path.is_file():
         return "missing"
@@ -82,6 +90,7 @@ def _existing_ica_reuse_status(
         subject_id,
         review_only=True,
         config=config,
+        task=task,
     ):
         return "reusable"
     return "incompatible"
@@ -157,7 +166,30 @@ def main() -> None:
         "--output-dir",
         help="Optional preprocessing output override for development pilots",
     )
-    parser.add_argument("--subjects", nargs="*", help="Optional participant IDs; default is all recordings")
+    parser.add_argument(
+        "--dataset-dir",
+        help="Optional raw BIDS dataset override for the shared preprocessing config",
+    )
+    parser.add_argument(
+        "--task",
+        help="Optional BIDS task override for the shared preprocessing config",
+    )
+    parser.add_argument(
+        "--notch-frequency",
+        type=float,
+        choices=(50.0, 60.0),
+        help="Optional power-line frequency override for this dataset",
+    )
+    parser.add_argument(
+        "--auxiliary-names",
+        nargs="*",
+        help="Optional channel names to exclude from the EEG analysis",
+    )
+    parser.add_argument(
+        "--subjects",
+        nargs="*",
+        help="Optional participant or recording IDs; default is all recordings",
+    )
     parser.add_argument("--review-only", action="store_true")
     review_group = parser.add_mutually_exclusive_group()
     review_group.add_argument("--allow-unreviewed", action="store_true")
@@ -175,6 +207,16 @@ def main() -> None:
     )
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument(
+        "--repair-incompatible-ica",
+        action="store_true",
+        help="Recompute only saved ICA decompositions with incompatible provenance",
+    )
+    parser.add_argument(
+        "--skip-unusable-recordings",
+        action="store_true",
+        help="Record and skip recordings with degenerate ICA input instead of aborting the batch",
+    )
+    parser.add_argument(
         "--workers",
         type=int,
         default=int(os.environ.get("PARKINSON_EEG_PREPROCESSING_WORKERS", "1")),
@@ -191,42 +233,51 @@ def main() -> None:
     if args.review_only and args.skip_manual_ica_review:
         parser.error("--skip-manual-ica-review is only meaningful during cleaning")
     config = load_config(args.config)
+    if args.dataset_dir:
+        config["project"]["dataset_dir"] = args.dataset_dir
+    if args.task:
+        config["project"]["task"] = args.task
     if args.output_dir:
         config["project"]["output_dir"] = args.output_dir
+    if args.notch_frequency is not None:
+        config["filter"]["notch_freq_hz"] = args.notch_frequency
+        config["filter"]["reason"] = (
+            f"The retained band includes the {args.notch_frequency:g} Hz line frequency, "
+            "so notch filtering is applied before resampling."
+        )
+    if args.auxiliary_names is not None:
+        config["channels"]["auxiliary_names"] = args.auxiliary_names
     dataset_dir = config["project"]["dataset_dir"]
     task = config["project"]["task"]
     recordings = discover_recordings(dataset_dir, task)
     if args.subjects:
         requested = set(args.subjects)
-        recordings = [path for path in recordings if subject_id_from_path(path) in requested]
-        found = {subject_id_from_path(path) for path in recordings}
+        recordings = [
+            path
+            for path in recordings
+            if subject_id_from_path(path) in requested
+            or recording_id_from_path(path) in requested
+        ]
+        found = {
+            requested_id
+            for path in recordings
+            for requested_id in (subject_id_from_path(path), recording_id_from_path(path))
+            if requested_id in requested
+        }
         missing = sorted(requested - found)
         if missing:
             raise FileNotFoundError(f"No recording found for: {missing}")
 
-    if not args.review_only and not args.allow_unreviewed and not args.skip_manual_ica_review:
-        unreviewed = [
-            subject_id_from_path(path)
-            for path in recordings
-            if not is_ica_review_confirmed(config, subject_id_from_path(path))
-        ]
-        if unreviewed:
-            preview = ", ".join(unreviewed[:10])
-            raise SystemExit(
-                f"Refusing to clean {len(unreviewed)} unreviewed ICA decompositions ({preview}...). "
-                "Run --review-only first, then add an explicit list for every subject."
-            )
-
-    expected = expected_channels_from_dataset(dataset_dir, task, config["channels"]["auxiliary_names"])
     if not args.overwrite:
         completed = [
-            subject_id_from_path(path)
+            recording_id_from_path(path)
             for path in recordings
             if _subject_output_is_complete(
                 config["project"]["output_dir"],
-                subject_id_from_path(path),
+                recording_id_from_path(path),
                 review_only=args.review_only,
                 config=config,
+                task=task,
             )
         ]
         if completed:
@@ -234,19 +285,43 @@ def main() -> None:
             recordings = [
                 path
                 for path in recordings
-                if subject_id_from_path(path) not in completed_set
+                if recording_id_from_path(path) not in completed_set
             ]
             print(
                 f"Reusing complete preprocessing outputs for {len(completed)} "
-                "participant(s); processing only missing subjects"
+                "recording(s); processing only missing recordings"
             )
+
+    # The review gate applies only to recordings that will actually be
+    # processed. Current outputs are safe to reuse without retroactively
+    # changing the review mode recorded in their provenance.
+    if not args.review_only and not args.allow_unreviewed and not args.skip_manual_ica_review:
+        unreviewed = [
+            recording_id_from_path(path)
+            for path in recordings
+            if not is_ica_review_confirmed(config, recording_id_from_path(path))
+        ]
+        if unreviewed:
+            preview = ", ".join(unreviewed[:10])
+            raise SystemExit(
+                f"Refusing to clean {len(unreviewed)} unreviewed ICA decompositions ({preview}...). "
+                "Run --review-only and confirm every decision, or explicitly use "
+                "--skip-manual-ica-review for provenance-recorded automatic ICLabel removal."
+            )
+
+    expected = expected_channels_from_dataset(
+        dataset_dir,
+        task,
+        config["channels"]["auxiliary_names"],
+    )
 
     worker_count = min(args.workers, max(1, len(recordings)))
     ica_reuse_status = {
-        subject_id_from_path(path): _existing_ica_reuse_status(
+        recording_id_from_path(path): _existing_ica_reuse_status(
             config["project"]["output_dir"],
-            subject_id_from_path(path),
+            recording_id_from_path(path),
             config,
+            task,
         )
         for path in recordings
     }
@@ -255,12 +330,13 @@ def main() -> None:
         for subject_id, status in ica_reuse_status.items()
         if not args.overwrite and status == "incompatible"
     ]
-    if incompatible_ica:
+    if incompatible_ica and not args.repair_incompatible_ica:
         preview = ", ".join(incompatible_ica[:10])
         raise SystemExit(
             "Refusing to refit existing ICA without explicit --overwrite; "
             f"{len(incompatible_ica)} saved decomposition(s) lack compatible "
-            f"provenance ({preview})."
+            f"provenance ({preview}). Use --repair-incompatible-ica to "
+            "recompute only those recordings, or --overwrite to recompute all."
         )
     reusable_ica = {
         subject_id: not args.overwrite and status == "reusable"
@@ -284,6 +360,7 @@ def main() -> None:
             os.environ[variable] = "1"
 
     rows = []
+    failures = []
     progress = tqdm(
         total=len(recordings),
         desc="ICA cleaning" if not args.review_only else "ICA review",
@@ -308,6 +385,20 @@ def main() -> None:
         progress.set_postfix_str(subject_id, refresh=False)
         progress.update()
 
+    def record_unusable(recording_path: Path, error: Exception) -> None:
+        failures.append(
+            {
+                "recording_id": recording_id_from_path(recording_path),
+                "source_path": str(recording_path),
+                "error_type": type(error).__name__,
+                "error": str(error),
+            }
+        )
+        tqdm.write(
+            f"Skipping unusable recording {recording_id_from_path(recording_path)}: {error}"
+        )
+        progress.update()
+
     common_kwargs = {
         "review_only": args.review_only,
         "require_review": not args.allow_unreviewed,
@@ -323,15 +414,21 @@ def main() -> None:
     try:
         if worker_count == 1:
             for set_path in recordings:
-                result = _process_one(
-                    set_path,
-                    config,
-                    expected,
-                    config_path=args.config,
-                    reuse_existing_ica=reusable_ica[subject_id_from_path(set_path)],
-                    **common_kwargs,
-                )
-                finish_result(result)
+                try:
+                    result = _process_one(
+                        set_path,
+                        config,
+                        expected,
+                        config_path=args.config,
+                        reuse_existing_ica=reusable_ica[recording_id_from_path(set_path)],
+                        **common_kwargs,
+                    )
+                except UnusableICADataError as error:
+                    if not args.skip_unusable_recordings:
+                        raise
+                    record_unusable(set_path, error)
+                else:
+                    finish_result(result)
         else:
             # Workers never edit the shared config. The parent records each
             # completed proposal atomically in finish_result().
@@ -346,17 +443,21 @@ def main() -> None:
                     f"continuing serially ({error})."
                 )
                 for set_path in recordings:
-                    result = _process_one(
-                        set_path,
-                        config,
-                        expected,
-                        config_path=args.config,
-                        reuse_existing_ica=reusable_ica[
-                            subject_id_from_path(set_path)
-                        ],
-                        **common_kwargs,
-                    )
-                    finish_result(result)
+                    try:
+                        result = _process_one(
+                            set_path,
+                            config,
+                            expected,
+                            config_path=args.config,
+                            reuse_existing_ica=reusable_ica[recording_id_from_path(set_path)],
+                            **common_kwargs,
+                        )
+                    except UnusableICADataError as error:
+                        if not args.skip_unusable_recordings:
+                            raise
+                        record_unusable(set_path, error)
+                    else:
+                        finish_result(result)
             else:
                 parallel_active = True
                 with executor:
@@ -368,15 +469,24 @@ def main() -> None:
                             expected,
                             config_path=None,
                             reuse_existing_ica=reusable_ica[
-                                subject_id_from_path(set_path)
+                                recording_id_from_path(set_path)
                             ],
                             **common_kwargs,
-                        ): subject_id_from_path(set_path)
+                        ): set_path
                         for set_path in recordings
                     }
                     for future in as_completed(futures):
                         try:
                             finish_result(future.result())
+                        except UnusableICADataError as error:
+                            if not args.skip_unusable_recordings:
+                                for pending in futures:
+                                    pending.cancel()
+                                raise
+                            record_unusable(
+                                futures[future],
+                                error,
+                            )
                         except Exception:
                             for pending in futures:
                                 pending.cancel()
@@ -384,7 +494,15 @@ def main() -> None:
     finally:
         progress.close()
     if rows:
-        print(f"Completed {len(rows)} participant(s)")
+        print(f"Completed {len(rows)} recording(s)")
+    if failures:
+        report_path = Path(config["project"]["output_dir"]) / "qc" / "preprocessing_failures.csv"
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        with report_path.open("w", newline="", encoding="utf-8") as stream:
+            writer = csv.DictWriter(stream, fieldnames=["recording_id", "source_path", "error_type", "error"])
+            writer.writeheader()
+            writer.writerows(failures)
+        print(f"Skipped {len(failures)} unusable recording(s); report={report_path}")
 
 
 if __name__ == "__main__":

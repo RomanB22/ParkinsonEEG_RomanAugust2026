@@ -18,13 +18,14 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", default="config/preprocessing.yaml")
     args = parser.parse_args()
-    summary = inspect_dataset(load_config(args.config))
+    config = load_config(args.config)
+    summary = inspect_dataset(config)
     print(f"Inspected {summary['n_recordings']} recordings from {summary['n_subjects']} participants")
     print(f"Groups: {summary['group_counts']}")
     print(f"Common channels: {len(summary['common_channels'])}; layouts: {summary['n_layouts']}")
-    print("Outputs: processed/metadata and processed/qc/dataset_inspection")
+    output_dir = config["project"]["output_dir"]
+    print(f"Outputs: {output_dir}/metadata and {output_dir}/qc/dataset_inspection")
 
 
 if __name__ == "__main__":
     main()
-

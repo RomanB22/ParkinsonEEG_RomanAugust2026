@@ -36,7 +36,7 @@
   },
   "features": {
     "aperiodic_metrics": ["aperiodic_exponent", "aperiodic_exponent_qc"],
-    "ordinal_metrics": ["entropy", "complexity", "fisher_information"],
+    "ordinal_metrics": ["entropy", "weighted_permutation_entropy", "complexity", "fisher_information"],
     "ordinal_bands": ["delta", "theta", "alpha", "beta", "gamma"],
     "bout_bands": ["theta", "alpha", "beta", "gamma"],
     "bout_properties": [
@@ -46,7 +46,7 @@
       "bout_cycles_mean",
       "bout_snr_mean"
     ],
-    "bout_ordinal_metrics": ["entropy", "complexity", "fisher_information"]
+    "bout_ordinal_metrics": ["entropy", "weighted_permutation_entropy", "complexity", "fisher_information"]
   },
   "dimension_sensitivity": {
     "enabled": true,

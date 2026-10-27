@@ -33,7 +33,7 @@
   },
   "features": {
     "ordinal_metrics": [
-      "entropy", "complexity", "fisher_information",
+      "entropy", "weighted_permutation_entropy", "complexity", "fisher_information",
       "renyi_entropy_alpha_0_1", "renyi_complexity_alpha_0_1",
       "renyi_entropy_alpha_0_5", "renyi_complexity_alpha_0_5",
       "renyi_entropy_alpha_0_9", "renyi_complexity_alpha_0_9",
@@ -52,7 +52,7 @@
       "oscillatory_occupancy", "bouts_per_minute", "bout_duration_mean_s",
       "bout_cycles_mean", "bout_snr_mean"
     ],
-    "bout_ordinal_metrics": ["entropy", "complexity", "fisher_information"],
+    "bout_ordinal_metrics": ["entropy", "weighted_permutation_entropy", "complexity", "fisher_information"],
     "embedding_dimension": 6,
     "delay_samples": 1
   },

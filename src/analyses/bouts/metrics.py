@@ -13,7 +13,8 @@ import ordpy
 import pandas as pd
 
 
-METRICS = ("entropy", "complexity", "fisher_information")
+WEIGHTED_METRIC = "weighted_permutation_entropy"
+METRICS = ("entropy", "complexity", "fisher_information", WEIGHTED_METRIC)
 
 
 def validate_ordinal_parameters(dx: int, tau: int) -> None:
@@ -72,7 +73,9 @@ def ordinal_counts(
     return counts, ties
 
 
-def shannon_metrics_from_counts(counts: np.ndarray, *, dx: int) -> dict[str, float]:
+def shannon_metrics_from_counts(
+    counts: np.ndarray, *, dx: int, signal: np.ndarray | None = None, tau: int = 1
+) -> dict[str, float]:
     """Calculate regular permutation entropy, complexity, and Fisher information."""
     values = np.asarray(counts, dtype=np.int64)
     expected = math.factorial(int(dx))
@@ -103,7 +106,22 @@ def shannon_metrics_from_counts(counts: np.ndarray, *, dx: int) -> dict[str, flo
         "complexity": float(complexity),
         "fisher_information": float(fisher),
     }
-    if not np.all(np.isfinite(list(result.values()))):
+    if signal is not None:
+        result[WEIGHTED_METRIC] = float(
+            ordpy.weighted_permutation_entropy(
+                np.asarray(signal, dtype=np.float64),
+                dx=int(dx),
+                taux=int(tau),
+            )
+        )
+    else:
+        # The pooled Shannon/Fisher calculation has only ordinal counts. The
+        # boundary-safe weighted value is supplied by analyze_bout_segments,
+        # which retains each uninterrupted bout signal.
+        result[WEIGHTED_METRIC] = np.nan
+    if not np.all(
+        np.isfinite([result["entropy"], result["complexity"], result["fisher_information"]])
+    ):
         raise RuntimeError("ordpy returned a non-finite metric")
     return result
 
@@ -172,7 +190,9 @@ def analyze_bout_segments(
         )
         diagnostics = pattern_diagnostics(counts)
         analyzable_bout = int(diagnostics["n_ordinal_patterns"] > 0)
-        metrics = shannon_metrics_from_counts(counts, dx=dx)
+        metrics = shannon_metrics_from_counts(
+            counts, dx=dx, signal=segment, tau=tau
+        )
         pooled += counts
         total_ties += ties
         analyzable += analyzable_bout
@@ -215,6 +235,14 @@ def analyze_bout_segments(
             else np.nan
         ),
     }
+    analyzable_rows = [row for row in bout_rows if row["analyzable_ordinal_bout"]]
+    if analyzable_rows:
+        pooled_summary[WEIGHTED_METRIC] = float(
+            np.average(
+                [row[WEIGHTED_METRIC] for row in analyzable_rows],
+                weights=[row["n_ordinal_patterns"] for row in analyzable_rows],
+            )
+        )
     return pooled, pooled_summary, pd.DataFrame.from_records(bout_rows), example
 
 
@@ -227,4 +255,3 @@ def pool_count_vectors(vectors: Iterable[np.ndarray], *, dx: int) -> np.ndarray:
             raise ValueError("All count vectors must match the configured state space")
         result += values
     return result
-

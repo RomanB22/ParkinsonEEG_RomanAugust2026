@@ -18,6 +18,45 @@ VALID_COHORTS = ("full", "matched")
 
 
 @dataclass(frozen=True)
+class DatasetProfile:
+    """Paths and labels for one dataset using the shared preprocessing contract."""
+
+    name: str
+    label: str
+    preprocessing_config: Path
+    participants_file: Path
+    epochs_dir: Path
+    epoch_glob: str
+    analysis_stage: str | None
+
+    @classmethod
+    def from_dict(cls, name: str, value: dict[str, Any]) -> "DatasetProfile":
+        required = {
+            "label",
+            "preprocessing_config",
+            "participants_file",
+            "epochs_dir",
+            "epoch_glob",
+        }
+        missing = sorted(required - set(value))
+        if missing:
+            raise ValueError(f"Dataset {name!r} is missing keys: {missing}")
+        return cls(
+            name=name,
+            label=str(value["label"]),
+            preprocessing_config=Path(value["preprocessing_config"]),
+            participants_file=Path(value["participants_file"]),
+            epochs_dir=Path(value["epochs_dir"]),
+            epoch_glob=str(value["epoch_glob"]),
+            analysis_stage=(
+                str(value["analysis_stage"])
+                if value.get("analysis_stage") is not None
+                else None
+            ),
+        )
+
+
+@dataclass(frozen=True)
 class Profile:
     """A named, bounded collection of pipeline capabilities."""
 
@@ -125,6 +164,7 @@ class PipelineConfig:
     participants_file: Path
     epochs_dir: Path
     epoch_glob: str
+    datasets: dict[str, DatasetProfile]
     science: ScientificDefaults
     profiles: dict[str, Profile]
 
@@ -134,6 +174,13 @@ class PipelineConfig:
         except KeyError as error:
             choices = ", ".join(sorted(self.profiles))
             raise ValueError(f"Unknown profile {name!r}; choose one of: {choices}") from error
+
+    def dataset(self, name: str) -> DatasetProfile:
+        try:
+            return self.datasets[name]
+        except KeyError as error:
+            choices = ", ".join(sorted(self.datasets))
+            raise ValueError(f"Unknown dataset {name!r}; choose one of: {choices}") from error
 
 
 def load_pipeline_config(path: str | Path = DEFAULT_CONFIG) -> PipelineConfig:
@@ -155,14 +202,40 @@ def load_pipeline_config(path: str | Path = DEFAULT_CONFIG) -> PipelineConfig:
     }
     if not profiles:
         raise ValueError("At least one pipeline profile is required")
+    dataset_values = raw.get("datasets")
+    if dataset_values is None:
+        dataset_values = {
+            "primary": {
+                "label": "Primary Parkinson/control dataset",
+                "preprocessing_config": paths.get(
+                    "preprocessing_config", "config/preprocessing.yaml"
+                ),
+                "participants_file": paths.get(
+                    "participants_file", "processed/metadata/subjects.csv"
+                ),
+                "epochs_dir": paths.get("epochs_dir", "processed/epochs"),
+                "epoch_glob": paths.get(
+                    "epoch_glob", "sub-*_task-Rest_desc-cleaned_epo.fif"
+                ),
+                "analysis_stage": None,
+            }
+        }
+    datasets = {
+        str(name): DatasetProfile.from_dict(str(name), value)
+        for name, value in dataset_values.items()
+    }
+    if "primary" not in datasets:
+        raise ValueError("config/pipeline.yaml datasets must define 'primary'")
+    primary = datasets["primary"]
     result = PipelineConfig(
         path=config_path,
         schema_version=1,
         environment_name=str(raw.get("environment", {}).get("name", "MNE_August2026")),
-        preprocessing_config=Path(paths.get("preprocessing_config", "config/preprocessing.yaml")),
-        participants_file=Path(paths.get("participants_file", "processed/metadata/subjects.csv")),
-        epochs_dir=Path(paths.get("epochs_dir", "processed/epochs")),
-        epoch_glob=str(paths.get("epoch_glob", "sub-*_task-Rest_desc-cleaned_epo.fif")),
+        preprocessing_config=primary.preprocessing_config,
+        participants_file=primary.participants_file,
+        epochs_dir=primary.epochs_dir,
+        epoch_glob=primary.epoch_glob,
+        datasets=datasets,
         science=ScientificDefaults.from_dict(raw.get("science", {})),
         profiles=profiles,
     )

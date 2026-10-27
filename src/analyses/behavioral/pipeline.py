@@ -106,7 +106,9 @@ def load_analysis_config(path: str | Path) -> dict[str, Any]:
     if analysis.get("fdr_scope") != "within_feature_family_and_correlation_method":
         raise ValueError("FDR scope must remain within prespecified feature families")
     requested = config["features"]
-    regular_metrics = ["entropy", "complexity", "fisher_information"]
+    regular_metrics = [
+        "entropy", "weighted_permutation_entropy", "complexity", "fisher_information"
+    ]
     if requested.get("aperiodic_metrics") != [
         "aperiodic_exponent",
         "aperiodic_exponent_qc",

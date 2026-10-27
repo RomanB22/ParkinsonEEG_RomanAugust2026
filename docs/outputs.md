@@ -17,10 +17,18 @@ and report provenance.
 | Eight-electrode view | `outputs/full/eight_electrode/` | `outputs/matched/eight_electrode/` |
 | Duration QC | `outputs/full/duration_qc/` | `outputs/matched/duration_qc/` |
 
+The sessioned ds002778 workflow follows the same domain ownership under
+`outputs/ds002778/`: `psd/`, `ordinal/`, `scale_free/`, `bouts/`, and
+`behavioral/`. Each contains its own `manifest.json`, `metrics/`, and
+`figures/`. The recording-aware canonical long tables remain in
+`outputs/ds002778/features/` for paired cross-domain ON/OFF models.
+The comprehensive violin, condition-effect forest, MMSE forest, and
+correlation-heatmap battery is also routed into the corresponding domain
+`figures/statistical_battery/` directories.
+
 Every domain writes a `manifest.json`, metric tables, figures, and a log or
 report where applicable. `.pipeline/state/` only records orchestration
 fingerprints. Timestamped consolidated stdout/stderr logs are written to
 `pipeline_logs/`.
 
 Generated paths are ignored by Git. Original data remain read-only inputs.
-

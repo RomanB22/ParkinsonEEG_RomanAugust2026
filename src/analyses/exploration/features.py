@@ -192,7 +192,9 @@ def build_feature_table(config: dict[str, Any]) -> tuple[pd.DataFrame, pd.DataFr
     subject_ids = set(participants["participant_id"].astype(str))
 
     candidate_settings = config["candidate_features"]
-    ordinal_core_metrics = ["entropy", "complexity", "fisher_information"]
+    ordinal_core_metrics = [
+        "entropy", "weighted_permutation_entropy", "complexity", "fisher_information"
+    ]
     renyi_metrics = [str(value) for value in candidate_settings["renyi_metrics"]]
     ordinal_metrics = [*ordinal_core_metrics, *renyi_metrics]
     ordinal_global = _read_csv(

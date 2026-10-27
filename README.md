@@ -98,6 +98,38 @@ tables.
 - [Detailed preprocessing parameters](docs/pipeline_parameters.md)
 - [Group statistics](docs/group_statistics.md)
 - [Analysis methods](docs/analyses/README.md)
+- [Global multi-dataset pipeline](docs/global_pipeline.md)
 
 Original files under `dataset/` are read-only inputs. Generated full-cohort and
 matched results live under `outputs/` and are ignored by Git.
+
+For one standardized input contract across four studies, configure
+[`config/global_pipeline.json`](config/global_pipeline.json) and run
+`bash run_global_pipeline.sh`. It preprocesses every enabled dataset from raw
+EEG, then streams labeled xarray epoch blocks for PSD/topomaps, electrode
+statistics, the four requested entropy quantities, bouts, within-bout entropy,
+and UPDRS/cognitive correlations. Use `--analysis-only` to reuse current
+cleaned epochs.
+
+## Both datasets through one pipeline
+
+The primary cohort and OpenNeuro `ds002778-1.0.5` are registered in the same
+stage graph. The latter contains 16 healthy controls and 15 PD participants
+recorded both ON and OFF medication; its inference preserves that pairing and
+uses MMSE continuously.
+
+```bash
+# Preview the unified 36-stage full-QC plan.
+bash run_pipeline.sh plan --profile full-qc --dataset both
+
+# Run/resume preprocessing, shared EEG feature families, valid cohort-specific
+# inference, and every configured figure for both datasets.
+bash run_pipeline.sh run --profile full-qc --dataset both --no-progress
+
+# Downstream-only equivalent when both cleaned epoch cohorts are complete.
+bash run_pipeline.sh analyses --profile full-qc --dataset both --no-progress
+```
+
+The legacy medication shell entry point remains available for focused
+development. See [the medication-state methods](docs/analyses/medication.md)
+for the paired statistical design and output details.

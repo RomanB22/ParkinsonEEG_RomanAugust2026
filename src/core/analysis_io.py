@@ -9,7 +9,9 @@ from typing import Iterable
 import pandas as pd
 
 
-SUBJECT_PATTERN = re.compile(r"(sub-\d+)")
+RECORDING_PATTERN = re.compile(
+    r"(sub-[A-Za-z0-9]+(?:_ses-[A-Za-z0-9]+)?)"
+)
 
 
 def load_participants(
@@ -33,7 +35,7 @@ def discover_epoch_files(directory: str | Path, pattern: str) -> dict[str, Path]
     """Map each participant to exactly one cleaned epoch file."""
     files: dict[str, Path] = {}
     for path in sorted(Path(directory).glob(pattern)):
-        match = SUBJECT_PATTERN.search(path.name)
+        match = RECORDING_PATTERN.search(path.name)
         if match is None:
             continue
         subject_id = match.group(1)
@@ -41,4 +43,3 @@ def discover_epoch_files(directory: str | Path, pattern: str) -> dict[str, Path]
             raise ValueError(f"Multiple epoch files found for {subject_id}")
         files[subject_id] = path
     return files
-

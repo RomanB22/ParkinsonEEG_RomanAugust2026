@@ -19,7 +19,13 @@ from .config import (
     subject_manual_ica,
     write_ica_review_proposal,
 )
-from .dataset import load_subject, participant_metadata, subject_id_from_path
+from .dataset import (
+    load_subject,
+    participant_metadata,
+    recording_id_from_path,
+    session_id_from_path,
+    subject_id_from_path,
+)
 from .ica import (
     apply_ica_exclusions,
     fit_ica,
@@ -152,7 +158,29 @@ def interpolate_bad_channels(raw, bad_channels: list[str], logger: logging.Logge
     valid, invalid = _valid_interpolation_channels(interpolated, bad_channels)
     interpolated.info["bads"] = list(valid)
     if valid:
-        interpolated.interpolate_bads(reset_bads=True, mode="accurate", verbose="ERROR")
+        try:
+            interpolated.interpolate_bads(
+                reset_bads=True,
+                mode="accurate",
+                verbose="ERROR",
+            )
+        except np.linalg.LinAlgError:
+            # Some BIDS/EEGLAB recordings contain malformed head-shape
+            # digitization points. MNE's automatic sphere fit can then fail
+            # even when the EEG electrode positions themselves are valid.
+            # The standard montage coordinates are centered at the origin, so
+            # retry spherical interpolation with an explicit origin rather
+            # than dropping an otherwise usable recording.
+            logger.warning(
+                "Automatic head-sphere fitting failed; retrying bad-channel "
+                "interpolation with fixed origin (0, 0, 0)."
+            )
+            interpolated.interpolate_bads(
+                reset_bads=True,
+                mode="accurate",
+                origin=(0.0, 0.0, 0.0),
+                verbose="ERROR",
+            )
     interpolated.info["bads"] = list(invalid)
     logger.info("Interpolated recorded bad channels: %s", valid or "none")
     if invalid:
@@ -185,6 +213,18 @@ def _write_decisions(qc_dir: Path, decisions: dict[str, Any]) -> None:
     path.write_text(json.dumps(_json_ready(decisions), indent=2), encoding="utf-8")
 
 
+def _participant_group(participant: dict[str, Any], participant_id: str) -> str:
+    """Return a canonical diagnosis label across the two supported datasets."""
+    if "GROUP" in participant and str(participant["GROUP"]).lower() != "nan":
+        return str(participant["GROUP"])
+    label = participant_id.removeprefix("sub-").lower()
+    if label.startswith("pd"):
+        return "PD"
+    if label.startswith("hc"):
+        return "Control"
+    return "unknown"
+
+
 def process_subject(
     set_path: str | Path,
     config: dict[str, Any],
@@ -201,9 +241,14 @@ def process_subject(
 ) -> SubjectResult:
     """Preprocess one participant and save every decision and QC stage."""
     set_path = Path(set_path)
-    subject_id = subject_id_from_path(set_path)
+    participant_id = subject_id_from_path(set_path)
+    session_id = session_id_from_path(set_path)
+    # ``subject_id`` remains the output-analysis key for backward
+    # compatibility. In a sessioned dataset it is deliberately a recording ID.
+    subject_id = recording_id_from_path(set_path)
     dataset_dir = Path(config["project"]["dataset_dir"])
     output_dir = Path(config["project"]["output_dir"])
+    task = str(config["project"]["task"])
     qc_dir = output_dir / "qc" / subject_id
     metadata_dir = output_dir / "metadata" / "subjects" / subject_id
     ica_dir = output_dir / "ica"
@@ -224,11 +269,12 @@ def process_subject(
         output_dir / "logs",
         console_logging=console_logging,
     )
-    participant = participant_metadata(dataset_dir, subject_id)
+    participant = participant_metadata(dataset_dir, participant_id)
+    group = _participant_group(participant, participant_id)
     raw, provenance = load_subject(set_path, config["channels"]["auxiliary_names"])
     raw_original = raw.copy()
     missing_channels = sorted(set(expected_channels) - set(raw.ch_names))
-    logger.info("Loading %s | group=%s | %.1f Hz | %d EEG channels | %.2f s", subject_id, participant.get("GROUP"), raw.info["sfreq"], len(raw.ch_names), raw.times[-1])
+    logger.info("Loading %s | participant=%s | group=%s | %.1f Hz | %d EEG channels | %.2f s", subject_id, participant_id, group, raw.info["sfreq"], len(raw.ch_names), raw.times[-1])
     logger.info("Original reference: %s | missing recorded channels: %s", provenance["original_reference"], missing_channels or "none")
 
     qcc = config["qc"]
@@ -246,7 +292,18 @@ def process_subject(
         raise RuntimeError(f"Expected final sampling frequency {expected_sfreq:g} Hz")
     qc.plot_signal(filtered, channels, start, duration, "FILTERED EEG — 1–100 Hz + 60 Hz notch, 250 Hz sampling", qc_dir / "03_filtered_signal.png", dpi)
     qc.plot_psd(filtered, channels, float(qcc["psd_fmin_hz"]), float(qcc["final_psd_fmax_hz"]), "Filtered EEG PSD — 1–100 Hz + 60 Hz notch", qc_dir / "04_filtered_psd.png", dpi)
-    qc.plot_signal_comparison(raw, filtered, channels, start, duration, "raw 500 Hz", "1–100 Hz at 250 Hz", "Raw vs filtered/resampled EEG", qc_dir / "05_raw_vs_filtered.png", dpi)
+    qc.plot_signal_comparison(
+        raw,
+        filtered,
+        channels,
+        start,
+        duration,
+        f"raw {raw.info['sfreq']:g} Hz",
+        f"1–100 Hz at {filtered.info['sfreq']:g} Hz",
+        "Raw vs filtered/resampled EEG",
+        qc_dir / "05_raw_vs_filtered.png",
+        dpi,
+    )
 
     bad_result = detect_bad_channels(filtered, config["channels"])
     filtered.info["bads"] = list(bad_result.bad_channels)
@@ -266,7 +323,7 @@ def process_subject(
     if not qc.plot_artifact_annotations(annotated, artifact_table, channels, qc_dir / "07_artifact_annotations.png", dpi):
         qc.save_status(qc_dir, "07_artifact_annotations", "No large temporal artifacts exceeded the conservative configured thresholds.")
 
-    ica_path = ica_dir / f"{subject_id}_task-Rest_desc-preprocessing-ica.fif"
+    ica_path = ica_dir / f"{subject_id}_task-{task}_desc-preprocessing-ica.fif"
     if reuse_existing_ica:
         if not ica_path.is_file():
             raise FileNotFoundError(
@@ -371,7 +428,10 @@ def process_subject(
     reviewed = is_ica_review_confirmed(config, subject_id)
     decisions: dict[str, Any] = {
         "subject_id": subject_id,
-        "group": participant.get("GROUP"),
+        "recording_id": subject_id,
+        "participant_id": participant_id,
+        "session_id": session_id,
+        "group": group,
         "original_file": provenance["original_file"],
         "stored_channels": provenance["stored_channels"],
         "analysis_eeg_channels": provenance["analysis_eeg_channels"],
@@ -484,7 +544,10 @@ def process_subject(
     usable_duration = epoch_result.n_retained * float(config["epochs"]["duration_sec"])
     qc_row = {
         "subject_id": subject_id,
-        "group": participant.get("GROUP"),
+        "recording_id": subject_id,
+        "participant_id": participant_id,
+        "session_id": session_id,
+        "group": group,
         "original_file": provenance["original_file"],
         "sampling_rate": float(cleaned.info["sfreq"]),
         "original_sampling_rate": float(raw_original.info["sfreq"]),
@@ -531,8 +594,8 @@ def process_subject(
     _write_decisions(qc_dir, decisions)
     qc.plot_summary(qc_row, qc_dir / "21_summary.png", dpi)
 
-    cleaned_path = cleaned_dir / f"{subject_id}_task-Rest_desc-cleaned_raw.fif"
-    epochs_path = epochs_dir / f"{subject_id}_task-Rest_desc-cleaned_epo.fif"
+    cleaned_path = cleaned_dir / f"{subject_id}_task-{task}_desc-cleaned_raw.fif"
+    epochs_path = epochs_dir / f"{subject_id}_task-{task}_desc-cleaned_epo.fif"
     cleaned.save(cleaned_path, overwrite=overwrite, verbose="ERROR")
     epoch_result.epochs.save(epochs_path, overwrite=overwrite, verbose="ERROR")
     logger.info("Saved final cleaned continuous EEG: %s", cleaned_path)

@@ -35,6 +35,7 @@ from .metrics import (
     METRICS,
     RENYI_ALPHAS,
     RENYI_ALPHA_METRICS,
+    WEIGHTED_METRIC,
     analyze_epoch_data,
     band_subject_electrode_means,
     filter_epoch_data,
@@ -761,6 +762,15 @@ def run_analysis(
             "subject_suffix": "ordinal_topomaps",
         }
     ]
+    topomap_metric_sets.append(
+        {
+            "key": "weighted_permutation_entropy",
+            "label": "Weighted permutation entropy",
+            "metrics": (WEIGHTED_METRIC,),
+            "directory": figures_dir / "topomaps" / "weighted_permutation_entropy",
+            "subject_suffix": "weighted_permutation_entropy_topomaps",
+        }
+    )
     for alpha, entropy_metric, complexity_metric in RENYI_ALPHA_METRICS:
         alpha_token = entropy_metric.removeprefix("renyi_entropy_")
         topomap_metric_sets.append(
@@ -1005,7 +1015,8 @@ def run_analysis(
         "epoch_pooling": (
             "Ordinal pattern counts are pooled across accepted epochs. Patterns crossing epoch "
             "boundaries are excluded before Shannon, Fisher, and Rényi quantities are "
-            "calculated."
+            "calculated. Weighted permutation entropy is calculated per accepted epoch with "
+            "ordpy.weighted_permutation_entropy and averaged using the number of valid patterns."
         ),
         "renyi": {
             "function": "ordpy.renyi_complexity_entropy",

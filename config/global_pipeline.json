@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "output_root": "outputs/global",
+  "embedding_dimension": 6,
+  "permutation_dimensions": [3, 4, 5, 6, 7],
+  "delay_samples": 1,
+  "aperiodic": {
+    "aperiodic_mode": "best_bic",
+    "aperiodic_modes": ["fixed", "knee"],
+    "model_selection_criterion": "bic",
+    "frequency_range_hz": [4.0, 50.0],
+    "peak_width_limits_hz": [1.0, 12.0],
+    "max_n_peaks": 8,
+    "min_peak_height": 0.0,
+    "peak_threshold": 2.0
+  },
+  "aperiodic_fit_qc": {
+    "minimum_r_squared": 0.9,
+    "maximum_error_mae_log10": 0.15,
+    "maximum_absolute_residual_log10": 0.75,
+    "exponent_range": [0.0, 6.0],
+    "minimum_subject_qc_fraction": 0.8
+  },
+  "ebosc": {
+    "frequency_min_hz": 4.0,
+    "frequency_max_hz": 50.0,
+    "frequency_step_hz": 1.0,
+    "wavenumber": 6.0,
+    "power_percentile": 0.95,
+    "minimum_cycles": 3.0,
+    "edge_padding_seconds": 0.75,
+    "figure_window_seconds": 0.5
+  },
+  "fdr_alpha": 0.05,
+  "bands": {
+    "delta": [1.0, 4.0],
+    "theta": [4.0, 8.0],
+    "alpha": [8.0, 13.0],
+    "beta": [13.0, 30.0],
+    "gamma": [30.0, 50.0]
+  },
+  "datasets": [
+    {
+      "id": "primary",
+      "root": "dataset",
+      "metadata": "dataset/participants.tsv",
+      "epochs_dir": "processed/epochs",
+      "epoch_glob": "sub-*_task-Rest_desc-cleaned_epo.fif",
+      "task": "Rest",
+      "preprocessing_config": "config/preprocessing.yaml",
+      "columns": {
+        "group": "GROUP",
+        "age_years": "AGE",
+        "sex": "GENDER",
+        "updrs": "UPDRS",
+        "moca": "MOCA",
+        "mmse": "MMSE"
+      }
+    },
+    {
+      "id": "medication_state",
+      "root": "ds002778-1.0.5",
+      "metadata": "ds002778-1.0.5/participants.tsv",
+      "epochs_dir": "processed_ds002778/epochs",
+      "epoch_glob": "sub-*_ses-*_task-rest_desc-cleaned_epo.fif",
+      "task": "rest",
+      "preprocessing_config": "config/preprocessing_ds002778.yaml",
+      "columns": {
+        "group": "GROUP",
+        "age_years": "AGE",
+        "sex": "GENDER",
+        "updrs": "UPDRS",
+        "moca": "MOCA",
+        "mmse": "MMSE"
+      }
+    },
+    {
+      "id": "ds007526-1.0.2",
+      "enabled": true,
+      "root": "ds007526-1.0.2",
+      "metadata": "ds007526-1.0.2/participants.tsv",
+      "epochs_dir": "processed_ds007526/epochs",
+      "epoch_glob": "sub-*_task-rest_desc-cleaned_epo.fif",
+      "task": "rest",
+      "preprocessing_config": "config/preprocessing.yaml",
+      "notch_frequency_hz": 50.0,
+      "auxiliary_names": ["EOG1", "EOG2", "EOG3", "EOG4", "VREF"],
+      "analysis": {
+        "aperiodic": {
+          "frequency_range_hz": [4.0, 40.0]
+        },
+        "ebosc": {
+          "frequency_max_hz": 40.0
+        },
+        "bands": {
+          "gamma": [30.0, 40.0]
+        }
+      },
+      "columns": {
+        "group": "group",
+        "age_years": "age",
+        "sex": "sex",
+        "updrs": "updrs_total",
+        "moca": "moca"
+      }
+    },
+    {
+      "id": "ds008768-1.0.0",
+      "enabled": true,
+      "root": "ds008768-1.0.0",
+      "metadata": "ds008768-1.0.0/participants.tsv",
+      "session_metadata_glob": "sub-*/sub-*_sessions.tsv",
+      "exclude_participants_file": "config/exclusions/ds008768_primary_overlap_participants.csv",
+      "epochs_dir": "processed_ds008768/epochs",
+      "epoch_glob": "sub-*_task-rest_desc-cleaned_epo.fif",
+      "task": "rest",
+      "preprocessing_config": "config/preprocessing.yaml",
+      "columns": {
+        "group": "group",
+        "age_years": "age",
+        "sex": "sex",
+        "updrs": "updrs_part_iii",
+        "moca": "moca"
+      }
+    }
+  ]
+}
